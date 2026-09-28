@@ -40,3 +40,20 @@ def test_bad_reference_returns_422_with_key():
 def test_unknown_run_and_not_ready():
     assert client.get("/runs/999").status_code == 404
     assert client.get("/runs/999/export.csv").status_code == 404
+
+
+def test_validate_endpoint():
+    assert client.post("/validate", json=payload(run_id=201)).json() == {"ok": True}
+    bad = payload(run_id=202)
+    bad["edges"].append({"key": "X>Y", "src": "X", "dst": "Y", "material": "BOX"})
+    r = client.post("/validate", json=bad)
+    assert r.status_code == 422 and r.json()["detail"]["key"] == "X>Y"
+
+
+def test_result_endpoint_returns_full_result():
+    client.post("/runs", json=payload(run_id=203, recommend=False))
+    body = client.get("/runs/203/result").json()
+    assert set(body) == {"run_id", "engine_version", "kpis", "bands", "insights", "signals", "events"}
+    assert body["run_id"] == 203 and len(body["bands"]) > 0 and len(body["signals"]) > 0
+    assert body["bands"][0]["target_time"].startswith("2026-10-01T")
+    assert client.get("/runs/9999/result").status_code == 404
