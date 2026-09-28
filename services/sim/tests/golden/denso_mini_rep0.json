@@ -1,0 +1,171 @@
+{
+  "backorder_end": 0.0,
+  "edges": {
+    "ASSY>QC": {
+      "wait_hook_mean": 0.0,
+      "wait_pool_mean": 0.0
+    },
+    "FG>SHIP": {
+      "wait_hook_mean": 0.0,
+      "wait_pool_mean": 0.0
+    },
+    "KHO_NVL>STAMP_1": {
+      "wait_hook_mean": 0.0,
+      "wait_pool_mean": 0.0
+    },
+    "KHO_NVL>STAMP_2": {
+      "wait_hook_mean": 21.310045,
+      "wait_pool_mean": 4.432541
+    },
+    "KHO_NVL>STAMP_3": {
+      "wait_hook_mean": 27.252956,
+      "wait_pool_mean": 0.0
+    },
+    "PACKING>FG": {
+      "wait_hook_mean": 0.0,
+      "wait_pool_mean": 0.0
+    },
+    "QC>PACKING": {
+      "wait_hook_mean": 0.0,
+      "wait_pool_mean": 0.0
+    },
+    "QC>SCRAP": {
+      "wait_hook_mean": 0.0,
+      "wait_pool_mean": 0.0
+    },
+    "STAMP_1>WIP_BUF": {
+      "wait_hook_mean": 0.0,
+      "wait_pool_mean": 0.0
+    },
+    "STAMP_2>WIP_BUF": {
+      "wait_hook_mean": 0.0,
+      "wait_pool_mean": 0.0
+    },
+    "STAMP_3>WIP_BUF": {
+      "wait_hook_mean": 0.0,
+      "wait_pool_mean": 0.0
+    },
+    "SUPPLIER>KHO_NVL": {
+      "wait_hook_mean": 0.0,
+      "wait_pool_mean": 0.0
+    },
+    "WIP_BUF>ASSY": {
+      "wait_hook_mean": 0.0,
+      "wait_pool_mean": 0.0
+    }
+  },
+  "pools": {
+    "OPS_ZONE_B": {
+      "count": 1,
+      "util": 0.525466
+    },
+    "TUGGER_A": {
+      "count": 2,
+      "util": 0.592304
+    }
+  },
+  "processes": {
+    "ASSY": {
+      "count_in": 441.0,
+      "count_ng": 0.0,
+      "count_ok": 441.0,
+      "state_s": {
+        "RUNNING": 12333.699308,
+        "STARVED": 2066.300692
+      },
+      "util": 0.856507
+    },
+    "PACKING": {
+      "count_in": 42.0,
+      "count_ng": 0.0,
+      "count_ok": 43.0,
+      "state_s": {
+        "RUNNING": 2521.5911,
+        "STARVED": 11878.4089
+      },
+      "util": 0.17511
+    },
+    "QC": {
+      "count_in": 441.0,
+      "count_ng": 14.0,
+      "count_ok": 426.0,
+      "state_s": {
+        "RUNNING": 9483.034114,
+        "STARVED": 4916.965886
+      },
+      "util": 0.658544
+    },
+    "STAMP_1": {
+      "count_in": 316.0,
+      "count_ng": 0.0,
+      "count_ok": 316.0,
+      "state_s": {
+        "RUNNING": 14400.0
+      },
+      "util": 1.0
+    },
+    "STAMP_2": {
+      "count_in": 321.0,
+      "count_ng": 0.0,
+      "count_ok": 321.0,
+      "state_s": {
+        "RUNNING": 14400.0
+      },
+      "util": 1.0
+    },
+    "STAMP_3": {
+      "count_in": 244.0,
+      "count_ng": 0.0,
+      "count_ok": 244.0,
+      "state_s": {
+        "DOWN": 3232.542172,
+        "RUNNING": 11167.457828
+      },
+      "util": 0.775518
+    }
+  },
+  "red_minutes": 124.0,
+  "sinks": {
+    "SCRAP": {
+      "backorder_end": 0.0,
+      "counts_throughput": false,
+      "fulfilled": 14.0
+    },
+    "SHIP": {
+      "backorder_end": 0.0,
+      "counts_throughput": true,
+      "fulfilled": 54.0
+    }
+  },
+  "sources": {
+    "SUPPLIER": {
+      "arrived": {
+        "RAW-01": 1350.0
+      }
+    }
+  },
+  "storages": {
+    "FG": {
+      "first_red_s": 1740.0,
+      "level_end": {
+        "BOX": 0.0
+      },
+      "red_s": 7440.0
+    },
+    "KHO_NVL": {
+      "first_red_s": null,
+      "level_end": {
+        "RAW-01": 490.0
+      },
+      "red_s": 0
+    },
+    "WIP_BUF": {
+      "first_red_s": null,
+      "level_end": {
+        "PART": 0.0
+      },
+      "red_s": 0
+    }
+  },
+  "throughput": 54.0
+}

@@ -1,0 +1,411 @@
+{
+  "$defs": {
+    "EdgeSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "dst": {
+          "title": "Dst",
+          "type": "string"
+        },
+        "hook_at_load": {
+          "default": true,
+          "title": "Hook At Load",
+          "type": "boolean"
+        },
+        "hook_at_unload": {
+          "default": false,
+          "title": "Hook At Unload",
+          "type": "boolean"
+        },
+        "hook_pool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hook Pool"
+        },
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "lot": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Lot",
+          "type": "integer"
+        },
+        "material": {
+          "title": "Material",
+          "type": "string"
+        },
+        "max_in_transit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max In Transit"
+        },
+        "mode": {
+          "default": "NONE",
+          "enum": [
+            "NONE",
+            "CONVEYOR",
+            "POOL"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "poll_s": {
+          "default": 5.0,
+          "exclusiveMinimum": 0,
+          "title": "Poll S",
+          "type": "number"
+        },
+        "pool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pool"
+        },
+        "src": {
+          "title": "Src",
+          "type": "string"
+        },
+        "travel": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Travel"
+        },
+        "workers": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workers"
+        }
+      },
+      "required": [
+        "key",
+        "src",
+        "dst",
+        "material"
+      ],
+      "title": "EdgeSpec",
+      "type": "object"
+    },
+    "InitialState": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "WARMUP",
+          "enum": [
+            "EMPTY",
+            "WARMUP"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "warmup_s": {
+          "default": 0.0,
+          "minimum": 0,
+          "title": "Warmup S",
+          "type": "number"
+        }
+      },
+      "title": "InitialState",
+      "type": "object"
+    },
+    "Injection": {
+      "additionalProperties": false,
+      "properties": {
+        "at_s": {
+          "minimum": 0,
+          "title": "At S",
+          "type": "number"
+        },
+        "duration_s": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration S"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure"
+        },
+        "kind": {
+          "default": "failure",
+          "enum": [
+            "failure",
+            "planned_stop"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target",
+        "at_s"
+      ],
+      "title": "Injection",
+      "type": "object"
+    },
+    "Material": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "unit_load": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit Load"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "title": "Material",
+      "type": "object"
+    },
+    "NodeSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "archetype": {
+          "enum": [
+            "SOURCE",
+            "STORAGE",
+            "PROCESS",
+            "SINK"
+          ],
+          "title": "Archetype",
+          "type": "string"
+        },
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "key",
+        "archetype"
+      ],
+      "title": "NodeSpec",
+      "type": "object"
+    },
+    "Outputs": {
+      "additionalProperties": false,
+      "properties": {
+        "raw_reps": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Raw Reps",
+          "type": "array"
+        },
+        "sample_s": {
+          "default": 60.0,
+          "exclusiveMinimum": 0,
+          "title": "Sample S",
+          "type": "number"
+        },
+        "sensors": {
+          "default": true,
+          "title": "Sensors",
+          "type": "boolean"
+        }
+      },
+      "title": "Outputs",
+      "type": "object"
+    },
+    "PoolSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "AGV",
+            "TUGGER",
+            "FORKLIFT",
+            "OPERATOR"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "service": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service"
+        }
+      },
+      "required": [
+        "key",
+        "kind",
+        "count"
+      ],
+      "title": "PoolSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "edges": {
+      "items": {
+        "$ref": "#/$defs/EdgeSpec"
+      },
+      "title": "Edges",
+      "type": "array"
+    },
+    "horizon_s": {
+      "exclusiveMinimum": 0,
+      "title": "Horizon S",
+      "type": "number"
+    },
+    "initial_state": {
+      "$ref": "#/$defs/InitialState"
+    },
+    "injections": {
+      "items": {
+        "$ref": "#/$defs/Injection"
+      },
+      "title": "Injections",
+      "type": "array"
+    },
+    "materials": {
+      "items": {
+        "$ref": "#/$defs/Material"
+      },
+      "title": "Materials",
+      "type": "array"
+    },
+    "nodes": {
+      "items": {
+        "$ref": "#/$defs/NodeSpec"
+      },
+      "title": "Nodes",
+      "type": "array"
+    },
+    "outputs": {
+      "$ref": "#/$defs/Outputs"
+    },
+    "pools": {
+      "items": {
+        "$ref": "#/$defs/PoolSpec"
+      },
+      "title": "Pools",
+      "type": "array"
+    },
+    "recommend": {
+      "default": true,
+      "title": "Recommend",
+      "type": "boolean"
+    },
+    "replications": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Replications",
+      "type": "integer"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "integer"
+    },
+    "seed": {
+      "default": 0,
+      "title": "Seed",
+      "type": "integer"
+    },
+    "sim_start": {
+      "format": "date-time",
+      "title": "Sim Start",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "sim_start",
+    "horizon_s",
+    "nodes"
+  ],
+  "title": "RunRequest",
+  "type": "object"
+}
