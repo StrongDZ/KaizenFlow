@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/kaizenflow/api/internal/simfake"
 	"github.com/kaizenflow/api/internal/store"
 	"github.com/kaizenflow/api/internal/testfix"
 )
@@ -118,5 +120,102 @@ func TestNodeTypesAndMaterials(t *testing.T) {
 	codes, _ := st.MaterialCodes(ctx)
 	if len(codes) != 7 {
 		t.Fatalf("codes = %v", codes)
+	}
+}
+
+func seededVersion(t *testing.T, st *store.Store, key string) int64 {
+	t.Helper()
+	id := newModel(t, st, key)
+	if err := st.ReplaceGraph(ctx, id, testfix.MiniNodes(), testfix.MiniEdges(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Publish(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func TestScenarioRoundTrip(t *testing.T) {
+	st := testfix.Seeded(t, "store_scenario")
+	vid := seededVersion(t, st, "s")
+	sid, err := st.CreateScenario(ctx, store.Scenario{ModelVersionID: vid, Name: "base", HorizonS: 14400,
+		Injections: []map[string]any{{"target": "P", "failure": "bearing_wear", "at_s": 3600.0}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc, err := st.GetScenario(ctx, sid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sc.HorizonS != 14400 || sc.Origin != "USER" || sc.StartState != "WARMUP" || sc.Replications != 50 ||
+		len(sc.Injections) != 1 || sc.Overrides == nil || sc.Seed != nil {
+		t.Fatalf("scenario = %+v", sc)
+	}
+	list, _ := st.ListScenarios(ctx, vid)
+	if len(list) != 1 {
+		t.Fatalf("list = %v", list)
+	}
+}
+
+func TestRunLifecycleAndResultPersistence(t *testing.T) {
+	st := testfix.Seeded(t, "store_run")
+	vid := seededVersion(t, st, "r")
+	sid, _ := st.CreateScenario(ctx, store.Scenario{ModelVersionID: vid, HorizonS: 3600})
+	simStart := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	rid, err := st.InsertRun(ctx, sid, simStart, "FORECAST")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetRunStatus(ctx, rid, "RUNNING", nil); err != nil {
+		t.Fatal(err)
+	}
+	res := simfake.Result(rid)
+	if err := st.SaveResult(ctx, rid, &res); err != nil {
+		t.Fatal(err)
+	}
+	run, _ := st.GetRun(ctx, rid)
+	if run.Status != "DONE" || run.FinishedAt == nil || *run.EngineVersion != "0.1.0" || run.KPIs["throughput"] == nil {
+		t.Fatalf("run = %+v", run)
+	}
+	ins, _ := st.ListInsights(ctx, rid)
+	if len(ins) != 2 || ins[0].Kind != "RED_RISK" || *ins[0].Probability != 0.5 || ins[1].Payload["candidates"] == nil {
+		t.Fatalf("insights = %+v", ins)
+	}
+	one, _ := st.GetInsight(ctx, ins[1].ID)
+	if *one.SimRunID != rid {
+		t.Fatalf("insight run = %v", one.SimRunID)
+	}
+	bands, _ := st.Bands(ctx, rid, "S", "coverage_h")
+	if len(bands) != 2 || bands[1].P50 != 1 {
+		t.Fatalf("bands = %v", bands)
+	}
+	all, _ := st.Bands(ctx, rid, "", "")
+	sigs, _ := st.Signals(ctx, rid, "S", "")
+	evs, _ := st.Events(ctx, rid, "", "COLOR_CHANGE")
+	if len(all) != 2 || len(sigs) != 5000 || len(evs) != 1 || evs[0].Payload["state"] != "RED" {
+		t.Fatalf("all=%d sigs=%d evs=%v", len(all), len(sigs), evs)
+	}
+	msg := "boom"
+	_ = st.SetRunStatus(ctx, rid, "FAILED", &msg)
+	run, _ = st.GetRun(ctx, rid)
+	runs, _ := st.ListRuns(ctx, sid)
+	if run.Status != "FAILED" || *run.Error != "boom" || len(runs) != 1 {
+		t.Fatalf("failed run = %+v", run)
+	}
+}
+
+func TestDailyForecastUsesLatestIssue(t *testing.T) {
+	st := testfix.Seeded(t, "store_forecast")
+	day := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	for i, v := range []float64{100, 240} {
+		issued := day.Add(-time.Duration(48-24*i) * time.Hour)
+		if _, err := st.Pool.Exec(ctx, `INSERT INTO forecast_band (issued_at, target_time, producer, subject, metric, p50)
+			VALUES ($1, $2, 'PREDICT:HW', 'RAW-01', 'demand_daily', $3)`, issued, day, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pts, err := st.DailyForecast(ctx, "RAW-01", "PREDICT:HW", day, day.AddDate(0, 0, 2))
+	if err != nil || len(pts) != 1 || pts[0].P50 != 240 {
+		t.Fatalf("points = %v %v", pts, err)
 	}
 }
