@@ -1,0 +1,76 @@
+{
+  "run_id": 1,
+  "sim_start": "2026-10-01T08:00:00+07:00",
+  "horizon_s": 14400,
+  "replications": 10,
+  "seed": 7,
+  "materials": [{"code": "RAW-01"}, {"code": "PART"}, {"code": "SUB"}, {"code": "SUB_OK"}, {"code": "SUB_NG"}, {"code": "BOX"}],
+  "nodes": [
+    {"key": "SUPPLIER", "archetype": "SOURCE", "params": {
+      "arrivals": {"interarrival": {"dist": "norm", "mean": 1800, "sd": 120}},
+      "lots": [{"material": "RAW-01", "qty": 150}]}},
+    {"key": "KHO_NVL", "archetype": "STORAGE", "params": {
+      "stock": [{"material": "RAW-01", "initial": 300, "max": 1000}],
+      "coverage_thresholds": {"red_h": 0.5, "yellow_low_h": 1.0, "yellow_high_h": 5}}},
+    {"key": "STAMP_1", "archetype": "PROCESS", "params": {
+      "recipes": [{"inputs": [{"material": "RAW-01", "qty": 1}], "outputs": [{"material": "PART", "qty": 1}]}],
+      "cycle": {"dist": "lognorm", "mean": 45, "cv": 0.15}, "in_buffer": 40, "out_buffer": 20}},
+    {"key": "STAMP_2", "archetype": "PROCESS", "params": {
+      "recipes": [{"inputs": [{"material": "RAW-01", "qty": 1}], "outputs": [{"material": "PART", "qty": 1}]}],
+      "cycle": {"dist": "lognorm", "mean": 45, "cv": 0.15}, "in_buffer": 40, "out_buffer": 20}},
+    {"key": "STAMP_3", "archetype": "PROCESS", "params": {
+      "recipes": [{"inputs": [{"material": "RAW-01", "qty": 1}], "outputs": [{"material": "PART", "qty": 1}]}],
+      "cycle": {"dist": "lognorm", "mean": 45, "cv": 0.15}, "in_buffer": 40, "out_buffer": 20,
+      "signals": [{"name": "vibration", "unit": "mm/s", "base": {"dist": "normal", "mean": 0.42, "sd": 0.08}, "hz": 0.2}],
+      "failure_modes": [{"code": "bearing_wear",
+        "onset": {"dist": "weibull", "shape": 2, "scale_s": 604800},
+        "p_to_f": {"dist": "tri", "min_s": 3600, "mode_s": 5400, "max_s": 7200},
+        "effects": [{"signal": "vibration", "kind": "exp", "mag_sd": 3}],
+        "on_fail": {"state": "DOWN", "mttr": {"dist": "lognorm", "mean_s": 3600, "cv": 0.3}}}]}},
+    {"key": "WIP_BUF", "archetype": "STORAGE", "params": {
+      "stock": [{"material": "PART", "initial": 60, "max": 400}],
+      "coverage_thresholds": {"red_h": 0, "yellow_low_h": 0, "yellow_high_h": 99}}},
+    {"key": "ASSY", "archetype": "PROCESS", "params": {
+      "recipes": [{"inputs": [{"material": "PART", "qty": 2}], "outputs": [{"material": "SUB", "qty": 1}]}],
+      "cycle": {"dist": "lognorm", "mean": 28, "cv": 0.1}}},
+    {"key": "QC", "archetype": "PROCESS", "params": {
+      "recipes": [{"inputs": [{"material": "SUB", "qty": 1}],
+                   "outputs": [{"material": "SUB_OK", "qty": 1, "port": "OK"}, {"material": "SUB_NG", "qty": 1, "port": "NG"}]}],
+      "cycle": {"dist": "tri", "min": 15, "mode": 20, "max": 30}, "ng_rate": 0.03}},
+    {"key": "PACKING", "archetype": "PROCESS", "params": {
+      "recipes": [{"inputs": [{"material": "SUB_OK", "qty": 10}], "outputs": [{"material": "BOX", "qty": 1}]}],
+      "cycle": {"dist": "norm", "mean": 60, "sd": 8}}},
+    {"key": "FG", "archetype": "STORAGE", "params": {
+      "stock": [{"material": "BOX", "initial": 6, "max": 60}],
+      "coverage_thresholds": {"red_h": 0.5, "yellow_low_h": 1.5, "yellow_high_h": 6}}},
+    {"key": "SHIP", "archetype": "SINK", "params": {
+      "buffer": 2, "demand": [{"kind": "TAKT", "material": "BOX", "takt": {"dist": "exp", "mean": 330}, "qty": 1}]}},
+    {"key": "SCRAP", "archetype": "SINK", "params": {"buffer": 1000000, "throughput": false}}
+  ],
+  "pools": [
+    {"key": "TUGGER_A", "kind": "TUGGER", "count": 2, "service": {"dist": "const", "value": 30}},
+    {"key": "OPS_ZONE_B", "kind": "OPERATOR", "count": 1, "service": {"dist": "tri", "min": 60, "mode": 150, "max": 300}}
+  ],
+  "edges": [
+    {"key": "SUPPLIER>KHO_NVL", "src": "SUPPLIER", "dst": "KHO_NVL", "material": "RAW-01", "lot": 150},
+    {"key": "KHO_NVL>STAMP_1", "src": "KHO_NVL", "dst": "STAMP_1", "material": "RAW-01", "mode": "POOL",
+     "pool": "TUGGER_A", "hook_pool": "OPS_ZONE_B", "lot": 20, "travel": {"dist": "norm", "mean": 90, "sd": 15}},
+    {"key": "KHO_NVL>STAMP_2", "src": "KHO_NVL", "dst": "STAMP_2", "material": "RAW-01", "mode": "POOL",
+     "pool": "TUGGER_A", "hook_pool": "OPS_ZONE_B", "lot": 20, "travel": {"dist": "norm", "mean": 90, "sd": 15}},
+    {"key": "KHO_NVL>STAMP_3", "src": "KHO_NVL", "dst": "STAMP_3", "material": "RAW-01", "mode": "POOL",
+     "pool": "TUGGER_A", "hook_pool": "OPS_ZONE_B", "lot": 20, "travel": {"dist": "norm", "mean": 90, "sd": 15}},
+    {"key": "STAMP_1>WIP_BUF", "src": "STAMP_1", "dst": "WIP_BUF", "material": "PART"},
+    {"key": "STAMP_2>WIP_BUF", "src": "STAMP_2", "dst": "WIP_BUF", "material": "PART"},
+    {"key": "STAMP_3>WIP_BUF", "src": "STAMP_3", "dst": "WIP_BUF", "material": "PART"},
+    {"key": "WIP_BUF>ASSY", "src": "WIP_BUF", "dst": "ASSY", "material": "PART", "lot": 2},
+    {"key": "ASSY>QC", "src": "ASSY", "dst": "QC", "material": "SUB"},
+    {"key": "QC>PACKING", "src": "QC", "dst": "PACKING", "material": "SUB_OK"},
+    {"key": "QC>SCRAP", "src": "QC", "dst": "SCRAP", "material": "SUB_NG"},
+    {"key": "PACKING>FG", "src": "PACKING", "dst": "FG", "material": "BOX"},
+    {"key": "FG>SHIP", "src": "FG", "dst": "SHIP", "material": "BOX"}
+  ],
+  "initial_state": {"mode": "WARMUP", "warmup_s": 3600},
+  "injections": [{"target": "STAMP_3", "failure": "bearing_wear", "at_s": 3600}],
+  "outputs": {"raw_reps": [0], "sample_s": 60},
+  "recommend": false
+}
