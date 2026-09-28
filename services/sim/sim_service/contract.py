@@ -133,6 +133,8 @@ def validate_refs(req: RunRequest) -> None:
                 raise ContractError(inj.target, f"unknown failure mode '{inj.failure}'")
         elif inj.duration_s is None:
             raise ContractError(inj.target, "planned_stop needs duration_s")
+    from sim_service.engine import build  # import muộn: engine phụ thuộc contract
+    build(req, 0)  # dựng thử model → mọi lỗi tham số lộ ra ở đây (API trả 422)
 
 
 def apply_overrides(req: RunRequest, overrides: list[dict]) -> RunRequest:

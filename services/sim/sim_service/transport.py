@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import simpy
 
-from sim_service.contract import EdgeSpec, PoolSpec
+from sim_service.contract import ContractError, EdgeSpec, PoolSpec
 from sim_service.dists import make_sampler
 
 
@@ -17,8 +17,11 @@ class Transfer:
         self.src = ctx.nodes[spec.src]
         self.dst = ctx.nodes[spec.dst]
         self.src.out_box(spec.material)
-        self.dst.in_box(spec.material)
-        self.travel = make_sampler(spec.travel, ctx.rng)
+        cap = self.dst.in_box(spec.material).capacity
+        lot = max(spec.lot, self.dst.lot_for(spec.material, spec.lot))
+        if lot > cap:
+            raise ContractError(spec.key, f"lot {lot} exceeds '{spec.dst}' capacity {cap:g}")
+        self.travel = make_sampler(spec.travel, ctx.stream(f"{spec.key}:travel"))
         self.in_transit = 0.0
 
     def workers(self) -> int:
@@ -47,8 +50,9 @@ class Transfer:
             lot = self.dst.lot_for(m, self.spec.lot)
             while not self.dst.wants(m, lot):
                 yield env.timeout(self.spec.poll_s)
-            self.dst.reserve(m, lot)
+            # Lấy hàng trước rồi mới giữ chỗ: worker đang chờ nguồn chậm không chiếm buffer đích.
             yield from self.src.take(m, lot)
+            self.dst.reserve(m, lot)
             self.in_transit += lot
             rec.event(env.now, self.key, "TASK_START", {"qty": lot})
             yield env.timeout(self.travel())
@@ -121,7 +125,7 @@ class Pool:
         self.kind = spec.kind
         self.count = spec.count
         self.res = simpy.Resource(ctx.env, capacity=spec.count)
-        self.service = make_sampler(spec.service, ctx.rng, default=0.0)
+        self.service = make_sampler(spec.service, ctx.stream(f"{spec.key}:service"), default=0.0)
         self.busy_s = 0.0
 
     def add_busy(self, start: float, end: float) -> None:

@@ -3,7 +3,7 @@ from collections import defaultdict
 import simpy
 
 from sim_service.contract import ContractError
-from sim_service.dists import make_sampler
+from sim_service.dists import make_sampler, mean_of
 from sim_service.nodes.base import FlowNode, register
 
 
@@ -13,12 +13,16 @@ class Source(FlowNode):
 
     def __init__(self, ctx, spec):
         super().__init__(ctx, spec)
-        self.lots = [(l["material"], make_sampler(l["qty"], ctx.rng)) for l in self.p.get("lots", [])]
+        self.lots = [(l["material"], make_sampler(l["qty"], ctx.stream(f"{spec.key}:lot:{l['material']}")))
+                     for l in self.p.get("lots", [])]
         self.boxes = {m: simpy.Container(ctx.env) for m, _ in self.lots}
         arr = self.p.get("arrivals", {})
         self.schedule = sorted(float(t) for t in arr.get("schedule_s", []))
-        self.ia = make_sampler(arr["interarrival"], ctx.rng) if "interarrival" in arr else None
+        self.ia = (make_sampler(arr["interarrival"], ctx.stream(f"{spec.key}:arrivals"))
+                   if "interarrival" in arr else None)
         self.arrived: dict[str, float] = defaultdict(float)
+        if "interarrival" in arr and mean_of(arr["interarrival"]) <= 0:
+            raise ContractError(self.key, "interarrival mean must be > 0")
 
     def out_box(self, m):
         if m not in self.boxes:

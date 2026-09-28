@@ -7,6 +7,7 @@ from sim_service.contract import ContractError
 from sim_service.dists import make_sampler
 
 INF = float("inf")
+EFFECT_KINDS = frozenset({"ramp", "exp", "step", "spike", "freeze", "zero"})
 
 
 class Health:
@@ -14,18 +15,26 @@ class Health:
         self.ctx = ctx
         self.owner = owner
         self.env = ctx.env
-        self.is_up = True
+        self.reasons: set[str] = set()
         self._down = self.env.event()
         self._up = self.env.event()
         p = owner.p
-        self.mtbf = make_sampler(p["mtbf"], ctx.rng) if p.get("mtbf") else None
-        self.mttr = make_sampler(p.get("mttr"), ctx.rng, default=0.0)
+        self.mtbf = make_sampler(p["mtbf"], ctx.stream(f"{owner.key}:mtbf")) if p.get("mtbf") else None
+        self.mttr = make_sampler(p.get("mttr"), ctx.stream(f"{owner.key}:mttr"), default=0.0)
         self.modes = {m["code"]: m for m in p.get("failure_modes", [])}
         self.signals = p.get("signals", [])
         self.injections = [i for i in ctx.req.injections if i.target == owner.key]
         self.active: dict | None = None
         self.failed_mode: str | None = None
         self.renewal = 0
+        self.spike_rng = ctx.stream(f"{owner.key}:spike")
+        for s in self.signals:
+            if float(s.get("hz", 1.0)) <= 0:
+                raise ContractError(owner.key, f"signal '{s['name']}' needs hz > 0")
+        for m in self.modes.values():
+            for e in m.get("effects", []):
+                if e.get("kind") not in EFFECT_KINDS:
+                    raise ContractError(owner.key, f"unknown effect kind '{e.get('kind')}'")
 
     # --- lên / xuống -------------------------------------------------------
     def wait_down(self):
@@ -34,23 +43,28 @@ class Health:
     def wait_up(self):
         return self._up
 
-    def go_down(self, reason: str) -> bool:
-        if not self.is_up:
-            return False
-        self.is_up = False
-        self._up = self.env.event()
-        ev, self._down = self._down, self.env.event()
-        ev.succeed(reason)
-        self.ctx.rec.event(self.env.now, self.owner.key, "DOWN", {"reason": reason})
-        self.owner.on_health_change()
-        return True
+    @property
+    def is_up(self) -> bool:
+        return not self.reasons
 
-    def go_up(self) -> None:
-        if self.is_up:
+    def go_down(self, reason: str) -> None:
+        """Đếm lý do dừng: máy chỉ chạy lại khi mọi lý do (RANDOM, PLANNED, failure mode) đã hết."""
+        was_up = self.is_up
+        self.reasons.add(reason)
+        self.ctx.rec.event(self.env.now, self.owner.key, "DOWN", {"reason": reason})
+        if was_up:
+            self._up = self.env.event()
+            ev, self._down = self._down, self.env.event()
+            ev.succeed(reason)
+            self.owner.on_health_change()
+
+    def go_up(self, reason: str) -> None:
+        if reason not in self.reasons:
             return
-        self.is_up = True
-        self._up.succeed()
-        self.owner.on_health_change()
+        self.reasons.discard(reason)
+        if self.is_up:
+            self._up.succeed()
+            self.owner.on_health_change()
 
     # --- tiến trình --------------------------------------------------------
     def start(self) -> None:
@@ -70,15 +84,16 @@ class Health:
     def _random_failures(self):
         while True:
             yield self.env.timeout(self.mtbf())
-            if self.go_down("RANDOM"):
-                yield self.env.timeout(self.mttr())
-                self.go_up()
+            self.go_down("RANDOM")
+            yield self.env.timeout(self.mttr())
+            self.go_up("RANDOM")
 
     def _mode_loop(self, mode: dict, inj):
-        env, rng, rec, key = self.env, self.ctx.rng, self.ctx.rec, self.owner.key
-        onset = make_sampler(mode.get("onset"), rng, default=INF)
-        p_to_f = make_sampler(mode.get("p_to_f"), rng, default=0.0)
-        mttr = make_sampler(mode.get("on_fail", {}).get("mttr"), rng, default=0.0)
+        env, rec, key = self.env, self.ctx.rec, self.owner.key
+        tag = f"{key}:{mode['code']}"
+        onset = make_sampler(mode.get("onset"), self.ctx.stream(f"{tag}:onset"), default=INF)
+        p_to_f = make_sampler(mode.get("p_to_f"), self.ctx.stream(f"{tag}:p_to_f"), default=0.0)
+        mttr = make_sampler(mode.get("on_fail", {}).get("mttr"), self.ctx.stream(f"{tag}:mttr"), default=0.0)
         first = True
         while True:
             gen = self.renewal
@@ -107,18 +122,19 @@ class Health:
             self.active = None
             self.failed_mode = None
             self.renewal += 1
-            self.go_up()
+            self.go_up(mode["code"])
             rec.event(env.now, key, "REPAIRED", {"mode": mode["code"]})
 
     def _planned(self, inj):
         env = self.env
         yield env.timeout(max(0.0, self.ctx.warmup + inj.at_s - env.now))
         self.ctx.rec.event(env.now, self.owner.key, "PLANNED_STOP", {"duration_s": inj.duration_s})
-        if self.go_down("PLANNED"):
-            yield env.timeout(inj.duration_s)
-            self.active = None
-            self.renewal += 1
-            self.go_up()
+        # Bảo trì bắt đầu → làm mới mọi failure mode đang suy giảm (kể cả khi dừng trùm qua F).
+        self.go_down("PLANNED")
+        self.active = None
+        self.renewal += 1
+        yield env.timeout(inj.duration_s)
+        self.go_up("PLANNED")
 
     # --- sensor & nhãn -----------------------------------------------------
     def _effect(self, name: str, now: float, sd: float):
@@ -138,7 +154,7 @@ class Health:
             if kind == "step":
                 return mag
             if kind == "spike":
-                return mag if self.ctx.aux_rng.random() < 0.05 else 0.0
+                return mag if self.spike_rng.random() < 0.05 else 0.0
             if kind == "freeze":
                 return "freeze"
             if kind == "zero":
@@ -148,7 +164,7 @@ class Health:
 
     def _sensor(self, s: dict):
         env, rec = self.env, self.ctx.rec
-        base = make_sampler(s["base"], self.ctx.aux_rng, nonneg=False)
+        base = make_sampler(s["base"], self.ctx.stream(f"{self.owner.key}:sensor:{s['name']}"), nonneg=False)
         sd = float(s["base"].get("sd", 0.0)) if isinstance(s["base"], dict) else 0.0
         period = 1.0 / float(s.get("hz", 1.0))
         last = None

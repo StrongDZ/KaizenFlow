@@ -22,7 +22,8 @@ class Process(FlowNode):
                          for m, q in self.inputs}
         self._out_cap = self.p.get("out_buffer")
         self.out_boxes = {m: simpy.Container(ctx.env) for m, _, _ in self.outputs}
-        self.cycle = make_sampler(self.p.get("cycle"), ctx.rng, default=1.0)
+        self.cycle = make_sampler(self.p.get("cycle"), ctx.stream(f"{spec.key}:cycle"), default=1.0)
+        self.ng_rng = ctx.stream(f"{spec.key}:ng")
         self.slots = int(self.p.get("slots", 1))
         self.ng_rate = float(self.p.get("ng_rate", 0.0))
         self.slot_state = ["STARVED"] * self.slots
@@ -84,7 +85,7 @@ class Process(FlowNode):
                 t0 = env.now
                 yield env.timeout(remaining) | self.health.wait_down()
                 remaining -= env.now - t0
-            ng = self.ng_rate > 0 and self.ctx.rng.random() < self.ng_rate
+            ng = self.ng_rate > 0 and self.ng_rng.random() < self.ng_rate
             port = "NG" if ng else "OK"
             self._count("count_ng" if ng else "count_ok")
             self._set(i, "BLOCKED")

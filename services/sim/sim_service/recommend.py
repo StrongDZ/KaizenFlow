@@ -116,8 +116,8 @@ def rank(req: RunRequest, baseline: list[RepResult], cands: list[Candidate],
         reps = run_many(candidate_request(req, c), workers)
         d_red = b_red - _mean(reps, "red_minutes")
         d_thr = _mean(reps, "throughput") - b_thr
-        if d_red <= 0 and d_thr <= 0:
-            continue
+        if d_red < 0 or (d_red == 0 and d_thr <= 0):
+            continue  # không bao giờ đề xuất hành động làm tăng phút Đỏ
         scored.append({"action": c.action, "overrides": c.overrides,
                        "injections": [i.model_dump() for i in c.injections] if c.injections is not None else None,
                        "delta_kpi": {"red_minutes": d_red, "throughput": d_thr},
