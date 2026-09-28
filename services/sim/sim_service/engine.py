@@ -10,7 +10,7 @@ from sim_service.contract import ContractError, RunRequest
 from sim_service.kpis import rep_kpis
 from sim_service.nodes import ARCHETYPES
 from sim_service.recorder import Recorder
-from sim_service.transport import Transfer
+from sim_service.transport import Pool, Transfer
 
 
 @dataclass
@@ -46,6 +46,8 @@ def build(req: RunRequest, rep: int) -> Ctx:
     rec = Recorder(req.sim_start, record_from=warm, keep_raw=rep in req.outputs.raw_reps)
     ctx = Ctx(env, np.random.default_rng([req.seed, rep]), np.random.default_rng([req.seed, rep, 1]),
               rec, req, warm)
+    for p in req.pools:
+        ctx.pools[p.key] = Pool(ctx, p)
     for n in req.nodes:
         cls = ARCHETYPES.get(n.archetype)
         if cls is None:
