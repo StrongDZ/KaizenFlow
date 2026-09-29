@@ -21,3 +21,13 @@ func doneRun(t *testing.T, st *store.Store, scenarioID int64) int64 {
 	}
 	return rid
 }
+
+// count chạy một câu SELECT count(*) và trả kết quả.
+func count(t *testing.T, st *store.Store, sql string, args ...any) int {
+	t.Helper()
+	var n int
+	if err := st.Pool.QueryRow(ctx, sql, args...).Scan(&n); err != nil {
+		t.Fatalf("%s: %v", sql, err)
+	}
+	return n
+}
