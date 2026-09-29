@@ -35,11 +35,18 @@ func writeErr(w http.ResponseWriter, err error) {
 	var re *store.RefError
 	var ie *resolve.IssueError
 	var ce *simapi.ContractError
+	var le *store.LockedError
+	var im *store.ImpactError
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		writeJSON(w, 404, map[string]string{"error": "not found"})
-	case errors.Is(err, store.ErrNotDraft), errors.Is(err, runs.ErrNotPublished):
+	case errors.Is(err, store.ErrNotDraft), errors.Is(err, runs.ErrNotPublished),
+		errors.Is(err, store.ErrBusy), errors.Is(err, store.ErrChanged):
 		writeJSON(w, 409, map[string]string{"error": err.Error()})
+	case errors.As(err, &le):
+		writeJSON(w, 409, map[string]any{"error": le.Msg, "locked": true, "usage": le.Usage})
+	case errors.As(err, &im):
+		writeJSON(w, 409, map[string]any{"error": "has dependents", "impact": im.Impact})
 	case errors.As(err, &re):
 		writeJSON(w, 422, issues(validate.Issue{Key: re.Key, Message: re.Msg}))
 	case errors.As(err, &ie):
