@@ -9,6 +9,7 @@ import ModelsPage from './pages/ModelsPage'
 import ReportPage from './pages/ReportPage'
 import RunRecommendationsPage from './pages/RunRecommendationsPage'
 import RunSensorsPage from './pages/RunSensorsPage'
+import RunsPage from './pages/RunsPage'
 import ScenarioDetailPage from './pages/ScenarioDetailPage'
 import ScenarioNewPage from './pages/ScenarioNewPage'
 import ScenariosPage from './pages/ScenariosPage'
@@ -36,7 +37,8 @@ export default function App() {
             <Route path="/versions/:id/scenarios" element={<ScenariosPage />} />
             <Route path="/versions/:id/scenarios/new" element={<ScenarioNewPage />} />
             <Route path="/scenarios/:id" element={<ScenarioDetailPage />} />
-            <Route path="/runs" element={<Stub title="Lần chạy" />} />
+            <Route path="/runs" element={<RunsPage scope="all" />} />
+            <Route path="/versions/:id/runs" element={<RunsPage scope="version" />} />
             <Route path="/runs/:id" element={<ControlRoomPage />} />
             <Route path="/runs/:id/sensors" element={<RunSensorsPage />} />
             <Route path="/runs/:id/recommendations" element={<RunRecommendationsPage />} />
