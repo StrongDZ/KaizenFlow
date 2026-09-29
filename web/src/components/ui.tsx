@@ -74,3 +74,52 @@ export function EmptyState({ title, children }: { title: string; children?: Reac
     </div>
   )
 }
+
+export function PageBody({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
+  return <div className={`mx-auto space-y-4 p-6 ${wide ? 'max-w-7xl' : 'max-w-6xl'}`}>{children}</div>
+}
+
+export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <h1 className="text-lg font-semibold text-text">{title}</h1>
+      {subtitle && <span className="text-xs text-muted">{subtitle}</span>}
+      <div className="ml-auto flex items-center gap-2">{actions}</div>
+    </div>
+  )
+}
+
+export function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={active}
+      className={`rounded-full border px-2.5 py-1 text-[11px] ${active ? 'border-text bg-text font-semibold text-bg' : 'border-line-2 text-muted hover:text-text'}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+export function Tag({ children }: { children: ReactNode }) {
+  return <span className="whitespace-nowrap rounded-[5px] border border-line-2 px-1.5 py-px text-[10.5px] text-text-2">{children}</span>
+}
+
+/** Dải thông báo: `lock` cho object bị khoá, `info` cho chỉ dẫn trung tính. */
+export function Notice({ tone = 'info', children }: { tone?: 'lock' | 'info'; children: ReactNode }) {
+  const style = tone === 'lock' ? 'border-lock-line bg-lock-bg text-lock-text' : 'border-line-2 bg-panel-2 text-text-2'
+  return <div role="note" className={`rounded-lg border px-3 py-2 text-xs ${style}`}>{children}</div>
+}
+
+export function SearchBox({ value, onChange, placeholder = 'Tìm theo tên hoặc mã' }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return (
+    <input
+      type="search"
+      aria-label={placeholder}
+      className={`${input} w-56`}
+      placeholder={placeholder}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  )
+}
