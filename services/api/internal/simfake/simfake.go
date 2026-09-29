@@ -19,10 +19,18 @@ type Server struct {
 	polls       map[int64]int
 	ValidateErr *simapi.ContractError
 	FailRuns    bool
+	known       map[int64]bool
+}
+
+// Forget mô phỏng sim-service khởi động lại: run bị quên, GET trả 404.
+func (s *Server) Forget(id int64) {
+	s.mu.Lock()
+	delete(s.known, id)
+	s.mu.Unlock()
 }
 
 func New() *Server {
-	s := &Server{polls: map[int64]int{}}
+	s := &Server{polls: map[int64]int{}, known: map[int64]bool{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /validate", s.validate)
 	mux.HandleFunc("POST /runs", s.start)
@@ -67,6 +75,7 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	s.requests = append(s.requests, req)
+	s.known[req.RunID] = true
 	s.mu.Unlock()
 	writeJSON(w, 202, map[string]any{"run_id": req.RunID, "status": "RUNNING"})
 }
@@ -75,9 +84,11 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	s.mu.Lock()
 	s.polls[id]++
-	n, fail := s.polls[id], s.FailRuns
+	n, fail, known := s.polls[id], s.FailRuns, s.known[id]
 	s.mu.Unlock()
 	switch {
+	case !known:
+		writeJSON(w, 404, map[string]string{"detail": "run not found"})
 	case fail:
 		writeJSON(w, 200, simapi.Status{RunID: id, Status: "FAILED", Error: "boom"})
 	case n < 2:

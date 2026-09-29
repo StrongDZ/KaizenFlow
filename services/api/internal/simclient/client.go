@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,9 @@ import (
 
 	"github.com/kaizenflow/api/internal/simapi"
 )
+
+// ErrNotFound: sim-service không biết run này (thường do sim-service đã khởi động lại).
+var ErrNotFound = errors.New("sim-service does not know this run")
 
 type Client struct {
 	BaseURL string
@@ -63,6 +67,9 @@ func (c *Client) expect(resp *http.Response, want int) ([]byte, error) {
 	}
 	if resp.StatusCode == http.StatusUnprocessableEntity {
 		return nil, contractError(b)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
 	}
 	if resp.StatusCode != want {
 		return nil, fmt.Errorf("sim-service %s: %d %s", resp.Request.URL.Path, resp.StatusCode, string(b))

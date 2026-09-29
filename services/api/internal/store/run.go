@@ -99,6 +99,15 @@ func (s *Store) GetRun(ctx context.Context, id int64) (*Run, error) {
 	return &run, nil
 }
 
+// ListActiveRuns trả các run chưa kết thúc (QUEUED/RUNNING) — dùng khi API khởi động lại.
+func (s *Store) ListActiveRuns(ctx context.Context) ([]Run, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+runCols+` FROM sim_run WHERE status IN ('QUEUED', 'RUNNING') ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Run, error) { return scanRun(r) })
+}
+
 func (s *Store) ListRuns(ctx context.Context, scenarioID int64) ([]Run, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT `+runCols+` FROM sim_run WHERE scenario_id = $1 ORDER BY id DESC`, scenarioID)
 	if err != nil {

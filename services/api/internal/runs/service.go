@@ -78,13 +78,17 @@ func (s *Service) notify(id int64, status string) {
 	}
 }
 
+// maxPollErrors: số lần liên tiếp không hỏi được trạng thái trước khi coi run là FAILED.
+const maxPollErrors = 30
+
+func (s *Service) fail(runID int64, msg string) {
+	_ = s.Store.SetRunStatus(context.Background(), runID, "FAILED", &msg)
+	s.notify(runID, "FAILED")
+}
+
 func (s *Service) drive(runID int64, req *simapi.RunRequest, timeout time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	fail := func(msg string) {
-		_ = s.Store.SetRunStatus(context.Background(), runID, "FAILED", &msg)
-		s.notify(runID, "FAILED")
-	}
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {
 		if err = s.Sim.StartRun(ctx, req); err == nil {
@@ -100,42 +104,74 @@ func (s *Service) drive(runID int64, req *simapi.RunRequest, timeout time.Durati
 		}
 	}
 	if err != nil {
-		fail("sim-service: " + err.Error())
+		s.fail(runID, "sim-service: "+err.Error())
 		return
 	}
 	_ = s.Store.SetRunStatus(ctx, runID, "RUNNING", nil)
 	s.notify(runID, "RUNNING")
+	s.watch(ctx, runID)
+}
+
+// watch poll sim-service đến khi run xong, thất bại, bị mất hoặc hết giờ.
+func (s *Service) watch(ctx context.Context, runID int64) {
 	tick := time.NewTicker(s.poll())
 	defer tick.Stop()
+	errs := 0
 	for {
 		select {
 		case <-ctx.Done():
-			fail("timeout")
+			s.fail(runID, "timeout")
 			return
 		case <-tick.C:
 			st, err := s.Sim.Status(ctx, runID)
+			if errors.Is(err, simclient.ErrNotFound) {
+				s.fail(runID, "sim-service lost this run (restarted?) — run again")
+				return
+			}
 			if err != nil {
+				if errs++; errs >= maxPollErrors {
+					s.fail(runID, "sim-service unreachable: "+err.Error())
+					return
+				}
 				continue
 			}
+			errs = 0
 			switch st.Status {
 			case "DONE":
 				res, err := s.Sim.Result(ctx, runID)
 				if err != nil {
-					fail("fetch result: " + err.Error())
+					s.fail(runID, "fetch result: "+err.Error())
 					return
 				}
 				if err := s.Store.SaveResult(context.Background(), runID, res); err != nil {
-					fail("save result: " + err.Error())
+					s.fail(runID, "save result: "+err.Error())
 					return
 				}
 				s.notify(runID, "DONE")
 				return
 			case "FAILED":
-				fail(st.Error)
+				s.fail(runID, st.Error)
 				return
 			}
 		}
 	}
+}
+
+// Recover theo dõi lại các run chưa kết thúc sau khi API khởi động lại.
+// Run mà sim-service không còn biết sẽ bị đánh dấu FAILED.
+func (s *Service) Recover(ctx context.Context) error {
+	active, err := s.Store.ListActiveRuns(ctx)
+	if err != nil {
+		return err
+	}
+	for _, r := range active {
+		go func(id int64) {
+			wctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+			defer cancel()
+			s.watch(wctx, id)
+		}(r.ID)
+	}
+	return nil
 }
 
 func toMaps(v any) []map[string]any {

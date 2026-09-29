@@ -41,8 +41,11 @@ func main() {
 	st := store.New(pool)
 	sim := simclient.New(env("KF_SIM_URL", "http://localhost:8081"))
 	hub := ws.NewHub()
-	h := httpapi.New(httpapi.Deps{Store: st, Sim: sim, Hub: hub, Validator: validate.New(),
-		Runs: &runs.Service{Store: st, Sim: sim, Hub: hub, Poll: time.Second}})
+	svc := &runs.Service{Store: st, Sim: sim, Hub: hub, Poll: time.Second}
+	if err := svc.Recover(ctx); err != nil {
+		log.Printf("recover runs: %v", err)
+	}
+	h := httpapi.New(httpapi.Deps{Store: st, Sim: sim, Hub: hub, Validator: validate.New(), Runs: svc})
 	addr := env("KF_ADDR", ":8080")
 	log.Printf("KaizenFlow API listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, h))

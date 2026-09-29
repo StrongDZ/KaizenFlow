@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kaizenflow/api/internal/runs"
+	"github.com/kaizenflow/api/internal/simapi"
 	"github.com/kaizenflow/api/internal/simclient"
 	"github.com/kaizenflow/api/internal/simfake"
 	"github.com/kaizenflow/api/internal/store"
@@ -125,5 +126,38 @@ func TestApplyCreatesChildScenarioWithParentSeed(t *testing.T) {
 	sc, _ := st.GetScenario(ctx, run.ScenarioID)
 	if sc.Origin != "RECOMMENDER" || *sc.ParentID != sid || sc.Action["type"] != "FLEET_SIZE" {
 		t.Fatalf("child scenario = %+v", sc)
+	}
+}
+
+func TestSimLosingRunFailsFast(t *testing.T) {
+	svc, fake, st, sid := setup(t, "runs_lost", true)
+	svc.Poll = 50 * time.Millisecond
+	id, _ := svc.Start(ctx, sid, time.Now())
+	for len(fake.Requests()) == 0 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	fake.Forget(id)
+	if run := waitStatus(t, st, id, "FAILED"); !strings.Contains(*run.Error, "lost") {
+		t.Fatalf("error = %v", *run.Error)
+	}
+}
+
+func TestRecoverResumesOrFailsActiveRuns(t *testing.T) {
+	svc, fake, st, sid := setup(t, "runs_recover", true)
+	// run A: sim-service vẫn biết run → tiếp tục poll đến DONE
+	a, _ := st.InsertRun(ctx, sid, time.Now(), "FORECAST")
+	_ = st.SetRunStatus(ctx, a, "RUNNING", nil)
+	if err := svc.Sim.StartRun(ctx, &simapi.RunRequest{RunID: a}); err != nil {
+		t.Fatal(err)
+	}
+	// run B: sim-service không biết (đã restart) → FAILED
+	b, _ := st.InsertRun(ctx, sid, time.Now(), "FORECAST")
+	_ = fake // run B never reaches the fake
+	if err := svc.Recover(ctx); err != nil {
+		t.Fatal(err)
+	}
+	waitStatus(t, st, a, "DONE")
+	if run := waitStatus(t, st, b, "FAILED"); !strings.Contains(*run.Error, "lost") {
+		t.Fatalf("error = %v", *run.Error)
 	}
 }
