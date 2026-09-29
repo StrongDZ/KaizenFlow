@@ -31,3 +31,21 @@ func TestRunsListEndpoint(t *testing.T) {
 		t.Fatalf("active: %d rows", n)
 	}
 }
+
+func TestInsightsListEndpoint(t *testing.T) {
+	a := newAPI(t)
+	vid := a.publishedModel("denso-mini")
+	a.doneRun(vid, "Ca sáng")
+
+	items := a.call("GET", "/api/insights?kind=RED_RISK", nil, 200)["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("items = %v", items)
+	}
+	row := items[0].(map[string]any)
+	if row["kind"] != "RED_RISK" || row["model_key"] != "denso-mini" || row["scenario_name"] != "Ca sáng" || row["subject_key"] != "S" {
+		t.Fatalf("row = %v", row)
+	}
+	if n := len(a.call("GET", "/api/insights?limit=abc", nil, 200)["items"].([]any)); n != 2 {
+		t.Fatalf("all insights = %d", n)
+	}
+}

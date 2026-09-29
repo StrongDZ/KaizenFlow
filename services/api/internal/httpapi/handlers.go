@@ -458,3 +458,13 @@ func (h *handlers) listAllRuns(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, list)
 }
+
+func (h *handlers) listInsights(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	list, err := h.Store.ListInsightRows(r.Context(), q.Get("kind"), q.Get("status"), int(queryInt(q.Get("limit"))))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, list)
+}

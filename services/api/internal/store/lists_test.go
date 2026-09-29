@@ -58,3 +58,29 @@ func TestListRunRowsFiltersAndPages(t *testing.T) {
 		}
 	}
 }
+
+func TestListInsightRowsOnlyFromDoneRuns(t *testing.T) {
+	st := testfix.Seeded(t, "store_insightrows")
+	vid := seededVersion(t, st, "ins")
+	sid, _ := st.CreateScenario(ctx, store.Scenario{ModelVersionID: vid, Name: "Ca sáng", HorizonS: 3600})
+	doneRun(t, st, sid)
+	if _, err := st.InsertRun(ctx, sid, time.Now(), "FORECAST"); err != nil { // QUEUED, không có insight
+		t.Fatal(err)
+	}
+
+	all, err := st.ListInsightRows(ctx, "", "", 0)
+	if err != nil || len(all) != 2 {
+		t.Fatalf("all = %v %v", all, err)
+	}
+	red, _ := st.ListInsightRows(ctx, "RED_RISK", "", 10)
+	if len(red) != 1 || red[0].ModelKey != "ins" || red[0].Version != 1 || red[0].ScenarioName != "Ca sáng" ||
+		red[0].Probability == nil || *red[0].Probability != 0.5 || red[0].SubjectKey == nil || *red[0].SubjectKey != "S" {
+		t.Fatalf("red = %+v", red)
+	}
+	if one, _ := st.ListInsightRows(ctx, "", "", 1); len(one) != 1 {
+		t.Fatalf("limit = %v", one)
+	}
+	if none, _ := st.ListInsightRows(ctx, "", "ACK", 10); len(none) != 0 {
+		t.Fatalf("ack = %v", none)
+	}
+}

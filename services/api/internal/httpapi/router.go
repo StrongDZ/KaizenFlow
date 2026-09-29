@@ -62,6 +62,7 @@ func New(d Deps) http.Handler {
 	r.Get("/api/runs/{id}/signals", h.signals)
 	r.Get("/api/runs/{id}/export.csv", h.exportCSV)
 	r.Post("/api/insights/{id}/apply", h.apply)
+	r.Get("/api/insights", h.listInsights)
 	r.Handle("/ws", d.Hub)
 	return r
 }

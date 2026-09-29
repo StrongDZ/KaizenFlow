@@ -171,11 +171,7 @@ func (s *Store) SaveResult(ctx context.Context, runID int64, res *simapi.Result)
 
 const insightCols = `id, sim_run_id, kind, subject_key, eta, probability, severity, payload, status, created_at`
 
-func scanInsight(r pgx.Row) (Insight, error) {
-	var in Insight
-	var prob *float32
-	var sev *int16
-	err := r.Scan(&in.ID, &in.SimRunID, &in.Kind, &in.SubjectKey, &in.ETA, &prob, &sev, &in.Payload, &in.Status, &in.CreatedAt)
+func fillInsight(in *Insight, prob *float32, sev *int16) {
 	if prob != nil {
 		p := float64(*prob)
 		in.Probability = &p
@@ -184,6 +180,14 @@ func scanInsight(r pgx.Row) (Insight, error) {
 		v := int(*sev)
 		in.Severity = &v
 	}
+}
+
+func scanInsight(r pgx.Row) (Insight, error) {
+	var in Insight
+	var prob *float32
+	var sev *int16
+	err := r.Scan(&in.ID, &in.SimRunID, &in.Kind, &in.SubjectKey, &in.ETA, &prob, &sev, &in.Payload, &in.Status, &in.CreatedAt)
+	fillInsight(&in, prob, sev)
 	return in, err
 }
 
@@ -305,6 +309,41 @@ func (s *Store) ListRunRows(ctx context.Context, f RunFilter) ([]RunRow, error) 
 		var x RunRow
 		err := r.Scan(&x.ID, &x.ScenarioID, &x.ScenarioName, &x.ModelKey, &x.VersionID, &x.Version, &x.Status, &x.Purpose,
 			&x.SimStart, &x.CreatedAt, &x.FinishedAt, &x.RedMinutesP50, &x.Error)
+		return x, err
+	})
+}
+
+// InsightRow là insight kèm mô hình, version, scenario của run tạo ra nó.
+type InsightRow struct {
+	Insight
+	ModelKey     string `json:"model_key"`
+	Version      int    `json:"version"`
+	ScenarioName string `json:"scenario_name"`
+}
+
+func (s *Store) ListInsightRows(ctx context.Context, kind, status string, limit int) ([]InsightRow, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT i.id, i.sim_run_id, i.kind, i.subject_key, i.eta, i.probability, i.severity,
+		i.payload, i.status, i.created_at, v.model_key, v.version, coalesce(s.name, '')
+		FROM insight i JOIN sim_run r ON r.id = i.sim_run_id JOIN scenario s ON s.id = r.scenario_id
+		JOIN model_version v ON v.id = s.model_version_id
+		WHERE r.status = 'DONE' AND ($1::text = '' OR i.kind = $1::text) AND ($2::text = '' OR i.status = $2::text)
+		ORDER BY i.created_at DESC, i.id DESC LIMIT $3`, kind, status, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (InsightRow, error) {
+		var x InsightRow
+		var prob *float32
+		var sev *int16
+		err := r.Scan(&x.ID, &x.SimRunID, &x.Kind, &x.SubjectKey, &x.ETA, &prob, &sev, &x.Payload, &x.Status,
+			&x.CreatedAt, &x.ModelKey, &x.Version, &x.ScenarioName)
+		fillInsight(&x.Insight, prob, sev)
 		return x, err
 	})
 }
