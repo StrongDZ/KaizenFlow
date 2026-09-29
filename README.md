@@ -12,6 +12,14 @@ cd web && cp .env.example .env && npm install && npm run dev   # http://localhos
 
 Test: `cd services/sim && pytest` · `cd services/api && go test ./...` (cần `docker compose up -d db`) · `cd web && npx vitest run`.
 
+### Giao diện web (dev)
+
+- `cd web && npm install && npm run dev` (mặc định `http://localhost:5173`, API ở `VITE_API_URL`).
+- Theme tối là mặc định; trang Báo cáo và bản in dùng theme sáng (`data-theme="light"`).
+- Nếu trang hiện chữ trần không có style (Tailwind không sinh class do cache Vite lỗi thời): dừng `npm run dev`, xoá `web/node_modules/.vite`, chạy lại.
+- Phím tắt ở Control Room: `←` `→` bước 1 mốc, `Shift`+`←` `→` bước 10 mốc, `Space` phát/dừng, `Home` `End`, `F` chế độ tập trung, `Esc` thoát.
+- Font IBM Plex Sans được tự host (`web/src/fonts.css`, chỉ hai subset latin và vietnamese) nên demo không cần mạng.
+
 ## Kiến trúc
 
 | Thành phần | Công nghệ | Vai trò |

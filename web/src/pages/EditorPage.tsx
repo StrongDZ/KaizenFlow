@@ -183,7 +183,8 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
         nodesDraggable={!readOnly} nodesConnectable={!readOnly}
         onNodeClick={(_, n) => setSelected({ kind: 'node', id: n.id })}
         onEdgeClick={(_, e) => setSelected({ kind: 'edge', id: e.id })}
-        onPaneClick={() => setSelected(null)} fitView
+        onPaneClick={() => setSelected(null)}
+        fitView fitViewOptions={{ padding: { top: '24px', right: '24px', bottom: '64px', left: '252px' } }}
       >
         <Background gap={18} size={1} color="var(--color-line)" />
         <Controls position="bottom-center" />

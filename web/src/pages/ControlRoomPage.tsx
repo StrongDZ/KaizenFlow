@@ -164,7 +164,8 @@ function Room({ run, scenario, graph, types, rows }: {
 
       <ReactFlow
         nodes={nodes} edges={edges} nodeTypes={kfNodeTypes} nodesConnectable={false} nodesDraggable={false}
-        colorMode="dark" fitView fitViewOptions={{ padding: 0.3 }} onPaneClick={() => setOpenPin(null)}
+        colorMode="dark" fitView fitViewOptions={{ padding: { top: '56px', right: '280px', bottom: '96px', left: '24px' } }}
+        onPaneClick={() => setOpenPin(null)}
       >
         <Background gap={18} size={1} color="var(--color-line)" />
         <Controls showInteractive={false} position="bottom-left" style={{ marginBottom: 82 }} />
