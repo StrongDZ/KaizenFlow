@@ -7,6 +7,8 @@ import ControlRoomPage from './pages/ControlRoomPage'
 import EditorPage from './pages/EditorPage'
 import ModelsPage from './pages/ModelsPage'
 import ReportPage from './pages/ReportPage'
+import RunRecommendationsPage from './pages/RunRecommendationsPage'
+import RunSensorsPage from './pages/RunSensorsPage'
 import ScenariosPage from './pages/ScenariosPage'
 import Stub from './pages/Stub'
 
@@ -30,8 +32,8 @@ export default function App() {
             <Route path="/versions/:id/scenarios" element={<ScenariosPage />} />
             <Route path="/runs" element={<Stub title="Lần chạy" />} />
             <Route path="/runs/:id" element={<ControlRoomPage />} />
-            <Route path="/runs/:id/sensors" element={<Stub title="Cảm biến" />} />
-            <Route path="/runs/:id/recommendations" element={<Stub title="Đề xuất" />} />
+            <Route path="/runs/:id/sensors" element={<RunSensorsPage />} />
+            <Route path="/runs/:id/recommendations" element={<RunRecommendationsPage />} />
             <Route path="/runs/:id/report" element={<ReportPage />} />
             <Route path="/compare" element={<ComparePage />} />
             <Route path="/library/*" element={<Stub title="Thư viện" />} />
