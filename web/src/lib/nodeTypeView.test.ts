@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NodeType } from '../api/types'
-import { describeDist, failureModeRows, fmtSeconds, isAssumed, paramGroups, recipeOf, signalDefRows } from './nodeTypeView'
+import { describeDist, failureModeRows, fmtSeconds, formSchema, isAssumed, paramGroups, recipeOf, signalDefRows } from './nodeTypeView'
 
 const stamp = {
   archetype: 'PROCESS',
@@ -93,5 +93,21 @@ describe('failure modes and signals', () => {
   it('summarises sensor definitions', () => {
     expect(signalDefRows(stamp)).toEqual([{ name: 'vibration', unit: 'mm/s', rate: '0,2 Hz', base: 'chuẩn, trung bình 0,42 mm/s, độ lệch 0,08' }])
     expect(signalDefRows({ signals: [{ name: 'x' }] } as unknown as NodeType)).toEqual([{ name: 'x', unit: '', rate: '—', base: '—' }])
+  })
+})
+
+describe('junk tolerance and form schema', () => {
+  it('recipeOf drops non-object lines instead of crashing on stored junk', () => {
+    const r = recipeOf({ default_params: { recipes: [{ inputs: [], outputs: [null, { material: 'B', qty: 1, port: 'OK' }] }] } } as unknown as NodeType)
+    expect(r?.outputs).toEqual([{ material: 'B', qty: 1, port: 'OK' }])
+    expect(recipeOf({ default_params: { recipes: [{ inputs: [null], outputs: [null] }] } } as unknown as NodeType)).toEqual({ inputs: [], outputs: [] })
+    expect(recipeOf({ default_params: { recipes: [null] } } as unknown as NodeType)).toBeNull()
+  })
+  it('formSchema drops only the top-level required list, like the server does for default params', () => {
+    const schema = { type: 'object', required: ['recipes'], properties: { recipes: { type: 'array', items: { type: 'object', required: ['inputs'] } } } }
+    const out = formSchema(schema)
+    expect(out.required).toBeUndefined()
+    expect((out.properties as Record<string, { items: { required: string[] } }>).recipes.items.required).toEqual(['inputs'])
+    expect(schema.required).toEqual(['recipes'])
   })
 })

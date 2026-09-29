@@ -120,9 +120,21 @@ export const isAssumed = (t: Pick<NodeType, 'default_params'>): boolean => t.def
 export type RecipeLine = { material: string; qty: number }
 export type Recipe = { inputs: RecipeLine[]; outputs: (RecipeLine & { port: 'OK' | 'NG' })[] }
 
+const isLine = (l: unknown): l is RecipeLine => !!l && typeof l === 'object' && typeof (l as Record<string, unknown>).material === 'string'
+const lines = (v: unknown): RecipeLine[] => (Array.isArray(v) ? v.filter(isLine) : [])
+
+/** Bỏ qua dòng hỏng (null...) đã lỡ lưu, để một bản ghi xấu không làm trắng cả trang. */
 export function recipeOf(t: Pick<NodeType, 'default_params'>): Recipe | null {
-  const first = (t.default_params?.recipes as Recipe[] | undefined)?.[0]
-  return first ? { inputs: first.inputs ?? [], outputs: first.outputs ?? [] } : null
+  const first = (t.default_params?.recipes as Record<string, unknown>[] | undefined)?.[0]
+  if (!first || typeof first !== 'object') return null
+  return { inputs: lines(first.inputs), outputs: lines(first.outputs) as Recipe['outputs'] }
+}
+
+/** Form tham số mặc định không bắt buộc khoá cấp cao nhất (giống server), nếu không rjsf tự chèn recipes rỗng. */
+export function formSchema(schema: Json): Json {
+  const out = { ...schema }
+  delete out.required
+  return out
 }
 
 export type FailureRow = { code: string; onset: string; pf: string; repair: string; effects: string[] }

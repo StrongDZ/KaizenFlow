@@ -2,10 +2,15 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { useLiveRuns } from './api/live'
 import { Shell } from './components/shell/Shell'
+import { shouldRetry } from './lib/retry'
 import ComparePage from './pages/ComparePage'
 import ControlRoomPage from './pages/ControlRoomPage'
 import EditorPage from './pages/EditorPage'
+import LibraryLayout from './pages/LibraryLayout'
 import ModelsPage from './pages/ModelsPage'
+import NodeTypeDetailPage from './pages/NodeTypeDetailPage'
+import NodeTypeNewPage from './pages/NodeTypeNewPage'
+import NodeTypesPage from './pages/NodeTypesPage'
 import ReportPage from './pages/ReportPage'
 import RunRecommendationsPage from './pages/RunRecommendationsPage'
 import RunSensorsPage from './pages/RunSensorsPage'
@@ -13,10 +18,9 @@ import RunsPage from './pages/RunsPage'
 import ScenarioDetailPage from './pages/ScenarioDetailPage'
 import ScenarioNewPage from './pages/ScenarioNewPage'
 import ScenariosPage from './pages/ScenariosPage'
-import Stub from './pages/Stub'
 import VersionsPage from './pages/VersionsPage'
 
-const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } })
+const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false, retry: shouldRetry } } })
 
 function Live() {
   useLiveRuns()
@@ -44,7 +48,12 @@ export default function App() {
             <Route path="/runs/:id/recommendations" element={<RunRecommendationsPage />} />
             <Route path="/runs/:id/report" element={<ReportPage />} />
             <Route path="/compare" element={<ComparePage />} />
-            <Route path="/library/*" element={<Stub title="Thư viện" />} />
+            <Route path="/library" element={<LibraryLayout />}>
+              <Route index element={<Navigate to="node-types" replace />} />
+              <Route path="node-types" element={<NodeTypesPage />} />
+              <Route path="node-types/new" element={<NodeTypeNewPage />} />
+              <Route path="node-types/:code" element={<NodeTypeDetailPage />} />
+            </Route>
           </Route>
         </Routes>
       </BrowserRouter>
