@@ -1,7 +1,9 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
+import { DeleteAction } from '../components/DeleteAction'
+import { MaterialInfoForm } from '../components/library/MaterialInfoForm'
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, Tag } from '../components/ui'
 import { materialRules } from '../lib/rules'
 
@@ -9,6 +11,8 @@ const TABS = ['Đang dùng ở'] as const
 
 export default function MaterialDetailPage() {
   const code = useParams().code ?? ''
+  const navigate = useNavigate()
+  const qc = useQueryClient()
   const m = useQuery({ queryKey: ['material', code], queryFn: () => api.material(code) })
   const [tab, setTab] = useState<(typeof TABS)[number]>('Đang dùng ở')
   if (m.error) return <PageBody><Link className="text-xs text-muted hover:text-text" to="/library/materials">Danh sách vật tư</Link><ErrorBox error={m.error} /></PageBody>
@@ -20,15 +24,22 @@ export default function MaterialDetailPage() {
   return (
     <PageBody>
       <Link className="text-xs text-muted hover:text-text" to="/library/materials">‹ Danh sách vật tư</Link>
-      <PageHeader title={d.name || d.code} subtitle={<Tag>{d.code}</Tag>} />
+      <PageHeader
+        title={d.name || d.code}
+        subtitle={<Tag>{d.code}</Tag>}
+        actions={rules.canDelete ? (
+          <DeleteAction
+            what={`vật tư ${d.code}`}
+            run={() => api.deleteMaterial(d.code)}
+            onDone={() => {
+              void qc.invalidateQueries({ queryKey: ['materials'] })
+              navigate('/library/materials')
+            }}
+          />
+        ) : undefined}
+      />
       {rules.banner && <Notice tone="lock">{rules.banner}</Notice>}
-      <Card title="Thông tin">
-        <div className="grid grid-cols-3 gap-4 text-xs">
-          <div><div className="text-muted">Tên</div><div className="font-medium text-text">{d.name || '—'}</div></div>
-          <div><div className="text-muted">Mã (không đổi được)</div><div className="font-medium text-text">{d.code}</div></div>
-          <div><div className="text-muted">Đơn vị</div><div className="font-medium text-text">{d.unit}</div></div>
-        </div>
-      </Card>
+      <MaterialInfoForm key={d.code} d={d} canEditUnit={rules.canEditUnit} />
       <div role="tablist" className="flex gap-5 border-b border-line">
         {TABS.map((name) => (
           <button key={name} role="tab" aria-selected={tab === name} onClick={() => setTab(name)}
