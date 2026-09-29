@@ -248,3 +248,63 @@ func (s *Store) Signals(ctx context.Context, runID int64, subject, name string) 
 		return sg, err
 	})
 }
+
+// RunRow là một dòng bảng Lần chạy: run kèm scenario, mô hình và phút Đỏ p50 (nil khi chưa xong).
+type RunRow struct {
+	ID            int64      `json:"id"`
+	ScenarioID    int64      `json:"scenario_id"`
+	ScenarioName  string     `json:"scenario_name"`
+	ModelKey      string     `json:"model_key"`
+	VersionID     int64      `json:"version_id"`
+	Version       int        `json:"version"`
+	Status        string     `json:"status"`
+	Purpose       string     `json:"purpose"`
+	SimStart      time.Time  `json:"sim_start"`
+	CreatedAt     time.Time  `json:"created_at"`
+	FinishedAt    *time.Time `json:"finished_at"`
+	RedMinutesP50 *float64   `json:"red_minutes_p50"`
+	Error         *string    `json:"error"`
+}
+
+type RunFilter struct {
+	Statuses  []string
+	Model     string
+	VersionID int64
+	Limit     int
+	Offset    int
+}
+
+const (
+	defaultRunLimit = 50
+	maxRunLimit     = 200
+)
+
+func (s *Store) ListRunRows(ctx context.Context, f RunFilter) ([]RunRow, error) {
+	if f.Limit <= 0 {
+		f.Limit = defaultRunLimit
+	}
+	if f.Limit > maxRunLimit {
+		f.Limit = maxRunLimit
+	}
+	if f.Offset < 0 {
+		f.Offset = 0
+	}
+	if f.Statuses == nil {
+		f.Statuses = []string{}
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT r.id, r.scenario_id, coalesce(s.name, ''), v.model_key, v.id, v.version, r.status,
+		r.purpose, r.sim_start, r.created_at, r.finished_at, (r.kpis -> 'red_minutes' ->> 'p50')::float8, r.error
+		FROM sim_run r JOIN scenario s ON s.id = r.scenario_id JOIN model_version v ON v.id = s.model_version_id
+		WHERE (cardinality($1::text[]) = 0 OR r.status = ANY($1::text[]))
+		  AND ($2::text = '' OR v.model_key = $2::text) AND ($3::bigint = 0 OR v.id = $3::bigint)
+		ORDER BY r.id DESC LIMIT $4 OFFSET $5`, f.Statuses, f.Model, f.VersionID, f.Limit, f.Offset)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (RunRow, error) {
+		var x RunRow
+		err := r.Scan(&x.ID, &x.ScenarioID, &x.ScenarioName, &x.ModelKey, &x.VersionID, &x.Version, &x.Status, &x.Purpose,
+			&x.SimStart, &x.CreatedAt, &x.FinishedAt, &x.RedMinutesP50, &x.Error)
+		return x, err
+	})
+}

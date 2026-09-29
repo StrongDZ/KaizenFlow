@@ -55,6 +55,7 @@ func New(d Deps) http.Handler {
 	r.Get("/api/scenarios/{id}", h.getScenario)
 	r.Post("/api/scenarios/{id}/runs", h.startRun)
 	r.Get("/api/scenarios/{id}/runs", h.listRuns)
+	r.Get("/api/runs", h.listAllRuns)
 	r.Get("/api/runs/{id}", h.getRun)
 	r.Get("/api/runs/{id}/bands", h.bands)
 	r.Get("/api/runs/{id}/events", h.events)

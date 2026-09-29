@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -431,4 +432,29 @@ func (h *handlers) apply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 202, map[string]int64{"run_id": runID})
+}
+
+// queryInt đọc số nguyên từ query string; lỗi hoặc rỗng thì 0 (bị bỏ qua).
+func queryInt(s string) int64 {
+	n, _ := strconv.ParseInt(s, 10, 64)
+	return n
+}
+
+func (h *handlers) listAllRuns(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	f := store.RunFilter{
+		Model:     q.Get("model"),
+		VersionID: queryInt(q.Get("version")),
+		Limit:     int(queryInt(q.Get("limit"))),
+		Offset:    int(queryInt(q.Get("offset"))),
+	}
+	if s := q.Get("status"); s != "" {
+		f.Statuses = strings.Split(s, ",")
+	}
+	list, err := h.Store.ListRunRows(r.Context(), f)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, list)
 }
