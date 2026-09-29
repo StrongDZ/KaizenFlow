@@ -1,12 +1,17 @@
 import type { ReactNode } from 'react'
 import { ApiError } from '../api/client'
 import type { Issue, RunStatus } from '../api/types'
+import { statusLabel } from '../lib/format'
 
-export const btn = 'rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-slate-100 disabled:opacity-50'
-export const btnPrimary = 'rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50'
+export const btn =
+  'inline-flex items-center gap-1.5 rounded-lg border border-line-2 px-3 py-1.5 text-xs font-medium text-text-2 hover:bg-panel hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
+export const btnPrimary =
+  'inline-flex items-center gap-1.5 rounded-lg bg-text px-3 py-1.5 text-xs font-semibold text-bg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50'
+export const input =
+  'rounded-lg border border-line-2 bg-panel-2 px-2.5 py-1.5 text-xs text-text placeholder:text-faint'
 
 export function Loading() {
-  return <div className="p-6 text-sm text-slate-500">Đang tải…</div>
+  return <div className="p-6 text-xs text-muted">Đang tải…</div>
 }
 
 export function issuesOf(e: unknown): Issue[] {
@@ -18,7 +23,7 @@ export function ErrorBox({ error }: { error: unknown }) {
   const msg = error instanceof Error ? error.message : String(error)
   const issues = issuesOf(error)
   return (
-    <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+    <div role="alert" className="rounded-lg border border-bad/50 bg-bad-bg p-3 text-xs text-bad-text">
       <div className="font-medium">{msg}</div>
       {issues.length > 0 && (
         <ul className="mt-1 list-disc pl-5">
@@ -33,35 +38,39 @@ export function ErrorBox({ error }: { error: unknown }) {
   )
 }
 
-export function KpiTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="text-2xl font-semibold">{value}</div>
-      {hint && <div className="text-xs text-slate-400">{hint}</div>}
-    </div>
-  )
-}
-
-const STATUS: Record<RunStatus, string> = {
-  QUEUED: 'bg-slate-200 text-slate-700',
-  RUNNING: 'bg-blue-100 text-blue-700',
-  DONE: 'bg-green-100 text-green-700',
-  FAILED: 'bg-red-100 text-red-700',
+const DOT: Record<RunStatus, string> = {
+  QUEUED: 'bg-faint',
+  RUNNING: 'bg-text animate-pulse',
+  DONE: 'bg-ok',
+  FAILED: 'bg-bad',
 }
 
 export function StatusChip({ status }: { status: RunStatus }) {
-  return <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS[status]}`}>{status}</span>
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-md border border-line-2 px-2 py-0.5 text-[11px] text-text-2">
+      <i className={`h-1.5 w-1.5 rounded-full ${DOT[status]}`} />
+      {statusLabel(status)}
+    </span>
+  )
 }
 
 export function Card({ title, children, actions }: { title: string; children: ReactNode; actions?: ReactNode }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white">
-      <header className="flex items-center justify-between border-b border-slate-100 px-4 py-2">
-        <h2 className="text-sm font-semibold">{title}</h2>
+    <section className="rounded-xl border border-line bg-panel">
+      <header className="flex items-center justify-between border-b border-line px-4 py-2">
+        <h2 className="text-xs font-semibold text-text">{title}</h2>
         {actions}
       </header>
       <div className="p-4">{children}</div>
     </section>
+  )
+}
+
+export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
+  return (
+    <div className="flex h-full min-h-60 flex-col items-center justify-center gap-1 p-8 text-center">
+      <div className="text-sm font-semibold text-text">{title}</div>
+      {children && <div className="max-w-md text-xs text-muted">{children}</div>}
+    </div>
   )
 }
