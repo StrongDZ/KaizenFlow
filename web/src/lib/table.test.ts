@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { comparePath, filterRows, nextSort, norm, sortRows, toggleCompare } from './table'
+import { comparePath, filterRows, isRowEnter, nextSort, norm, sortRows, toggleCompare } from './table'
 
 describe('norm and filterRows', () => {
   it('ignores case and Vietnamese diacritics', () => {
@@ -44,5 +44,16 @@ describe('compare selection', () => {
     expect(comparePath([9, 5])).toBe('/compare?a=5&b=9')
     expect(comparePath([5])).toBeNull()
     expect(comparePath([])).toBeNull()
+  })
+})
+
+describe('row activation', () => {
+  it('opens a row on Enter only when the row itself has focus, not a button or checkbox inside it', () => {
+    const row = {}
+    const button = {}
+    expect(isRowEnter('Enter', row, row)).toBe(true)
+    expect(isRowEnter('Enter', button, row)).toBe(false)
+    expect(isRowEnter(' ', row, row)).toBe(false)
+    expect(isRowEnter('Tab', row, row)).toBe(false)
   })
 })

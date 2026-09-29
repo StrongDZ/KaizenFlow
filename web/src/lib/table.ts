@@ -44,3 +44,8 @@ export function comparePath(sel: number[]): string | null {
   const [a, b] = [...sel].sort((x, y) => x - y)
   return `/compare?a=${a}&b=${b}`
 }
+
+/** Enter mở dòng chỉ khi chính dòng đang được focus; Enter trên nút hay ô tick bên trong dòng là việc của nút đó. */
+export function isRowEnter(key: string, target: unknown, currentTarget: unknown): boolean {
+  return key === 'Enter' && target === currentTarget
+}

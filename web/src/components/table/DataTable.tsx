@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import { useMemo, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { nextSort, sortRows, type Sort } from '../../lib/table'
+import { isRowEnter, nextSort, sortRows, type Sort } from '../../lib/table'
 
 export type Column<T> = {
   key: string
@@ -26,7 +26,7 @@ export function DataTable<T>({ rows, columns, rowKey, onRowClick, empty, initial
   }, [rows, columns, sort])
   if (rows.length === 0 && empty) return <>{empty}</>
   const onKey = (e: KeyboardEvent, row: T) => {
-    if (e.key === 'Enter' && onRowClick) onRowClick(row)
+    if (onRowClick && isRowEnter(e.key, e.target, e.currentTarget)) onRowClick(row)
   }
   return (
     <div className="overflow-x-auto rounded-xl border border-line">

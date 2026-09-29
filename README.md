@@ -18,6 +18,7 @@ Test: `cd services/sim && pytest` · `cd services/api && go test ./...` (cần `
 - Theme tối là mặc định; trang Báo cáo và bản in dùng theme sáng (`data-theme="light"`).
 - Nếu trang hiện chữ trần không có style (Tailwind không sinh class do cache Vite lỗi thời): dừng `npm run dev`, xoá `web/node_modules/.vite`, chạy lại.
 - Phím tắt ở Control Room: `←` `→` bước 1 mốc, `Shift`+`←` `→` bước 10 mốc, `Space` phát/dừng, `Home` `End`, `F` chế độ tập trung, `Esc` thoát.
+- Điều hướng: Tổng quan · Mô hình (Sơ đồ, Scenario, Lần chạy, Phiên bản) · Lần chạy · Thư viện (Node type, Vật tư). Mỗi loại object có bảng, trang chi tiết và các thao tác tạo, sửa, nhân bản, xoá theo quy tắc bất biến bên dưới.
 - Font IBM Plex Sans được tự host (`web/src/fonts.css`, chỉ hai subset latin và vietnamese) nên demo không cần mạng.
 
 ## Kiến trúc
@@ -29,6 +30,13 @@ Test: `cd services/sim && pytest` · `cd services/api && go test ./...` (cần `
 | `web` | React, React Flow | Editor, Scenario, Control Room, So sánh, Báo cáo |
 
 Contract Go ↔ sim: `contracts/run.schema.json`. Thiết kế: `docs/superpowers/specs/`.
+
+### Sửa và xoá (giao thức)
+
+- `DELETE /api/models/{key}`, `/api/versions/{id}`, `/api/scenarios/{id}`: nếu còn dữ liệu phụ thuộc thì trả `409` kèm `{"impact": {"scenarios": 3, "runs": 12}}`; gọi lại với `?cascade=true` để xoá dây chuyền (một transaction).
+- Có lần chạy `QUEUED`/`RUNNING` trong phạm vi thì luôn `409`, kể cả khi `cascade=true`.
+- Node type có sẵn luôn chỉ đọc; node type tự tạo bị khoá sửa khi có version đã Publish dùng. Vật tư: mã bất biến, đơn vị và xoá bị khoá khi đang dùng (kể cả tham chiếu bằng chuỗi mã trong tham số node).
+- Scenario chỉ sửa được khi chưa có lần chạy; dùng `POST /api/scenarios/{id}/clone` để thử thông số khác.
 
 ## Kịch bản demo (3 phút)
 
