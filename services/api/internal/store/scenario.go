@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -114,4 +115,50 @@ func (s *Store) DailyForecast(ctx context.Context, material, producer string, fr
 		p.P50 = float64(v)
 		return p, err
 	})
+}
+
+func (s *Store) UpdateScenario(ctx context.Context, id int64, sc Scenario) error {
+	if sc.StartState == "" {
+		sc.StartState = "WARMUP"
+	}
+	if sc.Replications <= 0 {
+		sc.Replications = 50
+	}
+	if sc.Overrides == nil {
+		sc.Overrides = []map[string]any{}
+	}
+	if sc.Injections == nil {
+		sc.Injections = []map[string]any{}
+	}
+	return s.inTx(ctx, func(tx pgx.Tx) error {
+		var locked int64
+		if err := tx.QueryRow(ctx, `SELECT id FROM scenario WHERE id = $1 FOR UPDATE`, id).Scan(&locked); err != nil {
+			return notFound(err)
+		}
+		var runs int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM sim_run WHERE scenario_id = $1`, id).Scan(&runs); err != nil {
+			return err
+		}
+		if runs > 0 {
+			return &LockedError{Msg: "scenario đã có lần chạy nên không sửa được, hãy nhân bản", Usage: map[string]int{"runs": runs}}
+		}
+		_, err := tx.Exec(ctx, `UPDATE scenario SET name = $2, horizon = make_interval(secs => $3), start_state = $4,
+			overrides = $5, injections = $6, replications = $7 WHERE id = $1`,
+			id, sc.Name, sc.HorizonS, sc.StartState, sc.Overrides, sc.Injections, sc.Replications)
+		return err
+	})
+}
+
+// CloneScenario sao chép thông số của một scenario thành scenario USER mới, không mang theo dòng dõi (parent_id, action).
+func (s *Store) CloneScenario(ctx context.Context, id int64) (int64, error) {
+	var newID int64
+	err := s.Pool.QueryRow(ctx, `INSERT INTO scenario (model_version_id, parent_id, origin, name, horizon, start_state,
+		overrides, injections, action, replications, seed)
+		SELECT model_version_id, NULL, 'USER', coalesce(nullif(name, ''), 'Scenario #' || id) || ' (bản sao)', horizon,
+			start_state, overrides, injections, NULL, replications, seed
+		FROM scenario WHERE id = $1 RETURNING id`, id).Scan(&newID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	return newID, err
 }
