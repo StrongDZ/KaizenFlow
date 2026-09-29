@@ -66,6 +66,17 @@ export function Card({ title, children, actions }: { title: string; children: Re
   )
 }
 
+// Tạm giữ cho ControlRoomPage cũ; xoá ở Task 11 khi trang đó được viết lại.
+export function KpiTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="rounded-xl border border-line bg-panel px-4 py-3">
+      <div className="text-xs text-muted">{label}</div>
+      <div className="text-2xl font-semibold tabular-nums text-text">{value}</div>
+      {hint && <div className="text-xs text-faint">{hint}</div>}
+    </div>
+  )
+}
+
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
   return (
     <div className="flex h-full min-h-60 flex-col items-center justify-center gap-1 p-8 text-center">
