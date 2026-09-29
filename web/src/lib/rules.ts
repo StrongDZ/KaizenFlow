@@ -1,4 +1,4 @@
-import type { MaterialUsage, VersionUse } from '../api/types'
+import type { MaterialUsage, RunStatus, VersionUse } from '../api/types'
 
 export type Rules = { canEdit: boolean; canDelete: boolean; banner: string | null }
 
@@ -36,3 +36,14 @@ export function materialRules(u: MaterialUsage): Rules & { canEditUnit: boolean 
 
 export const isValidNodeTypeCode = (s: string): boolean => /^[A-Z][A-Z0-9_]*$/.test(s)
 export const isValidMaterialCode = (s: string): boolean => /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(s)
+
+/** Scenario đã có run thì khoá sửa (đổi thông số sẽ làm kết quả cũ không còn khớp); xoá và nhân bản luôn được. */
+export function scenarioRules(runs: number): Rules {
+  if (runs === 0) return { canEdit: true, canDelete: true, banner: null }
+  return { canEdit: false, canDelete: true, banner: `Scenario đã có ${runs} lần chạy nên không sửa được. Nhân bản để thử thông số khác.` }
+}
+
+/** Chỉ xoá được lần chạy đã kết thúc. */
+export function runRules(status: RunStatus): { canDelete: boolean } {
+  return { canDelete: status === 'DONE' || status === 'FAILED' }
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MaterialUsage, VersionUse } from '../api/types'
-import { isValidMaterialCode, isValidNodeTypeCode, materialRules, nodeTypeRules } from './rules'
+import { isValidMaterialCode, isValidNodeTypeCode, materialRules, nodeTypeRules, runRules, scenarioRules } from './rules'
 
 const use = (over: Partial<VersionUse>): VersionUse => ({ version_id: 1, model_key: 'denso-mini', version: 1, status: 'PUBLISHED', nodes: 1, ...over })
 
@@ -57,5 +57,21 @@ describe('code validation', () => {
     expect(isValidMaterialCode('SUB_OK')).toBe(true)
     expect(isValidMaterialCode('a b')).toBe(false)
     expect(isValidMaterialCode('-x')).toBe(false)
+  })
+})
+
+describe('scenarioRules and runRules', () => {
+  it('locks editing once a scenario has runs but always allows delete and clone', () => {
+    expect(scenarioRules(0)).toEqual({ canEdit: true, canDelete: true, banner: null })
+    const r = scenarioRules(3)
+    expect(r).toMatchObject({ canEdit: false, canDelete: true })
+    expect(r.banner).toContain('3 lần chạy')
+    expect(r.banner).toContain('Nhân bản')
+  })
+  it('only finished runs can be deleted', () => {
+    expect(runRules('DONE').canDelete).toBe(true)
+    expect(runRules('FAILED').canDelete).toBe(true)
+    expect(runRules('QUEUED').canDelete).toBe(false)
+    expect(runRules('RUNNING').canDelete).toBe(false)
   })
 })
