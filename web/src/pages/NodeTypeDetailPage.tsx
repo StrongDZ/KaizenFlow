@@ -1,8 +1,9 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import { ARCHETYPE_LABEL } from '../components/KfNode'
+import { DeleteAction } from '../components/DeleteAction'
 import { FailureModeTable, ParamGrid, RecipeStrip, SignalTable } from '../components/library/NodeTypeView'
 import { DataTable, type Column } from '../components/table/DataTable'
 import { EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, Tag, btn } from '../components/ui'
@@ -20,6 +21,8 @@ const USE_COLUMNS: Column<VersionUse>[] = [
 
 export default function NodeTypeDetailPage() {
   const code = useParams().code ?? ''
+  const navigate = useNavigate()
+  const qc = useQueryClient()
   const t = useQuery({ queryKey: ['node-type', code], queryFn: () => api.nodeType(code) })
   const [tab, setTab] = useState<(typeof TABS)[number]>('Tham số')
   if (t.error) return <PageBody><Link className="text-xs text-muted hover:text-text" to="/library/node-types">Danh sách node type</Link><ErrorBox error={t.error} /></PageBody>
@@ -32,7 +35,22 @@ export default function NodeTypeDetailPage() {
       <PageHeader
         title={d.name}
         subtitle={<span className="flex items-center gap-2"><Tag>{d.code}</Tag><Tag>{ARCHETYPE_LABEL[d.archetype]}</Tag></span>}
-        actions={<Link className={btn} to={`/library/node-types/new?from=${encodeURIComponent(d.code)}`}>Nhân bản</Link>}
+        actions={
+          <>
+            <Link className={btn} to={`/library/node-types/new?from=${encodeURIComponent(d.code)}`}>Nhân bản</Link>
+            {rules.canEdit && <Link className={btn} to={`/library/node-types/${encodeURIComponent(d.code)}/edit`}>Sửa</Link>}
+            {rules.canDelete && (
+              <DeleteAction
+                what={`node type ${d.code}`}
+                run={() => api.deleteNodeType(d.code)}
+                onDone={() => {
+                  void qc.invalidateQueries({ queryKey: ['node-types'] })
+                  navigate('/library/node-types')
+                }}
+              />
+            )}
+          </>
+        }
       />
       {rules.banner && <Notice tone="lock">{rules.banner}</Notice>}
       <div role="tablist" className="flex gap-5 border-b border-line">

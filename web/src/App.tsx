@@ -12,6 +12,7 @@ import MaterialNewPage from './pages/MaterialNewPage'
 import MaterialsPage from './pages/MaterialsPage'
 import ModelsPage from './pages/ModelsPage'
 import NodeTypeDetailPage from './pages/NodeTypeDetailPage'
+import NodeTypeEditPage from './pages/NodeTypeEditPage'
 import NodeTypeNewPage from './pages/NodeTypeNewPage'
 import NodeTypesPage from './pages/NodeTypesPage'
 import OverviewPage from './pages/OverviewPage'
@@ -58,6 +59,7 @@ export default function App() {
               <Route index element={<Navigate to="node-types" replace />} />
               <Route path="node-types" element={<NodeTypesPage />} />
               <Route path="node-types/new" element={<NodeTypeNewPage />} />
+              <Route path="node-types/:code/edit" element={<NodeTypeEditPage />} />
               <Route path="node-types/:code" element={<NodeTypeDetailPage />} />
               <Route path="materials" element={<MaterialsPage />} />
               <Route path="materials/new" element={<MaterialNewPage />} />
