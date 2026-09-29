@@ -11,6 +11,7 @@ import RunRecommendationsPage from './pages/RunRecommendationsPage'
 import RunSensorsPage from './pages/RunSensorsPage'
 import ScenariosPage from './pages/ScenariosPage'
 import Stub from './pages/Stub'
+import VersionsPage from './pages/VersionsPage'
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } })
 
@@ -28,6 +29,7 @@ export default function App() {
           <Route element={<Shell />}>
             <Route path="/" element={<Navigate to="/models" replace />} />
             <Route path="/models" element={<ModelsPage />} />
+            <Route path="/models/:key/versions" element={<VersionsPage />} />
             <Route path="/versions/:id" element={<EditorPage />} />
             <Route path="/versions/:id/scenarios" element={<ScenariosPage />} />
             <Route path="/runs" element={<Stub title="Lần chạy" />} />
