@@ -22,18 +22,18 @@ export default function ModelsPage() {
       <Card title="Mô hình nhà máy">
         <ErrorBox error={models.error} />
         <table className="w-full text-sm">
-          <thead className="text-left text-xs text-slate-500">
+          <thead className="text-left text-xs text-muted">
             <tr><th className="py-1">Mô hình</th><th>Version</th><th>Trạng thái</th><th /></tr>
           </thead>
           <tbody>
             {(models.data ?? []).map((m) => (
-              <tr key={m.model_key} className="border-t border-slate-100">
+              <tr key={m.model_key} className="border-t border-line">
                 <td className="py-2 font-medium">{m.model_key}</td>
                 <td>v{m.latest_version}</td>
                 <td>{m.status}</td>
                 <td className="space-x-3 text-right">
-                  <Link className="text-blue-600" to={`/versions/${m.latest_version_id}`}>Sửa mô hình</Link>
-                  <Link className="text-blue-600" to={`/versions/${m.latest_version_id}/scenarios`}>Scenario &amp; chạy</Link>
+                  <Link className="text-text underline-offset-2 hover:underline" to={`/versions/${m.latest_version_id}`}>Sửa mô hình</Link>
+                  <Link className="text-text underline-offset-2 hover:underline" to={`/versions/${m.latest_version_id}/scenarios`}>Scenario &amp; chạy</Link>
                 </td>
               </tr>
             ))}
@@ -42,7 +42,7 @@ export default function ModelsPage() {
       </Card>
       <Card title="Tạo mô hình mới">
         <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (key.trim()) create.mutate() }}>
-          <input className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm" placeholder="vd: denso-line-3"
+          <input className="flex-1 rounded border border-line-2 px-2 py-1 text-sm" placeholder="vd: denso-line-3"
             value={key} onChange={(e) => setKey(e.target.value)} />
           <button className={btnPrimary} disabled={!key.trim() || create.isPending}>Tạo</button>
         </form>

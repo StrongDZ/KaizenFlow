@@ -24,14 +24,15 @@ export default function ReportPage() {
   const candidates = r.insights.filter((i) => i.kind === 'RECOMMENDATION').flatMap((i) => candidatesOf(i))
   const kpi = (k: string) => kpiP50(r.kpis, k)?.toFixed(1) ?? '—'
   return (
-    <div className="mx-auto max-w-4xl space-y-5 bg-white p-8 print:p-0">
+    <div data-theme="light" className="min-h-full bg-bg text-text">
+    <div className="mx-auto max-w-4xl space-y-5 p-8 print:p-0">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold">Báo cáo mô phỏng &amp; dự báo logistics</h1>
-          <div className="text-sm text-slate-500">
+          <div className="text-sm text-muted">
             {graph.data.model_key} v{graph.data.version} · {scenario.data.name} · Run #{r.id} · bắt đầu {new Date(r.sim_start).toLocaleString('vi-VN')}
           </div>
-          <div className="text-xs text-slate-400">{scenario.data.replications} lần lặp Monte Carlo · horizon {scenario.data.horizon_s / 3600} giờ · engine {r.engine_version}</div>
+          <div className="text-xs text-faint">{scenario.data.replications} lần lặp Monte Carlo · horizon {scenario.data.horizon_s / 3600} giờ · engine {r.engine_version}</div>
         </div>
         <button className={`${btnPrimary} print:hidden`} onClick={() => window.print()}>In / Lưu PDF</button>
       </div>
@@ -62,7 +63,7 @@ export default function ReportPage() {
 
       <section>
         <h2 className="mb-2 font-semibold">3. Hành động đề xuất (đã kiểm chứng bằng mô phỏng)</h2>
-        {candidates.length === 0 && <div className="text-sm text-slate-500">Không có hành động nào cải thiện được kết quả.</div>}
+        {candidates.length === 0 && <div className="text-sm text-muted">Không có hành động nào cải thiện được kết quả.</div>}
         <table className="w-full text-sm">
           <tbody>
             {candidates.map((c) => (
@@ -77,9 +78,10 @@ export default function ReportPage() {
         </table>
       </section>
 
-      <section className="text-xs text-slate-400">
+      <section className="text-xs text-faint">
         Tham số thiết bị là giả định (chưa có dữ liệu DENSO), đánh dấu "assumed" trong catalog. Kết quả là phân phối từ nhiều lần mô phỏng, không phải một kịch bản duy nhất.
       </section>
+    </div>
     </div>
   )
 }

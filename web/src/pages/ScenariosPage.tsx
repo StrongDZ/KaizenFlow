@@ -3,13 +3,11 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Json, Scenario } from '../api/types'
-import { Card, ErrorBox, Loading, StatusChip, btn, btnPrimary } from '../components/ui'
+import { Card, ErrorBox, Loading, StatusChip, btn, btnPrimary, input } from '../components/ui'
 import { byCode, failureModesOf, poolCount } from '../lib/model'
 
 type InjRow = { target: string; failure: string; at_min: number }
 type OvrRow = { target: string; count: number }
-
-const input = 'rounded border border-slate-300 px-2 py-1 text-sm'
 
 export default function ScenariosPage() {
   const vid = Number(useParams().id)
@@ -49,7 +47,7 @@ export default function ScenariosPage() {
     <div className="mx-auto max-w-5xl space-y-4 p-6">
       <div className="flex items-center gap-3">
         <h1 className="text-lg font-semibold">{graph.data.model_key} v{graph.data.version}</h1>
-        <Link className="text-sm text-blue-600" to={`/versions/${vid}`}>← về mô hình</Link>
+        <Link className="text-sm text-text underline-offset-2 hover:underline" to={`/versions/${vid}`}>← về mô hình</Link>
       </div>
       {!published && <ErrorBox error={new Error('Mô hình chưa Publish — hãy Publish ở Editor trước khi chạy.')} />}
 
@@ -140,17 +138,17 @@ function describe(sc: Scenario): string {
 function ScenarioRow({ sc, canRun, running, onRun }: { sc: Scenario; canRun: boolean; running: boolean; onRun: () => void }) {
   const runs = useQuery({ queryKey: ['runs', sc.id], queryFn: () => api.runs(sc.id) })
   return (
-    <div className="rounded border border-slate-200 p-3">
+    <div className="rounded border border-line p-3">
       <div className="flex items-center gap-3">
         <div className="flex-1">
           <div className="font-medium">{sc.name || `Scenario #${sc.id}`}</div>
-          <div className="text-xs text-slate-500">{describe(sc)}</div>
+          <div className="text-xs text-muted">{describe(sc)}</div>
         </div>
         <button className={btnPrimary} disabled={!canRun || running} onClick={onRun}>Chạy</button>
       </div>
       <div className="mt-2 flex flex-wrap gap-2">
         {(runs.data ?? []).map((r) => (
-          <Link key={r.id} to={`/runs/${r.id}`} className="flex items-center gap-1 rounded border border-slate-200 px-2 py-0.5 text-xs">
+          <Link key={r.id} to={`/runs/${r.id}`} className="flex items-center gap-1 rounded border border-line px-2 py-0.5 text-xs">
             #{r.id} <StatusChip status={r.status} />
           </Link>
         ))}

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
-import { fmtTime } from '../components/Charts'
+import { axisLine, axisTick, fmtTime, tooltipProps } from '../components/Charts'
 import { Card, Loading } from '../components/ui'
 import { kpiP50 } from '../lib/insights'
 import { clip, indexBands, series } from '../lib/replay'
@@ -32,7 +32,7 @@ export default function ComparePage() {
       <h1 className="text-lg font-semibold">So sánh: Run #{a.id} (gốc) vs Run #{b.id}{scenarioB.data ? ` — ${scenarioB.data.name}` : ''}</h1>
       <Card title="Chỉ số (trung vị)">
         <table className="w-full text-sm">
-          <thead className="text-left text-xs text-slate-500"><tr><th>Chỉ số</th><th className="text-right">Gốc</th><th className="text-right">Mới</th><th className="text-right">Chênh</th></tr></thead>
+          <thead className="text-left text-xs text-muted"><tr><th>Chỉ số</th><th className="text-right">Gốc</th><th className="text-right">Mới</th><th className="text-right">Chênh</th></tr></thead>
           <tbody>
             {KPIS.map(([k, label, higherBetter]) => {
               const va = kpiP50(a.kpis, k) ?? 0
@@ -42,7 +42,7 @@ export default function ComparePage() {
               return (
                 <tr key={k} className="border-t">
                   <td className="py-1">{label}</td><td className="text-right">{va.toFixed(1)}</td><td className="text-right">{vb.toFixed(1)}</td>
-                  <td className={`text-right font-medium ${d === 0 ? '' : good ? 'text-green-700' : 'text-red-700'}`}>{d >= 0 ? '+' : ''}{d.toFixed(1)}</td>
+                  <td className={`text-right font-medium ${d === 0 ? '' : good ? 'text-ok' : 'text-bad-text'}`}>{d >= 0 ? '+' : ''}{d.toFixed(1)}</td>
                 </tr>
               )
             })}
@@ -50,18 +50,18 @@ export default function ComparePage() {
         </table>
       </Card>
       <Card title="Số giờ tồn kho còn đủ dùng (p50)" actions={
-        <select className="rounded border border-slate-300 px-2 py-0.5 text-sm" value={subject} onChange={(e) => setFocus(e.target.value)}>
+        <select className="rounded border border-line-2 px-2 py-0.5 text-sm" value={subject} onChange={(e) => setFocus(e.target.value)}>
           {subjects.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>}>
         <ResponsiveContainer width="100%" height={260}>
           <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={fmtTime} fontSize={11} />
-            <YAxis unit=" h" fontSize={11} width={52} />
-            <Tooltip labelFormatter={(v) => fmtTime(Number(v))} />
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--color-line)" />
+            <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={fmtTime} tick={axisTick} axisLine={axisLine} tickLine={false} />
+            <YAxis unit=" h" tick={axisTick} width={52} axisLine={axisLine} tickLine={false} />
+            <Tooltip {...tooltipProps} labelFormatter={(v) => fmtTime(Number(v))} />
             <Legend />
-            <Line dataKey="a" name={`Gốc #${a.id}`} stroke="#94a3b8" dot={false} isAnimationActive={false} />
-            <Line dataKey="b" name={`Mới #${b.id}`} stroke="#1d4ed8" dot={false} isAnimationActive={false} />
+            <Line dataKey="a" name={`Gốc #${a.id}`} stroke="var(--color-muted)" dot={false} isAnimationActive={false} />
+            <Line dataKey="b" name={`Mới #${b.id}`} stroke="var(--color-text)" dot={false} isAnimationActive={false} />
           </LineChart>
         </ResponsiveContainer>
       </Card>
