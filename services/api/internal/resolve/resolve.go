@@ -8,10 +8,14 @@ import (
 	"math"
 	"strings"
 	"time"
+	_ "time/tzdata" // container alpine không có tzdata
 
 	"github.com/kaizenflow/api/internal/simapi"
 	"github.com/kaizenflow/api/internal/store"
 )
+
+// DefaultTimezone là múi giờ nhà máy khi model_version.settings.timezone trống.
+const DefaultTimezone = "Asia/Ho_Chi_Minh"
 
 type ForecastLookup func(ctx context.Context, material, producer string, from, to time.Time) ([]store.DailyPoint, error)
 
@@ -164,6 +168,14 @@ func Build(ctx context.Context, g *store.Graph, types map[string]store.NodeType,
 	}
 
 	settings := g.Settings
+	tzName, _ := settings["timezone"].(string)
+	if tzName == "" {
+		tzName = DefaultTimezone
+	}
+	loc, err := time.LoadLocation(tzName)
+	if err != nil {
+		return nil, &IssueError{"settings", "unknown timezone '" + tzName + "'"}
+	}
 	var profile []float64
 	if raw, ok := settings["shift_profile"].([]any); ok {
 		if len(raw) != 24 {
@@ -199,7 +211,7 @@ func Build(ctx context.Context, g *store.Graph, types map[string]store.NodeType,
 			continue
 		}
 		if arche[n.Key] == "SINK" {
-			if err := resolveDemand(ctx, n.Key, p, fc, simStart, sc.HorizonS, profile, opt); err != nil {
+			if err := resolveDemand(ctx, n.Key, p, fc, simStart.In(loc), sc.HorizonS, profile, opt); err != nil {
 				return nil, err
 			}
 		}

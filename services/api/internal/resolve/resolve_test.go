@@ -159,3 +159,35 @@ func TestForecastDemandBecomesHourlyRate(t *testing.T) {
 		t.Fatalf("validation mode: %v", err)
 	}
 }
+
+func TestForecastUsesPlantTimezoneNotServerTime(t *testing.T) {
+	ict := time.FixedZone("ICT", 7*3600)
+	day := time.Date(2026, 10, 1, 0, 0, 0, 0, ict) // Predict ghi 00:00 giờ nhà máy
+	fc := func(_ context.Context, _, _ string, from, to time.Time) ([]store.DailyPoint, error) {
+		if day.Before(from) || !day.Before(to) {
+			t.Fatalf("day %v outside [%v, %v)", day, from, to)
+		}
+		return []store.DailyPoint{{Day: day, P50: 240}}, nil
+	}
+	profile := make([]any, 24)
+	for i := range profile {
+		profile[i] = 0.0
+	}
+	profile[8] = 1.0 // toàn bộ nhu cầu rơi vào 08:00 giờ nhà máy
+	g := forecastGraph()
+	g.Settings = map[string]any{"shift_profile": profile, "timezone": "Asia/Ho_Chi_Minh"}
+	utcStart := time.Date(2026, 10, 1, 1, 0, 0, 0, time.UTC) // = 08:00 ICT, server chạy UTC
+	r, err := resolve.Build(ctx, g, testfix.Types(), []string{"RAW-01"}, scenario(), 42, utcStart, fc, resolve.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rates := node(r, "OUT").Params["demand"].([]any)[0].(map[string]any)["hourly_rate"].([]float64)
+	if rates[0] != 240 || rates[1] != 0 {
+		t.Fatalf("rates = %v", rates)
+	}
+	g.Settings = map[string]any{"timezone": "Mars/Olympus"}
+	var ie *resolve.IssueError
+	if _, err := resolve.Build(ctx, g, testfix.Types(), nil, scenario(), 1, utcStart, fc, resolve.Options{}); !errors.As(err, &ie) || ie.Key != "settings" {
+		t.Fatalf("bad tz: %v", err)
+	}
+}
