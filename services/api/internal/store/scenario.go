@@ -57,11 +57,22 @@ func (s *Store) CreateScenario(ctx context.Context, sc Scenario) (int64, error) 
 const scenarioCols = `id, model_version_id, parent_id, origin, coalesce(name, ''), extract(epoch FROM horizon)::float8,
 	start_state, overrides, injections, action, replications, seed, created_at`
 
+func scenarioTargets(sc *Scenario) []any {
+	return []any{&sc.ID, &sc.ModelVersionID, &sc.ParentID, &sc.Origin, &sc.Name, &sc.HorizonS, &sc.StartState,
+		&sc.Overrides, &sc.Injections, &sc.Action, &sc.Replications, &sc.Seed, &sc.CreatedAt}
+}
+
 func scanScenario(r pgx.Row) (Scenario, error) {
 	var sc Scenario
-	err := r.Scan(&sc.ID, &sc.ModelVersionID, &sc.ParentID, &sc.Origin, &sc.Name, &sc.HorizonS, &sc.StartState,
-		&sc.Overrides, &sc.Injections, &sc.Action, &sc.Replications, &sc.Seed, &sc.CreatedAt)
+	err := r.Scan(scenarioTargets(&sc)...)
 	return sc, err
+}
+
+// ScenarioRow là scenario kèm số run và trạng thái run gần nhất.
+type ScenarioRow struct {
+	Scenario
+	Runs          int     `json:"runs"`
+	LastRunStatus *string `json:"last_run_status"`
 }
 
 func (s *Store) GetScenario(ctx context.Context, id int64) (*Scenario, error) {
@@ -72,12 +83,19 @@ func (s *Store) GetScenario(ctx context.Context, id int64) (*Scenario, error) {
 	return &sc, nil
 }
 
-func (s *Store) ListScenarios(ctx context.Context, versionID int64) ([]Scenario, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT `+scenarioCols+` FROM scenario WHERE model_version_id = $1 ORDER BY id`, versionID)
+func (s *Store) ListScenarios(ctx context.Context, versionID int64) ([]ScenarioRow, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+scenarioCols+`,
+		(SELECT count(*) FROM sim_run r WHERE r.scenario_id = scenario.id),
+		(SELECT r.status FROM sim_run r WHERE r.scenario_id = scenario.id ORDER BY r.id DESC LIMIT 1)
+		FROM scenario WHERE model_version_id = $1 ORDER BY id`, versionID)
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Scenario, error) { return scanScenario(r) })
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (ScenarioRow, error) {
+		var x ScenarioRow
+		err := r.Scan(append(scenarioTargets(&x.Scenario), &x.Runs, &x.LastRunStatus)...)
+		return x, err
+	})
 }
 
 // DailyForecast trả điểm demand_daily của lô issued_at mới nhất trong [from, to).

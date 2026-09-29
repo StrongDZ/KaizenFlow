@@ -1,6 +1,9 @@
 package httpapi_test
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestRunsListEndpoint(t *testing.T) {
 	a := newAPI(t)
@@ -91,4 +94,26 @@ func TestMaterialDetailEndpoint(t *testing.T) {
 		t.Fatalf("detail = %v", d)
 	}
 	a.call("GET", "/api/materials/NOPE", nil, 404)
+}
+
+func TestCountsInListEndpoints(t *testing.T) {
+	a := newAPI(t)
+	vid := a.publishedModel("denso-mini")
+	a.doneRun(vid, "Ca sáng")
+
+	models := a.call("GET", "/api/models", nil, 200)["items"].([]any)
+	m := models[0].(map[string]any)
+	if m["scenarios"].(float64) != 1 || m["runs"].(float64) != 1 || m["last_run_at"] == nil {
+		t.Fatalf("model = %v", m)
+	}
+	vs := a.call("GET", "/api/models/denso-mini/versions", nil, 200)["items"].([]any)
+	v := vs[0].(map[string]any)
+	if v["nodes"].(float64) != 4 || v["scenarios"].(float64) != 1 {
+		t.Fatalf("version = %v", v)
+	}
+	sc := a.call("GET", fmt.Sprintf("/api/versions/%d/scenarios", vid), nil, 200)["items"].([]any)
+	row := sc[0].(map[string]any)
+	if row["runs"].(float64) != 1 || row["last_run_status"] != "DONE" || row["name"] != "Ca sáng" {
+		t.Fatalf("scenario = %v", row)
+	}
 }

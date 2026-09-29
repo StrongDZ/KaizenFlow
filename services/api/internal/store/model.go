@@ -41,10 +41,13 @@ type Graph struct {
 }
 
 type ModelSummary struct {
-	ModelKey        string `json:"model_key"`
-	LatestVersionID int64  `json:"latest_version_id"`
-	LatestVersion   int    `json:"latest_version"`
-	Status          string `json:"status"`
+	ModelKey        string     `json:"model_key"`
+	LatestVersionID int64      `json:"latest_version_id"`
+	LatestVersion   int        `json:"latest_version"`
+	Status          string     `json:"status"`
+	Scenarios       int        `json:"scenarios"`
+	Runs            int        `json:"runs"`
+	LastRunAt       *time.Time `json:"last_run_at"`
 }
 
 type VersionInfo struct {
@@ -52,6 +55,8 @@ type VersionInfo struct {
 	Version   int       `json:"version"`
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
+	Nodes     int       `json:"nodes"`
+	Scenarios int       `json:"scenarios"`
 }
 
 func (s *Store) CreateModel(ctx context.Context, key string, settings map[string]any) (int64, error) {
@@ -68,27 +73,37 @@ func (s *Store) CreateModel(ctx context.Context, key string, settings map[string
 }
 
 func (s *Store) ListModels(ctx context.Context) ([]ModelSummary, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT DISTINCT ON (model_key) model_key, id, version, status
-		FROM model_version ORDER BY model_key, version DESC`)
+	rows, err := s.Pool.Query(ctx, `WITH latest AS (
+			SELECT DISTINCT ON (model_key) model_key, id, version, status FROM model_version ORDER BY model_key, version DESC
+		)
+		SELECT l.model_key, l.id, l.version, l.status,
+		  (SELECT count(*) FROM scenario s JOIN model_version v ON v.id = s.model_version_id WHERE v.model_key = l.model_key),
+		  (SELECT count(*) FROM sim_run r JOIN scenario s ON s.id = r.scenario_id
+		     JOIN model_version v ON v.id = s.model_version_id WHERE v.model_key = l.model_key),
+		  (SELECT max(r.created_at) FROM sim_run r JOIN scenario s ON s.id = r.scenario_id
+		     JOIN model_version v ON v.id = s.model_version_id WHERE v.model_key = l.model_key)
+		FROM latest l ORDER BY l.model_key`)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (ModelSummary, error) {
 		var m ModelSummary
-		err := r.Scan(&m.ModelKey, &m.LatestVersionID, &m.LatestVersion, &m.Status)
+		err := r.Scan(&m.ModelKey, &m.LatestVersionID, &m.LatestVersion, &m.Status, &m.Scenarios, &m.Runs, &m.LastRunAt)
 		return m, err
 	})
 }
 
 func (s *Store) ListVersions(ctx context.Context, key string) ([]VersionInfo, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT id, version, status, created_at FROM model_version
-		WHERE model_key = $1 ORDER BY version`, key)
+	rows, err := s.Pool.Query(ctx, `SELECT v.id, v.version, v.status, v.created_at,
+		(SELECT count(*) FROM node n WHERE n.model_version_id = v.id),
+		(SELECT count(*) FROM scenario s WHERE s.model_version_id = v.id)
+		FROM model_version v WHERE v.model_key = $1 ORDER BY v.version`, key)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (VersionInfo, error) {
 		var v VersionInfo
-		err := r.Scan(&v.ID, &v.Version, &v.Status, &v.CreatedAt)
+		err := r.Scan(&v.ID, &v.Version, &v.Status, &v.CreatedAt, &v.Nodes, &v.Scenarios)
 		return v, err
 	})
 }

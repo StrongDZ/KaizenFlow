@@ -170,3 +170,34 @@ func TestMaterialRowsAndDetailUsage(t *testing.T) {
 		t.Fatalf("missing: %v", err)
 	}
 }
+
+func TestListsCarryCounts(t *testing.T) {
+	st := testfix.Seeded(t, "store_counts")
+	vid := seededVersion(t, st, "cnt")
+	sidA, _ := st.CreateScenario(ctx, store.Scenario{ModelVersionID: vid, Name: "A", HorizonS: 3600})
+	if _, err := st.CreateScenario(ctx, store.Scenario{ModelVersionID: vid, Name: "B", HorizonS: 3600}); err != nil {
+		t.Fatal(err)
+	}
+	doneRun(t, st, sidA)
+
+	ms, err := st.ListModels(ctx)
+	if err != nil || len(ms) != 1 {
+		t.Fatalf("models = %v %v", ms, err)
+	}
+	if ms[0].Scenarios != 2 || ms[0].Runs != 1 || ms[0].LastRunAt == nil || ms[0].LatestVersion != 1 {
+		t.Fatalf("model = %+v", ms[0])
+	}
+	vs, _ := st.ListVersions(ctx, "cnt")
+	if len(vs) != 1 || vs[0].Nodes != 4 || vs[0].Scenarios != 2 {
+		t.Fatalf("versions = %+v", vs)
+	}
+	list, _ := st.ListScenarios(ctx, vid)
+	if len(list) != 2 || list[0].Runs != 1 || list[0].LastRunStatus == nil || *list[0].LastRunStatus != "DONE" ||
+		list[1].Runs != 0 || list[1].LastRunStatus != nil || list[0].Name != "A" {
+		t.Fatalf("scenarios = %+v", list)
+	}
+	empty := testfix.Seeded(t, "store_counts_empty")
+	if ms, _ := empty.ListModels(ctx); len(ms) != 0 {
+		t.Fatalf("empty models = %v", ms)
+	}
+}
