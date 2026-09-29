@@ -1,0 +1,96 @@
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { useNavigate, useParams } from 'react-router-dom'
+import { api } from '../api/client'
+import type { Json, Run } from '../api/types'
+import { DataTable, type Column } from '../components/table/DataTable'
+import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, StatusChip, Tag, btnPrimary } from '../components/ui'
+import { fmtDateTime, fmtDuration } from '../lib/format'
+import { kpiP50 } from '../lib/insights'
+
+const kv = (label: string, value: string) => (
+  <div key={label} className="flex justify-between gap-4 border-t border-line py-1.5 first:border-0">
+    <span className="text-muted">{label}</span>
+    <b className="font-medium tabular-nums text-text">{value}</b>
+  </div>
+)
+
+const START_STATE: Record<string, string> = { EMPTY: 'Nhà máy rỗng', WARMUP: 'Làm nóng rồi mới ghi', LIVE_SNAPSHOT: 'Từ ảnh chụp trực tiếp' }
+
+export default function ScenarioDetailPage() {
+  const id = Number(useParams().id)
+  const navigate = useNavigate()
+  const sc = useQuery({ queryKey: ['scenario', id], queryFn: () => api.scenario(id) })
+  const graph = useQuery({ queryKey: ['graph', sc.data?.model_version_id], queryFn: () => api.graph(sc.data!.model_version_id), enabled: !!sc.data })
+  const runs = useQuery({ queryKey: ['runs', 'of', id], queryFn: () => api.runs(id) })
+  const start = useMutation({ mutationFn: () => api.startRun(id), onSuccess: (r) => navigate(`/runs/${r.run_id}`) })
+  if (sc.error) return <PageBody><ErrorBox error={sc.error} /></PageBody>
+  if (!sc.data || !graph.data) return <Loading />
+  const s = sc.data
+  const published = graph.data.status === 'PUBLISHED'
+  const runColumns: Column<Run>[] = [
+    { key: 'id', header: 'Run', cell: (r) => <span className="font-medium text-text">#{r.id}</span>, sort: (r) => r.id },
+    { key: 'status', header: 'Trạng thái', cell: (r) => <StatusChip status={r.status} /> },
+    { key: 'red', header: 'Phút Đỏ (p50)', cell: (r) => { const v = kpiP50(r.kpis, 'red_minutes'); return v === undefined ? '—' : v.toFixed(1).replace('.', ',') }, align: 'right' },
+    { key: 'start', header: 'Bắt đầu', cell: (r) => fmtDateTime(r.created_at), sort: (r) => Date.parse(r.created_at) },
+    { key: 'dur', header: 'Thời lượng', cell: (r) => fmtDuration(r.created_at, r.finished_at) },
+  ]
+  return (
+    <PageBody>
+      <PageHeader
+        title={s.name || `Scenario #${s.id}`}
+        subtitle={<Tag>{s.origin === 'RECOMMENDER' ? 'Từ đề xuất' : 'Người dùng'}</Tag>}
+        actions={<button className={btnPrimary} disabled={!published || start.isPending} onClick={() => start.mutate()}>Chạy</button>}
+      />
+      {!published && <Notice tone="lock">Mô hình chưa Publish. Publish ở tab Sơ đồ trước khi chạy.</Notice>}
+      <ErrorBox error={start.error} />
+      <div className="grid grid-cols-3 gap-4">
+        <Card title="Thông số">
+          <div className="text-xs">
+            {kv('Thời lượng', `${s.horizon_s / 3600} giờ`)}
+            {kv('Số lần lặp', String(s.replications))}
+            {kv('Khởi đầu', START_STATE[s.start_state] ?? s.start_state)}
+            {kv('Hạt giống', s.seed === null ? 'ngẫu nhiên' : String(s.seed))}
+          </div>
+        </Card>
+        <Card title="Lỗi đã tiêm">
+          {s.injections.length === 0 ? (
+            <p className="text-xs text-muted">Không tiêm lỗi nào.</p>
+          ) : (
+            <div className="text-xs">
+              {s.injections.map((i: Json, n) => (
+                <div key={n} className="flex justify-between gap-4 border-t border-line py-1.5 first:border-0">
+                  <span className="text-muted">{String(i.target)}, {String(i.failure)}</span>
+                  <b className="font-medium tabular-nums text-text">phút {Math.round(Number(i.at_s) / 60)}</b>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+        <Card title="Thay đổi nguồn lực">
+          {s.overrides.length === 0 ? (
+            <p className="text-xs text-muted">Không thay đổi nguồn lực nào.</p>
+          ) : (
+            <div className="text-xs">
+              {s.overrides.map((o: Json, n) => (
+                <div key={n} className="flex justify-between gap-4 border-t border-line py-1.5 first:border-0">
+                  <span className="text-muted">{String(o.target)}{String(o.path)}</span>
+                  <b className="font-medium tabular-nums text-text">{String(o.value)}</b>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
+      <Card title="Các lần chạy">
+        <DataTable
+          rows={runs.data ?? []}
+          columns={runColumns}
+          rowKey={(r) => r.id}
+          onRowClick={(r) => navigate(`/runs/${r.id}`)}
+          initialSort={{ key: 'id', dir: 'desc' }}
+          empty={<EmptyState title="Scenario này chưa chạy lần nào">Bấm "Chạy" để mô phỏng.</EmptyState>}
+        />
+      </Card>
+    </PageBody>
+  )
+}
