@@ -1,11 +1,13 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Json, Run } from '../api/types'
+import { DeleteAction } from '../components/DeleteAction'
 import { DataTable, type Column } from '../components/table/DataTable'
-import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, StatusChip, Tag, btnPrimary } from '../components/ui'
+import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, StatusChip, Tag, btn, btnPrimary } from '../components/ui'
 import { fmtDateTime, fmtDuration } from '../lib/format'
 import { kpiP50 } from '../lib/insights'
+import { scenarioRules } from '../lib/rules'
 
 const kv = (label: string, value: string) => (
   <div key={label} className="flex justify-between gap-4 border-t border-line py-1.5 first:border-0">
@@ -19,14 +21,23 @@ const START_STATE: Record<string, string> = { EMPTY: 'Nhà máy rỗng', WARMUP:
 export default function ScenarioDetailPage() {
   const id = Number(useParams().id)
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const sc = useQuery({ queryKey: ['scenario', id], queryFn: () => api.scenario(id) })
   const graph = useQuery({ queryKey: ['graph', sc.data?.model_version_id], queryFn: () => api.graph(sc.data!.model_version_id), enabled: !!sc.data })
   const runs = useQuery({ queryKey: ['runs', 'of', id], queryFn: () => api.runs(id) })
   const start = useMutation({ mutationFn: () => api.startRun(id), onSuccess: (r) => navigate(`/runs/${r.run_id}`) })
+  const clone = useMutation({
+    mutationFn: () => api.cloneScenario(id),
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: ['scenarios'] })
+      navigate(`/scenarios/${r.id}`)
+    },
+  })
   if (sc.error) return <PageBody><ErrorBox error={sc.error} /></PageBody>
   if (!sc.data || !graph.data) return <Loading />
   const s = sc.data
   const published = graph.data.status === 'PUBLISHED'
+  const rules = runs.data ? scenarioRules(runs.data.length) : { canEdit: false, canDelete: true, banner: null }
   const runColumns: Column<Run>[] = [
     { key: 'id', header: 'Run', cell: (r) => <span className="font-medium text-text">#{r.id}</span>, sort: (r) => r.id },
     { key: 'status', header: 'Trạng thái', cell: (r) => <StatusChip status={r.status} /> },
@@ -39,10 +50,25 @@ export default function ScenarioDetailPage() {
       <PageHeader
         title={s.name || `Scenario #${s.id}`}
         subtitle={<Tag>{s.origin === 'RECOMMENDER' ? 'Từ đề xuất' : 'Người dùng'}</Tag>}
-        actions={<button className={btnPrimary} disabled={!published || start.isPending} onClick={() => start.mutate()}>Chạy</button>}
+        actions={
+          <>
+            <button className={btnPrimary} disabled={!published || start.isPending} onClick={() => start.mutate()}>Chạy</button>
+            {rules.canEdit ? <Link className={btn} to={`/scenarios/${s.id}/edit`}>Sửa</Link> : <button className={btn} disabled>Sửa</button>}
+            <button className={btn} disabled={clone.isPending} onClick={() => clone.mutate()}>Nhân bản</button>
+            <DeleteAction
+              what={`scenario ${s.name || `#${s.id}`}`}
+              run={(cascade) => api.deleteScenario(s.id, cascade)}
+              onDone={() => {
+                void qc.invalidateQueries({ queryKey: ['scenarios'] })
+                navigate(`/versions/${s.model_version_id}/scenarios`)
+              }}
+            />
+          </>
+        }
       />
+      {rules.banner && <Notice tone="lock">{rules.banner}</Notice>}
       {!published && <Notice tone="lock">Mô hình chưa Publish. Publish ở tab Sơ đồ trước khi chạy.</Notice>}
-      <ErrorBox error={start.error} />
+      <ErrorBox error={start.error ?? clone.error} />
       <div className="grid grid-cols-3 gap-4">
         <Card title="Thông số">
           <div className="text-xs">

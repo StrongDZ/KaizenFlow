@@ -20,6 +20,7 @@ import RunRecommendationsPage from './pages/RunRecommendationsPage'
 import RunSensorsPage from './pages/RunSensorsPage'
 import RunsPage from './pages/RunsPage'
 import ScenarioDetailPage from './pages/ScenarioDetailPage'
+import ScenarioEditPage from './pages/ScenarioEditPage'
 import ScenarioNewPage from './pages/ScenarioNewPage'
 import ScenariosPage from './pages/ScenariosPage'
 import VersionsPage from './pages/VersionsPage'
@@ -45,6 +46,7 @@ export default function App() {
             <Route path="/versions/:id/scenarios" element={<ScenariosPage />} />
             <Route path="/versions/:id/scenarios/new" element={<ScenarioNewPage />} />
             <Route path="/scenarios/:id" element={<ScenarioDetailPage />} />
+            <Route path="/scenarios/:id/edit" element={<ScenarioEditPage />} />
             <Route path="/runs" element={<RunsPage scope="all" />} />
             <Route path="/versions/:id/runs" element={<RunsPage scope="version" />} />
             <Route path="/runs/:id" element={<ControlRoomPage />} />
