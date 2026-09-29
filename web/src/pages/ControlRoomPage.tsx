@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Background, Controls, ReactFlow, ReactFlowProvider } from '@xyflow/react'
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { BandRow, Graph, Json, NodeType, RunDetail, Scenario } from '../api/types'
@@ -86,6 +86,7 @@ function Room({ run, scenario, graph, types, rows }: {
   const redRisk = run.insights.find((i) => i.kind === 'RED_RISK')
   const [focus, setFocus] = useState<string>(redRisk?.subject_key ?? storages[0]?.key ?? '')
   const focusNode = storages.find((n) => n.key === focus)
+  const focusPoints = useMemo(() => clip(series(idx, focus, 'coverage_h'), 24), [idx, focus])
 
   const apply = useMutation({
     mutationFn: ({ id, rank }: { id: number; rank: number }) => api.applyInsight(id, rank),
@@ -163,7 +164,7 @@ function Room({ run, scenario, graph, types, rows }: {
           <select className="rounded border border-slate-300 px-2 py-0.5 text-sm" value={focus} onChange={(e) => setFocus(e.target.value)}>
             {storages.map((n) => <option key={n.key} value={n.key}>{n.key}</option>)}
           </select>}>
-          <BandChart points={clip(series(idx, focus, 'coverage_h'), 24)} cursor={t}
+          <BandChart points={focusPoints} cursor={t}
             redH={focusNode ? thresholdsFor(focusNode, types).red_h : undefined} />
         </Card>
         <SensorPanel runId={run.id} graph={graph} types={types} injections={scenario.injections} />
@@ -174,7 +175,8 @@ function Room({ run, scenario, graph, types, rows }: {
 
 const MARKS: Record<string, string> = { FAULT_ONSET: '#f59e0b', FAILURE: '#dc2626', REPAIRED: '#16a34a', PLANNED_STOP: '#2563eb' }
 
-function SensorPanel({ runId, graph, types, injections }: { runId: number; graph: Graph; types: Record<string, NodeType>; injections: Json[] }) {
+// memo: panel không phụ thuộc thời điểm replay nên không vẽ lại 2.880+ điểm mỗi 120 ms
+const SensorPanel = memo(function SensorPanel({ runId, graph, types, injections }: { runId: number; graph: Graph; types: Record<string, NodeType>; injections: Json[] }) {
   const machines = graph.nodes.filter((n) => signalsOf(n, types).length > 0)
   const [subject, setSubject] = useState(() => defaultSensorSubject(machines.map((n) => n.key), injections))
   const node = machines.find((n) => n.key === subject)
@@ -192,4 +194,4 @@ function SensorPanel({ runId, graph, types, injections }: { runId: number; graph
       <SignalChart rows={(sig.data ?? []).filter((r) => r.rep === 0)} marks={marks} />
     </Card>
   )
-}
+})

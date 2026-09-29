@@ -19,3 +19,12 @@ describe('edge form', () => {
     expect(s.properties.hook_pool.enum).toEqual(['', 'OPS'])
   })
 })
+
+describe('travel distribution is preserved', () => {
+  it('keeps a stochastic travel time when the form did not change it', () => {
+    const prev = { mode: 'POOL', pool: 'TUG', travel: { dist: 'norm', mean: 90, sd: 15 } }
+    const form = edgeToForm('RAW-01', prev)
+    expect(formToEdge({ ...form, lot: 20 }, prev).params.travel).toEqual({ dist: 'norm', mean: 90, sd: 15 })
+    expect(formToEdge({ ...form, travel_s: 120 }, prev).params.travel).toEqual({ dist: 'const', value: 120 })
+  })
+})

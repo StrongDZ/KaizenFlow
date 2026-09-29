@@ -29,7 +29,10 @@ export function formToEdge(f: EdgeForm, previous: Json = {}): { material: string
   if (f.mode === 'POOL' && f.pool) params.pool = f.pool
   if (f.mode === 'POOL' && f.hook_pool) params.hook_pool = f.hook_pool
   if (f.lot && f.lot !== 1) params.lot = f.lot
-  if (f.travel_s !== undefined && f.travel_s > 0) params.travel = { dist: 'const', value: f.travel_s }
+  const prevTravel = previous.travel as { value?: number; mean?: number } | undefined
+  const prevS = prevTravel ? (prevTravel.value ?? prevTravel.mean) : undefined
+  if (prevTravel && f.travel_s === prevS) params.travel = prevTravel // giữ phân phối ngẫu nhiên nếu người dùng không sửa
+  else if (f.travel_s !== undefined && f.travel_s > 0) params.travel = { dist: 'const', value: f.travel_s }
   return { material: f.material, params }
 }
 
