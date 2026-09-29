@@ -1,13 +1,121 @@
 @import "tailwindcss";
 
-body { @apply bg-slate-50 text-slate-800; }
+/* Token theo spec §2.2. Tối là mặc định; sáng dành cho Báo cáo và bản in. */
+@theme static {
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+
+  --color-bg: #0f1620;
+  --color-panel: #182230;
+  --color-panel-2: #121b27;
+  --color-raised: #1e2a3a;
+  --color-line: #243142;
+  --color-line-2: #2a384b;
+  --color-text: #e6ebf1;
+  --color-text-2: #b5c0cd;
+  --color-muted: #8a99ab;
+  --color-faint: #5b6b7f;
+  --color-ok: #3dbe7a;
+  --color-warn: #f5b83d;
+  --color-bad: #f0564a;
+  --color-bad-text: #ff7a6e;
+  --color-bad-bg: #2a1a1e;
+  --color-lock-line: #7a6021;
+  --color-lock-bg: #221d10;
+  --color-lock-text: #e9d9a6;
+}
+
+[data-theme='light'] {
+  --color-bg: #ffffff;
+  --color-panel: #f6f8fa;
+  --color-panel-2: #eef1f5;
+  --color-raised: #ffffff;
+  --color-line: #d5dbe3;
+  --color-line-2: #c3cbd6;
+  --color-text: #1a2233;
+  --color-text-2: #3a465a;
+  --color-muted: #5d6b85;
+  --color-faint: #8794a8;
+  --color-ok: #1f9d5b;
+  --color-warn: #e0a100;
+  --color-bad: #d33a2c;
+  --color-bad-text: #d33a2c;
+  --color-bad-bg: #fbe9e7;
+  --color-lock-line: #c9a227;
+  --color-lock-bg: #fff6da;
+  --color-lock-text: #6b5310;
+}
+
+/* Bản in luôn ra giấy trắng, kể cả khi đang ở trang tối. */
+@media print {
+  :root, [data-theme] {
+    --color-bg: #ffffff;
+    --color-panel: #f6f8fa;
+    --color-panel-2: #eef1f5;
+    --color-raised: #ffffff;
+    --color-line: #d5dbe3;
+    --color-line-2: #c3cbd6;
+    --color-text: #1a2233;
+    --color-text-2: #3a465a;
+    --color-muted: #5d6b85;
+    --color-faint: #8794a8;
+    --color-ok: #1f9d5b;
+    --color-warn: #e0a100;
+    --color-bad: #d33a2c;
+    --color-bad-text: #d33a2c;
+    --color-bad-bg: #fbe9e7;
+    color-scheme: light;
+  }
+}
+
+:root { color-scheme: dark; }
+[data-theme='light'] { color-scheme: light; }
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
+}
+* { scrollbar-width: thin; scrollbar-color: var(--color-line-2) transparent; }
+:focus-visible { outline: 2px solid var(--color-text); outline-offset: 2px; }
+input, select, textarea { background: var(--color-panel-2); color: var(--color-text); }
+input::placeholder, textarea::placeholder { color: var(--color-faint); }
+
+/* React Flow theo token */
+.react-flow {
+  --xy-background-color: var(--color-bg);
+  --xy-edge-stroke: var(--color-faint);
+  --xy-edge-label-color: var(--color-text-2);
+  --xy-edge-label-background-color: var(--color-bg);
+  --xy-handle-background-color: var(--color-faint);
+  --xy-handle-border-color: var(--color-bg);
+  --xy-controls-button-background-color: var(--color-panel);
+  --xy-controls-button-background-color-hover: var(--color-raised);
+  --xy-controls-button-color: var(--color-text-2);
+  --xy-controls-button-border-color: var(--color-line);
+  --xy-minimap-background-color: var(--color-panel-2);
+  --xy-attribution-background-color: transparent;
+}
+.react-flow__attribution { color: var(--color-faint); }
 
 /* Form sinh từ JSON Schema (@rjsf) */
-.rjsf .form-group { @apply mb-2; }
-.rjsf label { @apply block text-xs font-medium text-slate-600; }
-.rjsf input, .rjsf select, .rjsf textarea { @apply mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-sm; }
-.rjsf fieldset { @apply rounded border border-slate-200 p-2; }
-.rjsf legend { @apply px-1 text-xs font-semibold text-slate-700; }
-.rjsf .array-item { @apply mb-2 rounded bg-slate-50 p-1; }
-.rjsf button { @apply rounded border border-slate-300 bg-white px-2 py-0.5 text-xs; }
-.rjsf .text-danger, .rjsf .error-detail { @apply text-xs text-red-600; }
+.rjsf .form-group { margin-bottom: 0.5rem; }
+.rjsf label, .rjsf .control-label { display: block; font-size: 11px; font-weight: 500; color: var(--color-muted); }
+.rjsf input, .rjsf select, .rjsf textarea {
+  margin-top: 2px; width: 100%; border-radius: 6px; border: 1px solid var(--color-line-2);
+  background: var(--color-bg); color: var(--color-text); padding: 4px 8px; font-size: 12px;
+}
+.rjsf input[type='checkbox'] { width: auto; }
+.rjsf input:disabled, .rjsf select:disabled, .rjsf textarea:disabled { opacity: 0.6; }
+.rjsf fieldset { min-width: 0; border: 1px solid var(--color-line); border-radius: 8px; padding: 8px; }
+.rjsf legend { width: auto; padding: 0 4px; font-size: 11px; font-weight: 600; color: var(--color-text-2); }
+.rjsf .array-item { margin-bottom: 8px; border-radius: 6px; background: var(--color-panel-2); padding: 4px; }
+.rjsf button {
+  border-radius: 6px; border: 1px solid var(--color-line-2); background: var(--color-panel);
+  color: var(--color-text); padding: 2px 8px; font-size: 11px;
+}
+.rjsf .text-danger, .rjsf .error-detail { font-size: 11px; color: var(--color-bad-text); }
