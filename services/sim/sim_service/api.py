@@ -41,6 +41,15 @@ def create_run(req: RunRequest, background: BackgroundTasks):
     return {"run_id": req.run_id, "status": "RUNNING"}
 
 
+@app.post("/validate")
+def validate(req: RunRequest):
+    try:
+        validate_refs(req)
+    except ContractError as exc:
+        raise HTTPException(status_code=422, detail={"key": exc.key, "message": str(exc)})
+    return {"ok": True}
+
+
 @app.get("/runs/{run_id}")
 def get_run(run_id: int):
     st = _runs.get(run_id)
@@ -53,6 +62,18 @@ def get_run(run_id: int):
     elif st["status"] == "FAILED":
         body["error"] = st["error"]
     return jsonable_encoder(body)
+
+
+@app.get("/runs/{run_id}/result")
+def get_result(run_id: int):
+    st = _runs.get(run_id)
+    if st is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    if st["status"] != "DONE":
+        raise HTTPException(status_code=409, detail=f"run is {st['status']}")
+    r = st["result"]
+    return jsonable_encoder({"run_id": r.run_id, "engine_version": r.engine_version, "kpis": r.kpis,
+                             "bands": r.bands, "insights": r.insights, "signals": r.signals, "events": r.events})
 
 
 @app.get("/runs/{run_id}/export.csv")

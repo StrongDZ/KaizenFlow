@@ -1,0 +1,27 @@
+services:
+  db:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_PASSWORD: kaizen
+      POSTGRES_DB: kaizenflow
+    ports: ["5433:5432"]
+    volumes: [dbdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      retries: 30
+  sim:
+    build: services/sim
+    ports: ["8081:8081"]
+  api:
+    build: services/api
+    environment:
+      KF_DB_URL: postgres://postgres:kaizen@db:5432/kaizenflow?sslmode=disable
+      KF_SIM_URL: http://sim:8081
+      KF_ADDR: ":8080"
+    ports: ["8080:8080"]
+    depends_on:
+      db: {condition: service_healthy}
+      sim: {condition: service_started}
+volumes:
+  dbdata: {}

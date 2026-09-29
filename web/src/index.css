@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+body { @apply bg-slate-50 text-slate-800; }
+
+/* Form sinh từ JSON Schema (@rjsf) */
+.rjsf .form-group { @apply mb-2; }
+.rjsf label { @apply block text-xs font-medium text-slate-600; }
+.rjsf input, .rjsf select, .rjsf textarea { @apply mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-sm; }
+.rjsf fieldset { @apply rounded border border-slate-200 p-2; }
+.rjsf legend { @apply px-1 text-xs font-semibold text-slate-700; }
+.rjsf .array-item { @apply mb-2 rounded bg-slate-50 p-1; }
+.rjsf button { @apply rounded border border-slate-300 bg-white px-2 py-0.5 text-xs; }
+.rjsf .text-danger, .rjsf .error-detail { @apply text-xs text-red-600; }
