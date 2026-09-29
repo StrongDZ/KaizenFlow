@@ -97,6 +97,10 @@ func (h *handlers) createNodeType(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t.ParamSchema = schema
+	if list := checkNodeTypeJSON(h.Validator, t, t.DefaultParams, t.Signals, t.FailureModes); len(list) > 0 {
+		writeJSON(w, 422, issues(list...))
+		return
+	}
 	id, err := h.Store.CreateNodeType(r.Context(), t)
 	if err != nil {
 		writeErr(w, err)
@@ -492,4 +496,182 @@ func (h *handlers) getMaterial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, d)
+}
+
+func cascadeFlag(r *http.Request) bool { return r.URL.Query().Get("cascade") == "true" }
+
+// trimNull coi JSON null như trường vắng mặt (giữ nguyên giá trị cũ).
+func trimNull(r json.RawMessage) json.RawMessage {
+	if s := strings.TrimSpace(string(r)); s == "" || s == "null" {
+		return nil
+	}
+	return r
+}
+
+func (h *handlers) deleteRun(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	if err := h.Store.DeleteRun(r.Context(), id); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(204)
+}
+
+func (h *handlers) deleteScenario(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	if err := h.Store.DeleteScenario(r.Context(), id, cascadeFlag(r)); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(204)
+}
+
+func (h *handlers) deleteVersion(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	if err := h.Store.DeleteVersion(r.Context(), id, cascadeFlag(r)); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(204)
+}
+
+func (h *handlers) deleteModel(w http.ResponseWriter, r *http.Request) {
+	if err := h.Store.DeleteModel(r.Context(), chi.URLParam(r, "key"), cascadeFlag(r)); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(204)
+}
+
+func (h *handlers) putScenario(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var sc store.Scenario
+	if !decode(w, r, &sc) {
+		return
+	}
+	if sc.HorizonS <= 0 {
+		writeJSON(w, 422, issues(validate.Issue{Key: "scenario", Message: "needs horizon_s > 0"}))
+		return
+	}
+	if err := h.Store.UpdateScenario(r.Context(), id, sc); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(204)
+}
+
+func (h *handlers) cloneScenario(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	nid, err := h.Store.CloneScenario(r.Context(), id)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 201, map[string]int64{"id": nid})
+}
+
+// checkNodeTypeJSON kiểm tra phần JSON của node type: default_params theo schema archetype, signals và failure_modes là mảng.
+func checkNodeTypeJSON(v *validate.Validator, t store.NodeType, defaults, signals, failures json.RawMessage) []validate.Issue {
+	var out []validate.Issue
+	if defaults = trimNull(defaults); defaults != nil {
+		var p map[string]any
+		if err := json.Unmarshal(defaults, &p); err != nil || p == nil {
+			out = append(out, validate.Issue{Key: "default_params", Message: "must be a JSON object"})
+		} else {
+			out = append(out, v.DefaultParams(t, p)...)
+		}
+	}
+	for _, f := range []struct {
+		key string
+		raw json.RawMessage
+	}{{"signals", signals}, {"failure_modes", failures}} {
+		if raw := trimNull(f.raw); raw != nil {
+			var arr []any
+			if err := json.Unmarshal(raw, &arr); err != nil {
+				out = append(out, validate.Issue{Key: f.key, Message: "must be a JSON array"})
+			}
+		}
+	}
+	return out
+}
+
+func (h *handlers) putNodeType(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+	var body struct {
+		Name          string          `json:"name"`
+		DefaultParams json.RawMessage `json:"default_params"`
+		Signals       json.RawMessage `json:"signals"`
+		FailureModes  json.RawMessage `json:"failure_modes"`
+		UI            json.RawMessage `json:"ui"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	if strings.TrimSpace(body.Name) == "" {
+		writeJSON(w, 422, issues(validate.Issue{Key: "name", Message: "required"}))
+		return
+	}
+	d, err := h.Store.GetNodeTypeDetail(r.Context(), code)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if list := checkNodeTypeJSON(h.Validator, d.NodeType, body.DefaultParams, body.Signals, body.FailureModes); len(list) > 0 {
+		writeJSON(w, 422, issues(list...))
+		return
+	}
+	err = h.Store.UpdateNodeType(r.Context(), code, store.NodeTypeUpdate{Name: strings.TrimSpace(body.Name),
+		DefaultParams: trimNull(body.DefaultParams), Signals: trimNull(body.Signals),
+		FailureModes: trimNull(body.FailureModes), UI: trimNull(body.UI)})
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(204)
+}
+
+func (h *handlers) deleteNodeType(w http.ResponseWriter, r *http.Request) {
+	if err := h.Store.DeleteNodeType(r.Context(), chi.URLParam(r, "code")); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(204)
+}
+
+func (h *handlers) putMaterial(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name string  `json:"name"`
+		Unit *string `json:"unit"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	if err := h.Store.UpdateMaterial(r.Context(), chi.URLParam(r, "code"), strings.TrimSpace(body.Name), body.Unit); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(204)
+}
+
+func (h *handlers) deleteMaterial(w http.ResponseWriter, r *http.Request) {
+	if err := h.Store.DeleteMaterial(r.Context(), chi.URLParam(r, "code")); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(204)
 }

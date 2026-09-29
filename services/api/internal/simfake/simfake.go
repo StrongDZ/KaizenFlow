@@ -19,6 +19,7 @@ type Server struct {
 	polls       map[int64]int
 	ValidateErr *simapi.ContractError
 	FailRuns    bool
+	Hold        bool // true: GET /runs/{id} luôn trả RUNNING (kiểm tra chặn xoá khi đang chạy)
 	known       map[int64]bool
 }
 
@@ -84,13 +85,15 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	s.mu.Lock()
 	s.polls[id]++
-	n, fail, known := s.polls[id], s.FailRuns, s.known[id]
+	n, fail, known, hold := s.polls[id], s.FailRuns, s.known[id], s.Hold
 	s.mu.Unlock()
 	switch {
 	case !known:
 		writeJSON(w, 404, map[string]string{"detail": "run not found"})
 	case fail:
 		writeJSON(w, 200, simapi.Status{RunID: id, Status: "FAILED", Error: "boom"})
+	case hold:
+		writeJSON(w, 200, simapi.Status{RunID: id, Status: "RUNNING"})
 	case n < 2:
 		writeJSON(w, 200, simapi.Status{RunID: id, Status: "RUNNING"})
 	default:
