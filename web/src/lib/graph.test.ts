@@ -21,7 +21,7 @@ describe('graph conversion', () => {
     const flow = toFlow(graph, types)
     expect(flow.nodes[0].position).toEqual({ x: 10, y: 20 })
     expect(flow.nodes[0].data.name).toBe('Cửa nhận hàng')
-    expect(flow.nodes[0].data.color).toBe('#111111')
+    expect('color' in flow.nodes[0].data).toBe(false)
     expect(flow.nodes[1].position.x).toBeGreaterThan(0)
     expect(flow.edges[0].label).toBe('RAW-01 · TUG')
     const back = fromFlow(flow.nodes, flow.edges)

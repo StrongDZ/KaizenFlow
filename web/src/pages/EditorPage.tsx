@@ -3,21 +3,36 @@ import type { RJSFSchema } from '@rjsf/utils'
 import validator from '@rjsf/validator-ajv8'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Background, Controls, MiniMap, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges,
-  useReactFlow, type Connection, type EdgeChange, type NodeChange,
+  Background, Controls, ReactFlow, ReactFlowProvider, applyEdgeChanges, applyNodeChanges, useReactFlow,
+  type Connection, type EdgeChange, type NodeChange,
 } from '@xyflow/react'
-import { useCallback, useMemo, useState, type DragEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type DragEvent } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Graph, Issue, Json, NodeType } from '../api/types'
+import { FloatingPanel } from '../components/FloatingPanel'
 import { ARCHETYPE_LABEL, kfNodeTypes } from '../components/KfNode'
-import { ErrorBox, Loading, btn, btnPrimary, issuesOf } from '../components/ui'
+import { HeaderActions, useShell } from '../components/shell/ShellContext'
+import { ErrorBox, Loading, btn, btnPrimary, input, issuesOf } from '../components/ui'
 import { edgeSchema, edgeToForm, formToEdge, type EdgeForm } from '../lib/edgeForm'
+import { versionStatusLabel } from '../lib/format'
 import { defaultMaterial, edgeKey, edgeLabel, fromFlow, isEdit, newNodeKey, toFlow, type FlowEdge, type FlowNode } from '../lib/graph'
 import { byCode, poolKind } from '../lib/model'
+import { isTypingTarget } from '../lib/playback'
 
 const DRAG_TYPE = 'application/kf-node-type'
 const noSubmit = { 'ui:submitButtonOptions': { norender: true } }
+
+/**
+ * @rjsf gọi onChange ngay trong componentDidMount để điền giá trị mặc định, trước mọi thao tác của người dùng
+ * (và không phân biệt được bằng tham số id, vì thao tác mảng cũng không có id). Bỏ qua các lần gọi đó bằng cờ
+ * `ready`, bật ở effect của chính component này (effect của cha chạy sau componentDidMount của con).
+ */
+function UserForm({ onChange, ...rest }: ComponentProps<typeof Form>) {
+  const ready = useRef(false)
+  useEffect(() => { ready.current = true }, [])
+  return <Form {...rest} onChange={(e, id) => { if (ready.current) onChange?.(e, id) }} />
+}
 
 export default function EditorPage() {
   const vid = Number(useParams().id)
@@ -28,8 +43,7 @@ export default function EditorPage() {
   if (!graph.data || !types.data || !mats.data) return <Loading />
   return (
     <ReactFlowProvider>
-      <Editor key={`${vid}-${graph.data.status}`} graph={graph.data} typeList={types.data}
-        materials={mats.data.map((m) => m.code)} />
+      <Editor key={`${vid}-${graph.data.status}`} graph={graph.data} typeList={types.data} materials={mats.data.map((m) => m.code)} />
     </ReactFlowProvider>
   )
 }
@@ -42,10 +56,22 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
   const [selected, setSelected] = useState<{ kind: 'node' | 'edge'; id: string } | null>(null)
   const [issues, setIssues] = useState<Issue[]>([])
   const [dirty, setDirty] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(true)
   const readOnly = graph.status !== 'DRAFT'
   const qc = useQueryClient()
   const navigate = useNavigate()
   const { screenToFlowPosition } = useReactFlow()
+  const { focus, setFocus } = useShell()
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target as HTMLElement | null) || e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.key === 'f' || e.key === 'F') setFocus((f) => !f)
+      else if (e.key === 'Escape') setFocus(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [setFocus])
 
   const onNodesChange = useCallback((c: NodeChange<FlowNode>[]) => {
     setNodes((ns) => applyNodeChanges(c, ns))
@@ -74,8 +100,7 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
     const position = screenToFlowPosition({ x: ev.clientX, y: ev.clientY })
     setNodes((ns) => {
       const key = newNodeKey(ns.map((n) => n.id), t.code)
-      return [...ns, { id: key, type: 'kf', position,
-        data: { key, nodeType: t.code, archetype: t.archetype, name: t.name, params: {}, color: (t.ui.color as string | undefined) ?? '#64748b' } }]
+      return [...ns, { id: key, type: 'kf', position, data: { key, nodeType: t.code, archetype: t.archetype, name: t.name, params: {} } }]
     })
     setDirty(true)
   }
@@ -86,11 +111,15 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
   }), [nodes, issues])
   const decoratedEdges = useMemo(() => edges.map((e) => {
     const bad = issues.some((i) => i.key === e.id)
-    return { ...e, style: bad ? { stroke: '#dc2626', strokeWidth: 2 } : undefined }
+    return { ...e, style: bad ? { stroke: 'var(--color-bad)', strokeWidth: 2 } : undefined }
   }), [edges, issues])
 
   const body = () => fromFlow(nodes, edges)
-  const done = () => { setIssues([]); setDirty(false); void qc.invalidateQueries({ queryKey: ['graph', graph.version_id] }); void qc.invalidateQueries({ queryKey: ['models'] }) }
+  const done = () => {
+    setIssues([]); setDirty(false)
+    void qc.invalidateQueries({ queryKey: ['graph', graph.version_id] })
+    void qc.invalidateQueries({ queryKey: ['models'] })
+  }
   const save = useMutation({ mutationFn: () => api.saveGraph(graph.version_id, body()), onSuccess: done, onError: (e) => setIssues(issuesOf(e)) })
   const publish = useMutation({
     mutationFn: async () => { await api.saveGraph(graph.version_id, body()); return api.publish(graph.version_id) },
@@ -99,10 +128,18 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
   const clone = useMutation({ mutationFn: () => api.clone(graph.version_id), onSuccess: (r) => navigate(`/versions/${r.version_id}`) })
 
   const setNodeData = (id: string, patch: Partial<FlowNode['data']>) => {
+    if (readOnly) return
+    const cur = nodes.find((n) => n.id === id)
+    const keys = Object.keys(patch) as (keyof FlowNode['data'])[]
+    // @rjsf gọi onChange ngay khi mount với đúng dữ liệu cũ: không tính là chỉnh sửa
+    if (cur && keys.every((k) => JSON.stringify(cur.data[k]) === JSON.stringify(patch[k]))) return
     setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, ...patch } } : n)))
     setDirty(true)
   }
   const setEdgeForm = (id: string, form: EdgeForm) => {
+    if (readOnly) return
+    const cur = edges.find((e) => e.id === id)
+    if (cur && JSON.stringify(formToEdge(form, cur.data?.params ?? {})) === JSON.stringify(cur.data)) return
     setEdges((es) => es.map((e) => {
       if (e.id !== id) return e
       const next = formToEdge(form, e.data?.params ?? {})
@@ -124,90 +161,105 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
   const operators = pools.filter((n) => poolKind({ node_type: n.data.nodeType, params: n.data.params }, types) === 'OPERATOR')
   const selNode = selected?.kind === 'node' ? nodes.find((n) => n.id === selected.id) : undefined
   const selEdge = selected?.kind === 'edge' ? edges.find((e) => e.id === selected.id) : undefined
+  const error = save.error ?? publish.error
 
   return (
-    <div className="flex h-[calc(100vh-49px)]">
-      <aside className="w-56 overflow-y-auto border-r border-slate-200 bg-white p-3">
-        <div className="mb-2 text-xs text-slate-500">Kéo loại node vào canvas</div>
-        {Object.keys(ARCHETYPE_LABEL).map((arch) => (
-          <div key={arch} className="mb-3">
-            <div className="mb-1 text-[11px] font-semibold uppercase text-slate-400">{ARCHETYPE_LABEL[arch]}</div>
-            {typeList.filter((t) => t.archetype === arch).map((t) => (
-              <div key={t.code} draggable={!readOnly}
-                onDragStart={(e) => { e.dataTransfer.setData(DRAG_TYPE, t.code); e.dataTransfer.effectAllowed = 'move' }}
-                className="mb-1 cursor-grab rounded border-l-4 bg-slate-50 px-2 py-1 text-sm hover:bg-slate-100"
-                style={{ borderColor: (t.ui.color as string | undefined) ?? '#64748b' }}>
-                {t.name}
+    <div className="relative h-full min-h-[480px]" onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }} onDrop={onDrop}>
+      <HeaderActions>
+        <span className="text-[11px] text-muted">{versionStatusLabel(graph.status)}{dirty ? ', chưa lưu' : ''}</span>
+        {readOnly ? (
+          <button className={btnPrimary} disabled={clone.isPending} onClick={() => clone.mutate()}>Tạo bản sửa (v{graph.version + 1})</button>
+        ) : (
+          <>
+            <button className={btn} disabled={save.isPending} onClick={() => save.mutate()}>Lưu</button>
+            <button className={btnPrimary} disabled={publish.isPending} onClick={() => publish.mutate()}>Publish</button>
+          </>
+        )}
+      </HeaderActions>
+
+      <ReactFlow
+        nodes={decorated} edges={decoratedEdges} nodeTypes={kfNodeTypes} colorMode="dark"
+        onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={readOnly ? undefined : onConnect}
+        nodesDraggable={!readOnly} nodesConnectable={!readOnly}
+        onNodeClick={(_, n) => setSelected({ kind: 'node', id: n.id })}
+        onEdgeClick={(_, e) => setSelected({ kind: 'edge', id: e.id })}
+        onPaneClick={() => setSelected(null)} fitView
+      >
+        <Background gap={18} size={1} color="var(--color-line)" />
+        <Controls position="bottom-center" />
+      </ReactFlow>
+
+      {error && <div className="absolute left-1/2 top-3 z-20 w-[420px] -translate-x-1/2"><ErrorBox error={error} /></div>}
+
+      {!focus && paletteOpen && (
+        <FloatingPanel side="left" width={220} title="Loại node" onClose={() => setPaletteOpen(false)}>
+          <div className="p-3">
+            <div className="mb-2 text-[11px] text-muted">{readOnly ? 'Phiên bản đã Publish, chỉ xem.' : 'Kéo một loại vào sơ đồ.'}</div>
+            {Object.keys(ARCHETYPE_LABEL).map((arch) => (
+              <div key={arch} className="mb-3">
+                <div className="mb-1 text-[11px] font-semibold text-faint">{ARCHETYPE_LABEL[arch]}</div>
+                {typeList.filter((t) => t.archetype === arch).map((t) => (
+                  <div
+                    key={t.code} draggable={!readOnly}
+                    onDragStart={(e) => { e.dataTransfer.setData(DRAG_TYPE, t.code); e.dataTransfer.effectAllowed = 'move' }}
+                    className={`mb-1 rounded-lg border border-line-2 bg-panel-2 px-2.5 py-1.5 ${readOnly ? 'opacity-60' : 'cursor-grab hover:bg-raised'}`}
+                  >
+                    <div className="text-xs font-medium text-text">{t.name}</div>
+                    <div className="text-[10.5px] text-faint">{t.code}</div>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
-        ))}
-      </aside>
+        </FloatingPanel>
+      )}
+      {!focus && !paletteOpen && (
+        <button className={`${btn} absolute left-3 top-3 z-10 bg-panel`} onClick={() => setPaletteOpen(true)}>Loại node</button>
+      )}
 
-      <div className="flex flex-1 flex-col">
-        <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-4 py-2">
-          <span className="font-semibold">{graph.model_key}</span>
-          <span className="text-sm text-slate-500">v{graph.version} · {graph.status}{dirty ? ' · chưa lưu' : ''}</span>
-          <div className="flex-1" />
-          <Link className={btn} to={`/versions/${graph.version_id}/scenarios`}>Scenario &amp; chạy</Link>
-          {readOnly ? (
-            <button className={btnPrimary} onClick={() => clone.mutate()}>Tạo bản sửa (v{graph.version + 1})</button>
-          ) : (
-            <>
-              <button className={btn} disabled={save.isPending} onClick={() => save.mutate()}>Lưu</button>
-              <button className={btnPrimary} disabled={publish.isPending} onClick={() => publish.mutate()}>Publish</button>
-            </>
-          )}
-        </div>
-        {(save.error || publish.error) && <div className="p-2"><ErrorBox error={save.error ?? publish.error} /></div>}
-        <div className="flex-1" onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }} onDrop={onDrop}>
-          <ReactFlow nodes={decorated} edges={decoratedEdges} nodeTypes={kfNodeTypes}
-            onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={readOnly ? undefined : onConnect}
-            nodesDraggable={!readOnly} nodesConnectable={!readOnly}
-            onNodeClick={(_, n) => setSelected({ kind: 'node', id: n.id })}
-            onEdgeClick={(_, e) => setSelected({ kind: 'edge', id: e.id })}
-            onPaneClick={() => setSelected(null)} fitView>
-            <Background />
-            <Controls />
-            <MiniMap pannable zoomable />
-          </ReactFlow>
-        </div>
-      </div>
-
-      <aside className="w-96 overflow-y-auto border-l border-slate-200 bg-white p-3">
-        {!selected && <div className="text-sm text-slate-500">Chọn một node hoặc edge để sửa tham số.</div>}
-        {selNode && (
-          <div className="rjsf">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <div className="flex-1">
-                <div className="text-xs text-slate-500">{types[selNode.data.nodeType]?.name} · {selNode.data.key}</div>
-                <input className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-sm" value={selNode.data.name}
-                  disabled={readOnly} onChange={(e) => setNodeData(selNode.id, { name: e.target.value })} />
-              </div>
-              {!readOnly && <button className={btn} onClick={remove}>Xoá</button>}
-            </div>
-            <Form schema={types[selNode.data.nodeType]?.param_schema as RJSFSchema} formData={selNode.data.params}
-              validator={validator} disabled={readOnly} uiSchema={noSubmit}
-              onChange={(e) => setNodeData(selNode.id, { params: (e.formData ?? {}) as Json })} />
-            <details className="mt-3 text-xs">
-              <summary className="cursor-pointer text-slate-500">Tham số mặc định của loại node (giả định)</summary>
-              <pre className="mt-1 overflow-x-auto rounded bg-slate-50 p-2">{JSON.stringify(types[selNode.data.nodeType]?.default_params, null, 2)}</pre>
-            </details>
+      {!focus && selected && (
+        <FloatingPanel side="right" width={320} title={selNode ? 'Thuộc tính node' : 'Thuộc tính edge'} onClose={() => setSelected(null)}>
+          <div className="rjsf p-3">
+            {selNode && (
+              <>
+                <div className="mb-2 flex items-end gap-2">
+                  <div className="flex-1">
+                    <div className="text-[11px] text-muted">{types[selNode.data.nodeType]?.name}, {selNode.data.key}</div>
+                    <input className={`${input} mt-1 w-full`} aria-label="Tên node" value={selNode.data.name} disabled={readOnly}
+                      onChange={(e) => setNodeData(selNode.id, { name: e.target.value })} />
+                  </div>
+                  {!readOnly && <button className={btn} onClick={remove}>Xoá</button>}
+                </div>
+                <UserForm
+                  key={selNode.id}
+                  schema={types[selNode.data.nodeType]?.param_schema as RJSFSchema} formData={selNode.data.params}
+                  validator={validator} disabled={readOnly} uiSchema={noSubmit}
+                  onChange={(e) => setNodeData(selNode.id, { params: (e.formData ?? {}) as Json })}
+                />
+                <details className="mt-3 text-[11px]">
+                  <summary className="cursor-pointer text-muted">Tham số mặc định của loại node (giả định)</summary>
+                  <pre className="mt-1 overflow-x-auto rounded-lg bg-panel-2 p-2 text-text-2">{JSON.stringify(types[selNode.data.nodeType]?.default_params, null, 2)}</pre>
+                </details>
+              </>
+            )}
+            {selEdge && (
+              <>
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="text-xs font-medium text-text">{selEdge.id}</div>
+                  {!readOnly && <button className={btn} onClick={remove}>Xoá</button>}
+                </div>
+                <UserForm
+                  key={selEdge.id}
+                  schema={edgeSchema(materials, pools.map((p) => p.id), operators.map((p) => p.id))}
+                  formData={edgeToForm(selEdge.data?.material ?? '', selEdge.data?.params ?? {})}
+                  validator={validator} disabled={readOnly} uiSchema={noSubmit}
+                  onChange={(e) => setEdgeForm(selEdge.id, e.formData as EdgeForm)}
+                />
+              </>
+            )}
           </div>
-        )}
-        {selEdge && (
-          <div className="rjsf">
-            <div className="mb-2 flex items-center justify-between">
-              <div className="text-sm font-medium">{selEdge.id}</div>
-              {!readOnly && <button className={btn} onClick={remove}>Xoá</button>}
-            </div>
-            <Form schema={edgeSchema(materials, pools.map((p) => p.id), operators.map((p) => p.id))}
-              formData={edgeToForm(selEdge.data?.material ?? '', selEdge.data?.params ?? {})}
-              validator={validator} disabled={readOnly} uiSchema={noSubmit}
-              onChange={(e) => setEdgeForm(selEdge.id, e.formData as EdgeForm)} />
-          </div>
-        )}
-      </aside>
+        </FloatingPanel>
+      )}
     </div>
   )
 }

@@ -14,7 +14,6 @@ export type FlowData = {
   archetype: string
   name: string
   params: Json
-  color: string
   issue?: string
   badge?: Badge
   pins?: PinView[]
@@ -41,7 +40,6 @@ export function toFlow(g: Graph, types: Record<string, NodeType>): { nodes: Flow
         archetype: n.archetype || t?.archetype || '',
         name: n.name || t?.name || n.node_type,
         params: n.params ?? {},
-        color: (t?.ui?.color as string | undefined) ?? '#64748b',
       },
     }
   })
