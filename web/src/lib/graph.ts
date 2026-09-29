@@ -1,4 +1,4 @@
-import type { Edge, Node } from '@xyflow/react'
+import type { Edge, EdgeChange, Node, NodeChange } from '@xyflow/react'
 import type { Graph, GraphEdge, GraphNode, Json, NodeType } from '../api/types'
 
 export type Color = 'GREEN' | 'YELLOW' | 'RED' | 'NONE'
@@ -96,4 +96,11 @@ export function defaultMaterial(src: FlowNode | undefined, materials: string[]):
     if (lots.length) return lots[0].material
   }
   return materials[0] ?? ''
+}
+
+/** Thay đổi của React Flow có phải chỉnh sửa thật không (chọn, đo kích thước, click không kéo thì không). */
+export function isEdit(c: NodeChange | EdgeChange): boolean {
+  if (c.type === 'select' || c.type === 'dimensions') return false
+  if (c.type === 'position') return c.dragging === true
+  return true
 }

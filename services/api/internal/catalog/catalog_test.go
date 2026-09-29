@@ -75,3 +75,20 @@ func TestSeedIsIdempotent(t *testing.T) {
 		t.Fatalf("types=%d mats=%d", types, mats)
 	}
 }
+
+func TestDistOptionsHaveTitlesForForms(t *testing.T) {
+	raw, _ := catalog.SchemaFor("PROCESS")
+	var s struct {
+		Defs map[string]struct {
+			OneOf []map[string]any `json:"oneOf"`
+		} `json:"$defs"`
+	}
+	if err := json.Unmarshal(raw, &s); err != nil {
+		t.Fatal(err)
+	}
+	for _, opt := range s.Defs["dist"].OneOf {
+		if opt["title"] == nil {
+			t.Fatalf("dist option without title (form shows 'Option N'): %v", opt)
+		}
+	}
+}

@@ -35,3 +35,12 @@ describe('catalog lookups', () => {
     expect(colorFor(undefined, th)).toBe('NONE')
   })
 })
+
+describe('sensor default', () => {
+  it('prefers the machine with an injected fault', async () => {
+    const { defaultSensorSubject } = await import('./model')
+    expect(defaultSensorSubject(['STAMP_1', 'STAMP_3'], [{ target: 'STAMP_3', failure: 'bearing_wear' }])).toBe('STAMP_3')
+    expect(defaultSensorSubject(['STAMP_1', 'STAMP_3'], [{ target: 'NOPE' }])).toBe('STAMP_1')
+    expect(defaultSensorSubject([], [])).toBe('')
+  })
+})

@@ -3,13 +3,13 @@ import { Background, Controls, ReactFlow, ReactFlowProvider } from '@xyflow/reac
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
-import type { BandRow, Graph, NodeType, RunDetail, Scenario } from '../api/types'
+import type { BandRow, Graph, Json, NodeType, RunDetail, Scenario } from '../api/types'
 import { BandChart, SignalChart, fmtTime, type Mark } from '../components/Charts'
 import { kfNodeTypes } from '../components/KfNode'
 import { Card, ErrorBox, KpiTile, Loading, StatusChip, btn, btnPrimary } from '../components/ui'
 import { toFlow, type Badge, type FlowNode } from '../lib/graph'
 import { candidatesOf, describeAction, describeInsight, kpiP50 } from '../lib/insights'
-import { byCode, poolCount, signalsOf, thresholdsFor } from '../lib/model'
+import { byCode, defaultSensorSubject, poolCount, signalsOf, thresholdsFor } from '../lib/model'
 import { clip, colorFor, indexBands, series, timeline, valueAt, type BandIndex } from '../lib/replay'
 
 export default function ControlRoomPage() {
@@ -166,7 +166,7 @@ function Room({ run, scenario, graph, types, rows }: {
           <BandChart points={clip(series(idx, focus, 'coverage_h'), 24)} cursor={t}
             redH={focusNode ? thresholdsFor(focusNode, types).red_h : undefined} />
         </Card>
-        <SensorPanel runId={run.id} graph={graph} types={types} />
+        <SensorPanel runId={run.id} graph={graph} types={types} injections={scenario.injections} />
       </div>
     </div>
   )
@@ -174,9 +174,9 @@ function Room({ run, scenario, graph, types, rows }: {
 
 const MARKS: Record<string, string> = { FAULT_ONSET: '#f59e0b', FAILURE: '#dc2626', REPAIRED: '#16a34a', PLANNED_STOP: '#2563eb' }
 
-function SensorPanel({ runId, graph, types }: { runId: number; graph: Graph; types: Record<string, NodeType> }) {
+function SensorPanel({ runId, graph, types, injections }: { runId: number; graph: Graph; types: Record<string, NodeType>; injections: Json[] }) {
   const machines = graph.nodes.filter((n) => signalsOf(n, types).length > 0)
-  const [subject, setSubject] = useState(machines[0]?.key ?? '')
+  const [subject, setSubject] = useState(() => defaultSensorSubject(machines.map((n) => n.key), injections))
   const node = machines.find((n) => n.key === subject)
   const name = node ? signalsOf(node, types)[0] : ''
   const sig = useQuery({ queryKey: ['signals', runId, subject, name], queryFn: () => api.signals(runId, { subject, name }), enabled: !!subject })

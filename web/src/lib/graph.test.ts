@@ -43,3 +43,14 @@ describe('graph conversion', () => {
     expect(defaultMaterial(undefined, ['X'])).toBe('X')
   })
 })
+
+describe('change detection', () => {
+  it('counts only real edits as dirty', async () => {
+    const { isEdit } = await import('./graph')
+    expect(isEdit({ type: 'select', id: 'a', selected: true })).toBe(false)
+    expect(isEdit({ type: 'dimensions', id: 'a' })).toBe(false)
+    expect(isEdit({ type: 'position', id: 'a', dragging: false })).toBe(false)
+    expect(isEdit({ type: 'position', id: 'a', dragging: true, position: { x: 1, y: 2 } })).toBe(true)
+    expect(isEdit({ type: 'remove', id: 'a' })).toBe(true)
+  })
+})

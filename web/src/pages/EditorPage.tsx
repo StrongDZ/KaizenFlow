@@ -13,7 +13,7 @@ import type { Graph, Issue, Json, NodeType } from '../api/types'
 import { ARCHETYPE_LABEL, kfNodeTypes } from '../components/KfNode'
 import { ErrorBox, Loading, btn, btnPrimary, issuesOf } from '../components/ui'
 import { edgeSchema, edgeToForm, formToEdge, type EdgeForm } from '../lib/edgeForm'
-import { defaultMaterial, edgeKey, edgeLabel, fromFlow, newNodeKey, toFlow, type FlowEdge, type FlowNode } from '../lib/graph'
+import { defaultMaterial, edgeKey, edgeLabel, fromFlow, isEdit, newNodeKey, toFlow, type FlowEdge, type FlowNode } from '../lib/graph'
 import { byCode, poolKind } from '../lib/model'
 
 const DRAG_TYPE = 'application/kf-node-type'
@@ -49,12 +49,12 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
 
   const onNodesChange = useCallback((c: NodeChange<FlowNode>[]) => {
     setNodes((ns) => applyNodeChanges(c, ns))
-    if (c.some((x) => x.type !== 'select' && x.type !== 'dimensions')) setDirty(true)
-  }, [])
+    if (!readOnly && c.some(isEdit)) setDirty(true)
+  }, [readOnly])
   const onEdgesChange = useCallback((c: EdgeChange<FlowEdge>[]) => {
     setEdges((es) => applyEdgeChanges(c, es))
-    if (c.some((x) => x.type !== 'select')) setDirty(true)
-  }, [])
+    if (!readOnly && c.some(isEdit)) setDirty(true)
+  }, [readOnly])
   const onConnect = useCallback((c: Connection) => {
     const src = nodes.find((n) => n.id === c.source)
     const dst = nodes.find((n) => n.id === c.target)

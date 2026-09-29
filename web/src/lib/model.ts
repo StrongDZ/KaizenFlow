@@ -39,3 +39,9 @@ export function thresholdsFor(node: NodeRef, types: Record<string, NodeType>): T
   const o = node.params.coverage_thresholds as Partial<Thresholds> | undefined
   return { ...DEFAULT_THRESHOLDS, ...d, ...o }
 }
+
+/** Máy mặc định cho panel cảm biến: ưu tiên máy bị tiêm lỗi trong scenario. */
+export function defaultSensorSubject(machines: string[], injections: Json[]): string {
+  const injected = injections.map((i) => String(i.target)).find((t) => machines.includes(t))
+  return injected ?? machines[0] ?? ''
+}

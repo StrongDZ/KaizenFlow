@@ -8,7 +8,7 @@ import (
 
 var Archetypes = []string{"SOURCE", "STORAGE", "PROCESS", "SINK", "RESOURCE_POOL"}
 
-const dist = `{"oneOf":[{"type":"number","minimum":0},{"type":"object","required":["dist"],"properties":{"dist":{"enum":["const","exp","norm","normal","lognorm","tri","uniform","weibull"]}}}]}`
+const dist = `{"oneOf":[{"title":"Giá trị cố định","type":"number","minimum":0},{"title":"Phân phối xác suất","type":"object","required":["dist"],"properties":{"dist":{"title":"Loại phân phối","enum":["const","exp","norm","normal","lognorm","tri","uniform","weibull"]},"value":{"type":"number","title":"value (const)"},"mean":{"type":"number","title":"mean / mean_s"},"sd":{"type":"number","title":"sd"},"cv":{"type":"number","title":"cv"},"min":{"type":"number","title":"min"},"mode":{"type":"number","title":"mode"},"max":{"type":"number","title":"max"}}}]}`
 
 var schemas = map[string]string{
 	"SOURCE": `{"type":"object","required":["lots"],"properties":{
