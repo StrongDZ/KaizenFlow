@@ -361,3 +361,58 @@ func (s *Store) DeleteNodeType(ctx context.Context, code string) error {
 		return err
 	})
 }
+
+// materialCounts đếm nơi dùng một vật tư (spec §6.2): edge, chuỗi mã trong node.params, chuỗi mã trong node_type.default_params.
+func materialCounts(ctx context.Context, tx pgx.Tx, id int64, code string) (edges, nodes, types int, err error) {
+	err = tx.QueryRow(ctx, `SELECT
+		(SELECT count(*) FROM edge WHERE material_id = $1),
+		(SELECT count(*) FROM node WHERE position('"' || $2::text || '"' in params::text) > 0),
+		(SELECT count(*) FROM node_type WHERE position('"' || $2::text || '"' in default_params::text) > 0)`,
+		id, code).Scan(&edges, &nodes, &types)
+	return
+}
+
+func materialLocked(msg string, edges, nodes, types int) *LockedError {
+	return &LockedError{Msg: msg, Usage: map[string]int{"edges": edges, "nodes": nodes, "node_types": types}}
+}
+
+func (s *Store) UpdateMaterial(ctx context.Context, code, name string, unit *string) error {
+	return s.inTx(ctx, func(tx pgx.Tx) error {
+		var id int64
+		var cur string
+		if err := tx.QueryRow(ctx, `SELECT id, unit FROM material WHERE code = $1 FOR UPDATE`, code).Scan(&id, &cur); err != nil {
+			return notFound(err)
+		}
+		newUnit := cur
+		if unit != nil && *unit != "" && *unit != cur {
+			e, n, t, err := materialCounts(ctx, tx, id, code)
+			if err != nil {
+				return err
+			}
+			if e+n+t > 0 {
+				return materialLocked("vật tư đang được dùng nên không đổi được đơn vị", e, n, t)
+			}
+			newUnit = *unit
+		}
+		_, err := tx.Exec(ctx, `UPDATE material SET name = $2, unit = $3 WHERE id = $1`, id, name, newUnit)
+		return err
+	})
+}
+
+func (s *Store) DeleteMaterial(ctx context.Context, code string) error {
+	return s.inTx(ctx, func(tx pgx.Tx) error {
+		var id int64
+		if err := tx.QueryRow(ctx, `SELECT id FROM material WHERE code = $1 FOR UPDATE`, code).Scan(&id); err != nil {
+			return notFound(err)
+		}
+		e, n, t, err := materialCounts(ctx, tx, id, code)
+		if err != nil {
+			return err
+		}
+		if e+n+t > 0 {
+			return materialLocked("vật tư đang được dùng nên không xoá được", e, n, t)
+		}
+		_, err = tx.Exec(ctx, `DELETE FROM material WHERE id = $1`, id)
+		return err
+	})
+}
