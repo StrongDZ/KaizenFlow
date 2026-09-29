@@ -1,11 +1,13 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { RunRow } from '../api/types'
+import { DeleteAction } from '../components/DeleteAction'
 import { DataTable, type Column } from '../components/table/DataTable'
 import { EmptyState, ErrorBox, FilterChip, Loading, PageBody, PageHeader, StatusChip, btn, btnPrimary } from '../components/ui'
 import { fmtDateTime, fmtDuration } from '../lib/format'
+import { runRules } from '../lib/rules'
 import { comparePath, toggleCompare } from '../lib/table'
 
 const FILTERS = [
@@ -19,6 +21,7 @@ export default function RunsPage({ scope }: { scope: 'all' | 'version' }) {
   const params = useParams()
   const versionId = scope === 'version' ? Number(params.id) : undefined
   const navigate = useNavigate()
+  const qc = useQueryClient()
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['key']>('all')
   const [sel, setSel] = useState<number[]>([])
   const status = FILTERS.find((f) => f.key === filter)?.status
@@ -57,6 +60,24 @@ export default function RunsPage({ scope }: { scope: 'all' | 'version' }) {
     },
     { key: 'start', header: 'Bắt đầu', cell: (r) => fmtDateTime(r.created_at), sort: (r) => Date.parse(r.created_at) },
     { key: 'dur', header: 'Thời lượng', cell: (r) => fmtDuration(r.created_at, r.finished_at) },
+    {
+      key: 'del',
+      header: '',
+      align: 'right',
+      cell: (r) => (
+        <div className="flex justify-end">
+          <DeleteAction
+            what={`lần chạy #${r.id}`}
+            disabled={!runRules(r.status).canDelete}
+            run={() => api.deleteRun(r.id)}
+            onDone={() => {
+              setSel((s) => s.filter((x) => x !== r.id))
+              void qc.invalidateQueries({ queryKey: ['runs'] })
+            }}
+          />
+        </div>
+      ),
+    },
   ]
   return (
     <PageBody wide>

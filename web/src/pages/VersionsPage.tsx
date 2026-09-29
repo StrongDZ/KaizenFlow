@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { VersionInfo } from '../api/types'
+import { DeleteAction } from '../components/DeleteAction'
 import { DataTable, type Column } from '../components/table/DataTable'
 import { EmptyState, ErrorBox, Loading, PageBody, PageHeader, Tag, btn } from '../components/ui'
 import { fmtDateTime, versionStatusLabel } from '../lib/format'
@@ -34,6 +35,7 @@ export default function VersionsPage() {
         <div className="flex justify-end gap-2" onClick={stop}>
           <button className={btn} disabled={clone.isPending} onClick={() => clone.mutate(v.id)}>Nhân bản</button>
           {v.status === 'DRAFT' && <button className={btn} disabled={publish.isPending} onClick={() => publish.mutate(v.id)}>Publish</button>}
+          <DeleteAction what={`phiên bản v${v.version}`} run={(cascade) => api.deleteVersion(v.id, cascade)} onDone={refresh} />
         </div>
       ),
     },

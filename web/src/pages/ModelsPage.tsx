@@ -3,12 +3,13 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import type { ModelSummary } from '../api/types'
+import { DeleteAction } from '../components/DeleteAction'
 import { DataTable, type Column } from '../components/table/DataTable'
 import { EmptyState, ErrorBox, Loading, PageBody, PageHeader, SearchBox, btn, btnPrimary, input } from '../components/ui'
 import { fmtDateTime, versionStatusLabel } from '../lib/format'
 import { filterRows } from '../lib/table'
 
-const COLUMNS: Column<ModelSummary>[] = [
+const BASE_COLUMNS: Column<ModelSummary>[] = [
   { key: 'model', header: 'Mô hình', cell: (m) => <span className="font-medium text-text">{m.model_key}</span>, sort: (m) => m.model_key },
   { key: 'version', header: 'Version mới nhất', cell: (m) => `v${m.latest_version}`, sort: (m) => m.latest_version },
   { key: 'status', header: 'Trạng thái', cell: (m) => versionStatusLabel(m.status), sort: (m) => m.status },
@@ -33,6 +34,23 @@ export default function ModelsPage() {
   })
   if (models.isLoading) return <Loading />
   const rows = filterRows(models.data ?? [], q, (m) => [m.model_key])
+  const columns: Column<ModelSummary>[] = [
+    ...BASE_COLUMNS,
+    {
+      key: 'del',
+      header: '',
+      align: 'right',
+      cell: (m) => (
+        <div className="flex justify-end">
+          <DeleteAction
+            what={`mô hình ${m.model_key}`}
+            run={(cascade) => api.deleteModel(m.model_key, cascade)}
+            onDone={() => void qc.invalidateQueries({ queryKey: ['models'] })}
+          />
+        </div>
+      ),
+    },
+  ]
   return (
     <PageBody>
       <PageHeader
@@ -58,7 +76,7 @@ export default function ModelsPage() {
       <ErrorBox error={models.error ?? create.error} />
       <DataTable
         rows={rows}
-        columns={COLUMNS}
+        columns={columns}
         rowKey={(m) => m.model_key}
         onRowClick={(m) => navigate(`/versions/${m.latest_version_id}`)}
         initialSort={{ key: 'model', dir: 'asc' }}
