@@ -2,6 +2,7 @@
 package validate
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -47,6 +48,56 @@ func (v *Validator) schema(t store.NodeType) (*jsonschema.Schema, error) {
 	}
 	v.cache[cacheKey] = s
 	return s, nil
+}
+
+// defaultsSchema là schema archetype đã bỏ `required` cấp cao nhất: tham số mặc định chỉ là một phần của tham số node
+// (node cung cấp phần còn lại lúc ghép), nên các trường bắt buộc như `lots` không được đòi ở mặc định.
+func (v *Validator) defaultsSchema(t store.NodeType) (*jsonschema.Schema, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	cacheKey := t.Code + "|defaults|" + string(t.ParamSchema)
+	if s, ok := v.cache[cacheKey]; ok {
+		return s, nil
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(t.ParamSchema, &doc); err != nil {
+		return nil, err
+	}
+	delete(doc, "required")
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := jsonschema.UnmarshalJSON(strings.NewReader(string(raw)))
+	if err != nil {
+		return nil, err
+	}
+	c := jsonschema.NewCompiler()
+	url := "mem://" + t.Code + ".defaults.json"
+	if err := c.AddResource(url, parsed); err != nil {
+		return nil, err
+	}
+	s, err := c.Compile(url)
+	if err != nil {
+		return nil, err
+	}
+	v.cache[cacheKey] = s
+	return s, nil
+}
+
+// DefaultParams kiểm tra tham số mặc định của một node type theo schema archetype của nó.
+func (v *Validator) DefaultParams(t store.NodeType, params map[string]any) []Issue {
+	s, err := v.defaultsSchema(t)
+	if err != nil {
+		return []Issue{{Key: "default_params", Message: "schema: " + err.Error()}}
+	}
+	if params == nil {
+		params = map[string]any{}
+	}
+	if err := s.Validate(params); err != nil {
+		return []Issue{{Key: "default_params", Message: firstLine(err)}}
+	}
+	return nil
 }
 
 func firstLine(err error) string {

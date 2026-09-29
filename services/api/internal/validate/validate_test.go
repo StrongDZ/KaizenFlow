@@ -78,3 +78,23 @@ func TestCycleWithoutStorage(t *testing.T) {
 		store.GraphEdge{Key: "P2>P1", Src: "P2", Dst: "P1", Material: "X", Params: map[string]any{}})
 	hasIssue(t, issues(g), "P1", "cycle")
 }
+
+func TestDefaultParamsIgnoreTopLevelRequiredButCheckTypes(t *testing.T) {
+	v := validate.New()
+	types := testfix.Types()
+	if got := v.DefaultParams(types["DOCK_IN"], map[string]any{"assumed": true, "arrivals": map[string]any{"interarrival": 60.0}}); len(got) != 0 {
+		t.Fatalf("missing required `lots` must be fine in defaults: %v", got)
+	}
+	if got := v.DefaultParams(types["DOCK_IN"], nil); len(got) != 0 {
+		t.Fatalf("nil defaults: %v", got)
+	}
+	got := v.DefaultParams(types["RACK_WAREHOUSE"], map[string]any{"capacity": -5.0})
+	if len(got) != 1 || got[0].Key != "default_params" {
+		t.Fatalf("negative capacity: %v", got)
+	}
+	// `required` lồng trong items vẫn được giữ: một lô thiếu qty là sai
+	got = v.DefaultParams(types["DOCK_IN"], map[string]any{"lots": []any{map[string]any{"material": "RAW-01"}}})
+	if len(got) != 1 || got[0].Key != "default_params" {
+		t.Fatalf("lot without qty: %v", got)
+	}
+}
