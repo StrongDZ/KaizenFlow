@@ -49,3 +49,28 @@ func TestInsightsListEndpoint(t *testing.T) {
 		t.Fatalf("all insights = %d", n)
 	}
 }
+
+func TestNodeTypeDetailEndpoint(t *testing.T) {
+	a := newAPI(t)
+	a.publishedModel("denso-mini")
+
+	found := false
+	for _, it := range a.call("GET", "/api/node-types", nil, 200)["items"].([]any) {
+		row := it.(map[string]any)
+		if row["code"] == "RACK_WAREHOUSE" {
+			found = true
+			if row["used_in_versions"].(float64) != 1 {
+				t.Fatalf("row = %v", row)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("RACK_WAREHOUSE missing from list")
+	}
+	d := a.call("GET", "/api/node-types/RACK_WAREHOUSE", nil, 200)
+	usage := d["usage"].(map[string]any)["versions"].([]any)
+	if d["code"] != "RACK_WAREHOUSE" || len(usage) != 1 || usage[0].(map[string]any)["status"] != "PUBLISHED" {
+		t.Fatalf("detail = %v", d)
+	}
+	a.call("GET", "/api/node-types/NOPE", nil, 404)
+}

@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -82,5 +83,41 @@ func TestListInsightRowsOnlyFromDoneRuns(t *testing.T) {
 	}
 	if none, _ := st.ListInsightRows(ctx, "", "ACK", 10); len(none) != 0 {
 		t.Fatalf("ack = %v", none)
+	}
+}
+
+func TestNodeTypeRowsAndDetailUsage(t *testing.T) {
+	st := testfix.Seeded(t, "store_nt_usage")
+	v1 := seededVersion(t, st, "nt")
+	if _, err := st.Clone(ctx, v1); err != nil { // v2 nháp cũng dùng các node type này
+		t.Fatal(err)
+	}
+
+	rows, err := st.ListNodeTypeRows(ctx)
+	if err != nil || len(rows) != 14 {
+		t.Fatalf("rows = %d %v", len(rows), err)
+	}
+	used := map[string]int{}
+	for _, r := range rows {
+		used[r.Code] = r.UsedInVersions
+	}
+	if used["RACK_WAREHOUSE"] != 2 || used["STAMP_PRESS"] != 0 {
+		t.Fatalf("used = %v", used)
+	}
+
+	d, err := st.GetNodeTypeDetail(ctx, "RACK_WAREHOUSE")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Usage.Versions) != 2 || d.Usage.Versions[0].Status != "PUBLISHED" || d.Usage.Versions[1].Status != "DRAFT" ||
+		d.Usage.Versions[0].Nodes != 1 || d.Usage.Versions[0].ModelKey != "nt" || d.Name == "" || !d.IsBuiltin {
+		t.Fatalf("detail = %+v", d)
+	}
+	unused, _ := st.GetNodeTypeDetail(ctx, "STAMP_PRESS")
+	if unused.Usage.Versions == nil || len(unused.Usage.Versions) != 0 {
+		t.Fatalf("unused usage = %#v", unused.Usage.Versions)
+	}
+	if _, err := st.GetNodeTypeDetail(ctx, "NOPE"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("missing: %v", err)
 	}
 }

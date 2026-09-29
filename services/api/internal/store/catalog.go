@@ -109,3 +109,68 @@ func (s *Store) CreateMaterial(ctx context.Context, m Material) (int64, error) {
 	}
 	return id, err
 }
+
+// NodeTypeRow là node type kèm số version đang dùng nó (mọi trạng thái).
+type NodeTypeRow struct {
+	NodeType
+	UsedInVersions int `json:"used_in_versions"`
+}
+
+// VersionUse là một version dùng một node type hoặc vật tư.
+type VersionUse struct {
+	VersionID int64  `json:"version_id"`
+	ModelKey  string `json:"model_key"`
+	Version   int    `json:"version"`
+	Status    string `json:"status"`
+	Nodes     int    `json:"nodes"`
+}
+
+type NodeTypeUsage struct {
+	Versions []VersionUse `json:"versions"`
+}
+
+type NodeTypeDetail struct {
+	NodeType
+	Usage NodeTypeUsage `json:"usage"`
+}
+
+func (s *Store) ListNodeTypeRows(ctx context.Context) ([]NodeTypeRow, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT t.id, t.code, t.name, t.archetype::text, t.param_schema, t.default_params,
+		t.signals, t.failure_modes, t.ui, t.is_builtin,
+		(SELECT count(DISTINCT n.model_version_id) FROM node n WHERE n.node_type_id = t.id)
+		FROM node_type t ORDER BY t.archetype, t.code`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (NodeTypeRow, error) {
+		var t NodeTypeRow
+		err := r.Scan(&t.ID, &t.Code, &t.Name, &t.Archetype, &t.ParamSchema, &t.DefaultParams,
+			&t.Signals, &t.FailureModes, &t.UI, &t.IsBuiltin, &t.UsedInVersions)
+		return t, err
+	})
+}
+
+func (s *Store) GetNodeTypeDetail(ctx context.Context, code string) (*NodeTypeDetail, error) {
+	var d NodeTypeDetail
+	err := s.Pool.QueryRow(ctx, `SELECT id, code, name, archetype::text, param_schema, default_params, signals,
+		failure_modes, ui, is_builtin FROM node_type WHERE code = $1`, code).
+		Scan(&d.ID, &d.Code, &d.Name, &d.Archetype, &d.ParamSchema, &d.DefaultParams, &d.Signals, &d.FailureModes, &d.UI, &d.IsBuiltin)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT v.id, v.model_key, v.version, v.status, count(n.id)
+		FROM node n JOIN node_type t ON t.id = n.node_type_id JOIN model_version v ON v.id = n.model_version_id
+		WHERE t.code = $1 GROUP BY v.id ORDER BY v.model_key, v.version`, code)
+	if err != nil {
+		return nil, err
+	}
+	d.Usage.Versions, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (VersionUse, error) {
+		var u VersionUse
+		err := r.Scan(&u.VersionID, &u.ModelKey, &u.Version, &u.Status, &u.Nodes)
+		return u, err
+	})
+	if d.Usage.Versions == nil {
+		d.Usage.Versions = []VersionUse{}
+	}
+	return &d, err
+}

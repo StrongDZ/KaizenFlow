@@ -41,6 +41,7 @@ func New(d Deps) http.Handler {
 	r.Get("/api/health", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 	r.Get("/api/node-types", h.listNodeTypes)
 	r.Post("/api/node-types", h.createNodeType)
+	r.Get("/api/node-types/{code}", h.getNodeType)
 	r.Get("/api/materials", h.listMaterials)
 	r.Post("/api/materials", h.createMaterial)
 	r.Get("/api/models", h.listModels)
