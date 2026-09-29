@@ -12,9 +12,10 @@ export type NodeType = {
   failure_modes: Json[]
   ui: Json
   is_builtin: boolean
+  used_in_versions?: number
 }
 
-export type Material = { id: number; code: string; name: string; unit: string }
+export type Material = { id: number; code: string; name: string; unit: string; used_in_versions?: number }
 export type Pos = { x: number; y: number }
 
 export type GraphNode = {
@@ -38,8 +39,11 @@ export type Graph = {
   edges: GraphEdge[]
 }
 
-export type ModelSummary = { model_key: string; latest_version_id: number; latest_version: number; status: string }
-export type VersionInfo = { id: number; version: number; status: string; created_at: string }
+export type ModelSummary = {
+  model_key: string; latest_version_id: number; latest_version: number; status: string
+  scenarios: number; runs: number; last_run_at: string | null
+}
+export type VersionInfo = { id: number; version: number; status: string; created_at: string; nodes: number; scenarios: number }
 
 export type Scenario = {
   id: number
@@ -92,3 +96,36 @@ export type BandRow = { subject: string; metric: string; t: string; p10: number;
 export type EventRow = { t: string; rep: number; subject: string; type: string; payload: Json }
 export type SignalRow = { t: string; rep: number; subject: string; name: string; value: number }
 export type Issue = { key: string; message: string }
+
+export type ScenarioRow = Scenario & { runs: number; last_run_status: RunStatus | null }
+
+export type RunRow = {
+  id: number
+  scenario_id: number
+  scenario_name: string
+  model_key: string
+  version_id: number
+  version: number
+  status: RunStatus
+  purpose: string
+  sim_start: string
+  created_at: string
+  finished_at: string | null
+  red_minutes_p50: number | null
+  error: string | null
+}
+
+export type InsightRow = Insight & { model_key: string; version: number; scenario_name: string }
+
+export type VersionUse = { version_id: number; model_key: string; version: number; status: string; nodes: number }
+export type NodeTypeDetail = NodeType & { usage: { versions: VersionUse[] } }
+
+export type MaterialEdgeUse = { version_id: number; model_key: string; version: number; key: string; src: string; dst: string }
+export type MaterialNodeUse = { version_id: number; model_key: string; version: number; key: string; node_type: string }
+export type MaterialUsage = { edges: MaterialEdgeUse[]; nodes: MaterialNodeUse[]; node_types: string[] }
+export type MaterialDetail = Material & { usage: MaterialUsage }
+
+export type NewNodeType = {
+  code: string; name: string; archetype: Archetype; default_params: Json; signals?: Json[]; failure_modes?: Json[]; ui?: Json
+}
+export type NewMaterial = { code: string; name: string; unit: string }

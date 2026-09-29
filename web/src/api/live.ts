@@ -14,7 +14,7 @@ export function useLiveRuns(): void {
         const msg = JSON.parse(String(ev.data)) as { type?: string; run_id?: number }
         if (msg.type === 'run_status') {
           void qc.invalidateQueries({ queryKey: ['run', msg.run_id] })
-          void qc.invalidateQueries({ queryKey: ['runs'] })
+          for (const key of ['runs', 'insights', 'models', 'scenarios']) void qc.invalidateQueries({ queryKey: [key] })
         }
       }
       ws.onclose = () => {

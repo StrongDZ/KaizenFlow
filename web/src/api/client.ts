@@ -1,6 +1,7 @@
 import type {
-  BandRow, EventRow, Graph, GraphEdge, GraphNode, Issue, Json, Material, ModelSummary, NewScenario,
-  NodeType, Run, RunDetail, Scenario, SignalRow, VersionInfo,
+  BandRow, EventRow, Graph, GraphEdge, GraphNode, InsightRow, Issue, Json, Material, MaterialDetail, ModelSummary,
+  NewMaterial, NewNodeType, NewScenario, NodeType, NodeTypeDetail, Run, RunDetail, RunRow, Scenario, ScenarioRow,
+  SignalRow, VersionInfo,
 } from './types'
 
 export const API_BASE: string = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
@@ -50,7 +51,7 @@ export const api = {
     req<void>(`/api/versions/${id}/graph`, { method: 'PUT', body: JSON.stringify(body) }),
   publish: (id: number) => post<{ status: string }>(`/api/versions/${id}/publish`),
   clone: (id: number) => post<{ version_id: number }>(`/api/versions/${id}/clone`),
-  scenarios: (versionId: number) => req<Scenario[]>(`/api/versions/${versionId}/scenarios`),
+  scenarios: (versionId: number) => req<ScenarioRow[]>(`/api/versions/${versionId}/scenarios`),
   scenario: (id: number) => req<Scenario>(`/api/scenarios/${id}`),
   createScenario: (sc: NewScenario) => post<{ id: number }>('/api/scenarios', sc),
   startRun: (scenarioId: number, simStart?: string) =>
@@ -61,5 +62,15 @@ export const api = {
   events: (id: number, q: { subject?: string; type?: string } = {}) => req<EventRow[]>(`/api/runs/${id}/events${qs(q)}`),
   signals: (id: number, q: { subject?: string; name?: string } = {}) => req<SignalRow[]>(`/api/runs/${id}/signals${qs(q)}`),
   applyInsight: (id: number, rank: number) => post<{ run_id: number }>(`/api/insights/${id}/apply`, { rank }),
+  allRuns: (q: { status?: string; model?: string; version?: number; limit?: number; offset?: number } = {}) =>
+    req<RunRow[]>(`/api/runs${qs({
+      status: q.status, model: q.model, version: q.version?.toString(), limit: q.limit?.toString(), offset: q.offset?.toString(),
+    })}`),
+  insights: (q: { kind?: string; status?: string; limit?: number } = {}) =>
+    req<InsightRow[]>(`/api/insights${qs({ kind: q.kind, status: q.status, limit: q.limit?.toString() })}`),
+  nodeType: (code: string) => req<NodeTypeDetail>(`/api/node-types/${encodeURIComponent(code)}`),
+  material: (code: string) => req<MaterialDetail>(`/api/materials/${encodeURIComponent(code)}`),
+  createNodeType: (nt: NewNodeType) => post<{ id: number }>('/api/node-types', nt),
+  createMaterial: (m: NewMaterial) => post<{ id: number }>('/api/materials', m),
   exportUrl: (id: number) => `${API_BASE}/api/runs/${id}/export.csv`,
 }
