@@ -14,6 +14,7 @@ import ModelsPage from './pages/ModelsPage'
 import NodeTypeDetailPage from './pages/NodeTypeDetailPage'
 import NodeTypeNewPage from './pages/NodeTypeNewPage'
 import NodeTypesPage from './pages/NodeTypesPage'
+import OverviewPage from './pages/OverviewPage'
 import ReportPage from './pages/ReportPage'
 import RunRecommendationsPage from './pages/RunRecommendationsPage'
 import RunSensorsPage from './pages/RunSensorsPage'
@@ -37,7 +38,7 @@ export default function App() {
         <Live />
         <Routes>
           <Route element={<Shell />}>
-            <Route path="/" element={<Navigate to="/models" replace />} />
+            <Route path="/" element={<OverviewPage />} />
             <Route path="/models" element={<ModelsPage />} />
             <Route path="/models/:key/versions" element={<VersionsPage />} />
             <Route path="/versions/:id" element={<EditorPage />} />
