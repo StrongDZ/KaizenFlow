@@ -1,8 +1,12 @@
 import type { Edge, EdgeChange, Node, NodeChange } from '@xyflow/react'
+import type { ReactNode } from 'react'
 import type { Graph, GraphEdge, GraphNode, Json, NodeType } from '../api/types'
+import type { PinTone } from './pins'
 
 export type Color = 'GREEN' | 'YELLOW' | 'RED' | 'NONE'
 export type Badge = { color: Color | 'INFO'; text: string }
+
+export type PinView = { n: number; tone: PinTone; content: ReactNode }
 
 export type FlowData = {
   key: string
@@ -13,6 +17,8 @@ export type FlowData = {
   color: string
   issue?: string
   badge?: Badge
+  pins?: PinView[]
+  pinState?: { open: number | null; setOpen: (n: number | null) => void }
 }
 export type EdgeData = { material: string; params: Json }
 export type FlowNode = Node<FlowData, 'kf'>
