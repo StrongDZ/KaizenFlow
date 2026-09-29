@@ -1,6 +1,6 @@
 import type {
-  BandRow, EventRow, Graph, GraphEdge, GraphNode, InsightRow, Issue, Json, Material, MaterialDetail, ModelSummary,
-  NewMaterial, NewNodeType, NewScenario, NodeType, NodeTypeDetail, Run, RunDetail, RunRow, Scenario, ScenarioRow,
+  BandRow, EventRow, Graph, GraphEdge, GraphNode, InsightRow, Issue, Json, Material, MaterialDetail, MaterialUpdate, ModelSummary,
+  NewMaterial, NewNodeType, NewScenario, NodeType, NodeTypeDetail, NodeTypeUpdate, Run, RunDetail, RunRow, Scenario, ScenarioBody, ScenarioRow,
   SignalRow, VersionInfo,
 } from './types'
 
@@ -10,10 +10,14 @@ export const wsUrl = API_BASE.replace(/^http/, 'ws') + '/ws'
 export class ApiError extends Error {
   status: number
   issues: Issue[]
-  constructor(status: number, issues: Issue[], message: string) {
+  impact?: Record<string, number>
+  locked: boolean
+  constructor(status: number, issues: Issue[], message: string, extra: { impact?: Record<string, number>; locked?: boolean } = {}) {
     super(message)
     this.status = status
     this.issues = issues
+    this.impact = extra.impact
+    this.locked = extra.locked === true
   }
 }
 
@@ -26,7 +30,9 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const text = await res.text()
   const body = text ? JSON.parse(text) : undefined
   if (!res.ok) {
-    throw new ApiError(res.status, body?.issues ?? [], body?.error ?? res.statusText)
+    throw new ApiError(res.status, body?.issues ?? [], body?.error ?? res.statusText, {
+      impact: body?.impact, locked: body?.locked === true,
+    })
   }
   return body as T
 }
@@ -39,6 +45,8 @@ function qs(params: Record<string, string | undefined>): string {
 }
 
 const post = <T>(path: string, body?: unknown) => req<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) })
+const put = <T>(path: string, body: unknown) => req<T>(path, { method: 'PUT', body: JSON.stringify(body) })
+const del = (path: string, cascade = false) => req<void>(`${path}${cascade ? '?cascade=true' : ''}`, { method: 'DELETE' })
 
 export const api = {
   nodeTypes: () => req<NodeType[]>('/api/node-types'),
@@ -72,5 +80,15 @@ export const api = {
   material: (code: string) => req<MaterialDetail>(`/api/materials/${encodeURIComponent(code)}`),
   createNodeType: (nt: NewNodeType) => post<{ id: number }>('/api/node-types', nt),
   createMaterial: (m: NewMaterial) => post<{ id: number }>('/api/materials', m),
+  deleteModel: (key: string, cascade: boolean) => del(`/api/models/${encodeURIComponent(key)}`, cascade),
+  deleteVersion: (id: number, cascade: boolean) => del(`/api/versions/${id}`, cascade),
+  deleteScenario: (id: number, cascade: boolean) => del(`/api/scenarios/${id}`, cascade),
+  deleteRun: (id: number) => del(`/api/runs/${id}`),
+  updateScenario: (id: number, body: ScenarioBody) => put<void>(`/api/scenarios/${id}`, body),
+  cloneScenario: (id: number) => post<{ id: number }>(`/api/scenarios/${id}/clone`),
+  updateNodeType: (code: string, body: NodeTypeUpdate) => put<void>(`/api/node-types/${encodeURIComponent(code)}`, body),
+  deleteNodeType: (code: string) => del(`/api/node-types/${encodeURIComponent(code)}`),
+  updateMaterial: (code: string, body: MaterialUpdate) => put<void>(`/api/materials/${encodeURIComponent(code)}`, body),
+  deleteMaterial: (code: string) => del(`/api/materials/${encodeURIComponent(code)}`),
   exportUrl: (id: number) => `${API_BASE}/api/runs/${id}/export.csv`,
 }

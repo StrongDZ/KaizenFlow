@@ -53,4 +53,32 @@ describe('api client', () => {
     await api.insights({ kind: 'RED_RISK', limit: 5 })
     expect(fn).toHaveBeenCalledWith(`${API_BASE}/api/insights?kind=RED_RISK&limit=5`, expect.anything())
   })
+
+  it('keeps impact and locked flags from 409 bodies', async () => {
+    mockFetch(409, { error: 'has dependents', impact: { scenarios: 3, runs: 12 } })
+    const impact = (await api.deleteScenario(1, false).catch((e: unknown) => e)) as ApiError
+    expect(impact).toBeInstanceOf(ApiError)
+    expect(impact.status).toBe(409)
+    expect(impact.impact).toEqual({ scenarios: 3, runs: 12 })
+    expect(impact.locked).toBe(false)
+
+    mockFetch(409, { error: 'đã khoá', locked: true, usage: { runs: 1 } })
+    const locked = (await api.updateScenario(1, { name: 'x', horizon_s: 60, replications: 1, start_state: 'WARMUP', injections: [], overrides: [] }).catch((e: unknown) => e)) as ApiError
+    expect(locked.locked).toBe(true)
+    expect(locked.impact).toBeUndefined()
+  })
+
+  it('sends DELETE with an optional cascade flag and PUT with a JSON body', async () => {
+    const fn = mockFetch(204, undefined)
+    await api.deleteScenario(5, true)
+    expect(fn).toHaveBeenCalledWith(`${API_BASE}/api/scenarios/5?cascade=true`, expect.objectContaining({ method: 'DELETE' }))
+    await api.deleteScenario(5, false)
+    expect(fn).toHaveBeenLastCalledWith(`${API_BASE}/api/scenarios/5`, expect.objectContaining({ method: 'DELETE' }))
+    await api.deleteModel('a b', true)
+    expect(fn).toHaveBeenLastCalledWith(`${API_BASE}/api/models/a%20b?cascade=true`, expect.objectContaining({ method: 'DELETE' }))
+    await api.deleteRun(9)
+    expect(fn).toHaveBeenLastCalledWith(`${API_BASE}/api/runs/9`, expect.objectContaining({ method: 'DELETE' }))
+    await api.updateMaterial('RAW-01', { name: 'X' })
+    expect(fn).toHaveBeenLastCalledWith(`${API_BASE}/api/materials/RAW-01`, expect.objectContaining({ method: 'PUT', body: JSON.stringify({ name: 'X' }) }))
+  })
 })

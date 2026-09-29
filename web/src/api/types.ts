@@ -129,3 +129,6 @@ export type NewNodeType = {
   code: string; name: string; archetype: Archetype; default_params: Json; signals?: Json[]; failure_modes?: Json[]; ui?: Json
 }
 export type NewMaterial = { code: string; name: string; unit: string }
+export type ScenarioBody = Pick<NewScenario, 'name' | 'horizon_s' | 'replications' | 'start_state' | 'injections' | 'overrides'>
+export type NodeTypeUpdate = { name: string; default_params?: Json; signals?: Json[]; failure_modes?: Json[]; ui?: Json }
+export type MaterialUpdate = { name: string; unit?: string }
