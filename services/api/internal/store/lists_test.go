@@ -1,10 +1,12 @@
 package store_test
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
+	"github.com/kaizenflow/api/internal/catalog"
 	"github.com/kaizenflow/api/internal/store"
 	"github.com/kaizenflow/api/internal/testfix"
 )
@@ -118,6 +120,53 @@ func TestNodeTypeRowsAndDetailUsage(t *testing.T) {
 		t.Fatalf("unused usage = %#v", unused.Usage.Versions)
 	}
 	if _, err := st.GetNodeTypeDetail(ctx, "NOPE"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("missing: %v", err)
+	}
+}
+
+func TestMaterialRowsAndDetailUsage(t *testing.T) {
+	st := testfix.Seeded(t, "store_mat_usage")
+	seededVersion(t, st, "mat")
+	schema, _ := catalog.SchemaFor("SINK")
+	if _, err := st.CreateNodeType(ctx, store.NodeType{Code: "CUST_SINK", Name: "Cust", Archetype: "SINK", ParamSchema: schema,
+		DefaultParams: json.RawMessage(`{"demand":[{"kind":"TAKT","material":"BOX","takt":60}]}`)}); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := st.ListMaterialRows(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	used := map[string]int{}
+	for _, r := range rows {
+		used[r.Code] = r.UsedInVersions
+	}
+	// RAW-01: 2 edge và 2 node cùng một version → 1; BOX chỉ nằm trong default_params của một node type → 0 version
+	if used["RAW-01"] != 1 || used["BOX"] != 0 {
+		t.Fatalf("used = %v", used)
+	}
+
+	d, err := st.GetMaterialDetail(ctx, "RAW-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Usage.Edges) != 2 || d.Usage.Edges[0].Key != "S>OUT" || d.Usage.Edges[1].Src != "SRC" ||
+		d.Usage.Edges[0].ModelKey != "mat" || d.Usage.Edges[0].Version != 1 {
+		t.Fatalf("edges = %+v", d.Usage.Edges)
+	}
+	nodeKeys := map[string]string{}
+	for _, n := range d.Usage.Nodes {
+		nodeKeys[n.Key] = n.NodeType
+	}
+	if len(d.Usage.Nodes) != 2 || nodeKeys["SRC"] != "DOCK_IN" || nodeKeys["OUT"] != "SHIP_DOCK" || len(d.Usage.NodeTypes) != 0 {
+		t.Fatalf("nodes = %+v types = %v", d.Usage.Nodes, d.Usage.NodeTypes)
+	}
+
+	box, _ := st.GetMaterialDetail(ctx, "BOX")
+	if len(box.Usage.NodeTypes) != 1 || box.Usage.NodeTypes[0] != "CUST_SINK" || len(box.Usage.Edges) != 0 || box.Usage.Edges == nil {
+		t.Fatalf("box usage = %+v", box.Usage)
+	}
+	if _, err := st.GetMaterialDetail(ctx, "NOPE"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing: %v", err)
 	}
 }

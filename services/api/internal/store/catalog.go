@@ -174,3 +174,114 @@ func (s *Store) GetNodeTypeDetail(ctx context.Context, code string) (*NodeTypeDe
 	}
 	return &d, err
 }
+
+// MaterialRow là vật tư kèm số version đang dùng nó (qua edge hoặc chuỗi mã trong tham số node).
+type MaterialRow struct {
+	Material
+	UsedInVersions int `json:"used_in_versions"`
+}
+
+type MaterialEdgeUse struct {
+	VersionID int64  `json:"version_id"`
+	ModelKey  string `json:"model_key"`
+	Version   int    `json:"version"`
+	Key       string `json:"key"`
+	Src       string `json:"src"`
+	Dst       string `json:"dst"`
+}
+
+type MaterialNodeUse struct {
+	VersionID int64  `json:"version_id"`
+	ModelKey  string `json:"model_key"`
+	Version   int    `json:"version"`
+	Key       string `json:"key"`
+	NodeType  string `json:"node_type"`
+}
+
+type MaterialUsage struct {
+	Edges     []MaterialEdgeUse `json:"edges"`
+	Nodes     []MaterialNodeUse `json:"nodes"`
+	NodeTypes []string          `json:"node_types"`
+}
+
+type MaterialDetail struct {
+	Material
+	Usage MaterialUsage `json:"usage"`
+}
+
+// Vật tư được tham chiếu theo mã bằng chuỗi JSON (lots, stock, recipes, demand), không có khoá ngoại,
+// nên "đang dùng" phải quét cả JSON. position(...) khớp chuỗi chính xác (LIKE coi "_" là ký tự đại diện).
+func (s *Store) ListMaterialRows(ctx context.Context) ([]MaterialRow, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT m.id, m.code, coalesce(m.name, ''), m.unit,
+		(SELECT count(DISTINCT u.v) FROM (
+			SELECT e.model_version_id AS v FROM edge e WHERE e.material_id = m.id
+			UNION ALL
+			SELECT n.model_version_id FROM node n WHERE position('"' || m.code || '"' in n.params::text) > 0
+		) u)
+		FROM material m ORDER BY m.code`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (MaterialRow, error) {
+		var m MaterialRow
+		err := r.Scan(&m.ID, &m.Code, &m.Name, &m.Unit, &m.UsedInVersions)
+		return m, err
+	})
+}
+
+func (s *Store) GetMaterialDetail(ctx context.Context, code string) (*MaterialDetail, error) {
+	var d MaterialDetail
+	err := s.Pool.QueryRow(ctx, `SELECT id, code, coalesce(name, ''), unit FROM material WHERE code = $1`, code).
+		Scan(&d.ID, &d.Code, &d.Name, &d.Unit)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT v.id, v.model_key, v.version, e.key, sn.key, dn.key
+		FROM edge e JOIN model_version v ON v.id = e.model_version_id
+		JOIN node sn ON sn.id = e.src_node_id JOIN node dn ON dn.id = e.dst_node_id
+		WHERE e.material_id = $1 ORDER BY v.model_key, v.version, e.key`, d.ID)
+	if err != nil {
+		return nil, err
+	}
+	if d.Usage.Edges, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (MaterialEdgeUse, error) {
+		var u MaterialEdgeUse
+		err := r.Scan(&u.VersionID, &u.ModelKey, &u.Version, &u.Key, &u.Src, &u.Dst)
+		return u, err
+	}); err != nil {
+		return nil, err
+	}
+	rows, err = s.Pool.Query(ctx, `SELECT v.id, v.model_key, v.version, n.key, t.code
+		FROM node n JOIN model_version v ON v.id = n.model_version_id JOIN node_type t ON t.id = n.node_type_id
+		WHERE position('"' || $1::text || '"' in n.params::text) > 0 ORDER BY v.model_key, v.version, n.key`, code)
+	if err != nil {
+		return nil, err
+	}
+	if d.Usage.Nodes, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (MaterialNodeUse, error) {
+		var u MaterialNodeUse
+		err := r.Scan(&u.VersionID, &u.ModelKey, &u.Version, &u.Key, &u.NodeType)
+		return u, err
+	}); err != nil {
+		return nil, err
+	}
+	rows, err = s.Pool.Query(ctx, `SELECT code FROM node_type
+		WHERE position('"' || $1::text || '"' in default_params::text) > 0 ORDER BY code`, code)
+	if err != nil {
+		return nil, err
+	}
+	if d.Usage.NodeTypes, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (string, error) {
+		var c string
+		return c, r.Scan(&c)
+	}); err != nil {
+		return nil, err
+	}
+	if d.Usage.Edges == nil {
+		d.Usage.Edges = []MaterialEdgeUse{}
+	}
+	if d.Usage.Nodes == nil {
+		d.Usage.Nodes = []MaterialNodeUse{}
+	}
+	if d.Usage.NodeTypes == nil {
+		d.Usage.NodeTypes = []string{}
+	}
+	return &d, nil
+}

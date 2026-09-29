@@ -74,3 +74,21 @@ func TestNodeTypeDetailEndpoint(t *testing.T) {
 	}
 	a.call("GET", "/api/node-types/NOPE", nil, 404)
 }
+
+func TestMaterialDetailEndpoint(t *testing.T) {
+	a := newAPI(t)
+	a.publishedModel("denso-mini")
+
+	for _, it := range a.call("GET", "/api/materials", nil, 200)["items"].([]any) {
+		row := it.(map[string]any)
+		if row["code"] == "RAW-01" && row["used_in_versions"].(float64) != 1 {
+			t.Fatalf("row = %v", row)
+		}
+	}
+	d := a.call("GET", "/api/materials/RAW-01", nil, 200)
+	usage := d["usage"].(map[string]any)
+	if d["code"] != "RAW-01" || len(usage["edges"].([]any)) != 2 || len(usage["nodes"].([]any)) != 2 {
+		t.Fatalf("detail = %v", d)
+	}
+	a.call("GET", "/api/materials/NOPE", nil, 404)
+}

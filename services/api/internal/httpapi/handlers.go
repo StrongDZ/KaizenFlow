@@ -99,7 +99,7 @@ func (h *handlers) createNodeType(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) listMaterials(w http.ResponseWriter, r *http.Request) {
-	list, err := h.Store.ListMaterials(r.Context())
+	list, err := h.Store.ListMaterialRows(r.Context())
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -471,6 +471,15 @@ func (h *handlers) listInsights(w http.ResponseWriter, r *http.Request) {
 
 func (h *handlers) getNodeType(w http.ResponseWriter, r *http.Request) {
 	d, err := h.Store.GetNodeTypeDetail(r.Context(), chi.URLParam(r, "code"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, d)
+}
+
+func (h *handlers) getMaterial(w http.ResponseWriter, r *http.Request) {
+	d, err := h.Store.GetMaterialDetail(r.Context(), chi.URLParam(r, "code"))
 	if err != nil {
 		writeErr(w, err)
 		return

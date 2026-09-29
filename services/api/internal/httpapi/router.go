@@ -44,6 +44,7 @@ func New(d Deps) http.Handler {
 	r.Get("/api/node-types/{code}", h.getNodeType)
 	r.Get("/api/materials", h.listMaterials)
 	r.Post("/api/materials", h.createMaterial)
+	r.Get("/api/materials/{code}", h.getMaterial)
 	r.Get("/api/models", h.listModels)
 	r.Post("/api/models", h.createModel)
 	r.Get("/api/models/{key}/versions", h.listVersions)
