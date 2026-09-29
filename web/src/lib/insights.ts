@@ -36,6 +36,8 @@ export function describeInsight(ins: Insight): string {
       return `${ins.subject_key} có ${p}% khả năng chuyển Đỏ${fmtEta(ins.eta)}`
     case 'BOTTLENECK':
       return `Bottleneck: ${ins.subject_key} (${p}% thời gian)`
+    case 'FAULT_RISK':
+      return `${ins.subject_key} có nguy cơ hỏng (${p}%)${fmtEta(ins.eta)}`
     case 'RECOMMENDATION':
       return `Đề xuất xử lý cho ${ins.subject_key}`
     default:
@@ -46,4 +48,26 @@ export function describeInsight(ins: Insight): string {
 export function kpiP50(kpis: Json | null | undefined, key: string): number | undefined {
   const v = kpis?.[key] as { p50?: number } | undefined
   return v?.p50
+}
+
+export function kpiBand(kpis: Json | null | undefined, key: string): { p10: number; p50: number; p90: number } | undefined {
+  const v = kpis?.[key] as { p10?: number; p50?: number; p90?: number } | undefined
+  if (v?.p10 === undefined || v.p50 === undefined || v.p90 === undefined) return undefined
+  return { p10: v.p10, p50: v.p50, p90: v.p90 }
+}
+
+export function insightDetail(ins: Insight): string {
+  const p = Math.round((ins.probability ?? 0) * 100)
+  switch (ins.kind) {
+    case 'RED_RISK':
+    case 'FAULT_RISK':
+      return `${p}% số lần lặp`
+    case 'BOTTLENECK': {
+      const meanS = ins.payload?.mean_s
+      if (typeof meanS === 'number') return `chờ trung bình ${Math.round(meanS / 60)} phút`
+      return `là điểm nghẽn ${p}% thời gian`
+    }
+    default:
+      return ''
+  }
 }
