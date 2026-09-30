@@ -7,12 +7,14 @@ import type { Binding, SubjectSnap, SubjectView } from '../api/types'
 import { ARCHETYPE_LABEL } from '../components/KfNode'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { BindingDialog, type BindingDraft } from '../components/live/BindingDialog'
+import { BindingsTable } from '../components/live/BindingsTable'
 import { FeedControl } from '../components/live/FeedControl'
 import { ReadinessBar } from '../components/live/ReadinessBar'
 import { SignalChip } from '../components/live/SignalChip'
 import { SuggestDialog } from '../components/live/SuggestDialog'
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, SearchBox, Tag, btn, btnDangerOutline, btnPrimary } from '../components/ui'
 import { useLive } from '../hooks/useLive'
+import { bindingRows, describeBinding } from '../lib/bindingsTable'
 import { filterSubjects, groupNodes, indexCoverage, isBound, splitSubjects, statusKey } from '../lib/connectView'
 import { STALE_MS, stateLabel } from '../lib/liveFrame'
 import { leafPaths } from '../lib/livePath'
@@ -39,8 +41,8 @@ export default function ConnectPage() {
   // Độ phủ: từng tín hiệu đã có nguồn, đã tự tính, chưa có hay hỏng; chức năng nào đã đủ tín hiệu.
   const coverage = useQuery({ queryKey: ['live-check', model], queryFn: () => api.liveCheck(model), refetchInterval: 6000, retry: false })
   const [params, setParams] = useSearchParams()
-  const tab: 'node' | 'edge' = params.get('tab') === 'edge' ? 'edge' : 'node'
-  const setTab = (t: 'node' | 'edge') => setParams((p) => { const n = new URLSearchParams(p); if (t === 'node') n.delete('tab'); else n.set('tab', t); return n }, { replace: true })
+  const tab: 'node' | 'edge' | 'all' = params.get('tab') === 'edge' ? 'edge' : params.get('tab') === 'all' ? 'all' : 'node'
+  const setTab = (t: 'node' | 'edge' | 'all') => setParams((p) => { const n = new URLSearchParams(p); if (t === 'node') n.delete('tab'); else n.set('tab', t); return n }, { replace: true })
   const [q, setQ] = useState('')
   const [onlyMissing, setOnlyMissing] = useState(false)
   const [feature, setFeature] = useState<string | null>(null)
@@ -74,10 +76,23 @@ export default function ConnectPage() {
   )
 
   const rows = useMemo(
-    () => filterSubjects(tab === 'node' ? split.nodes : split.edges, idx, { q, onlyMissing, feature: feature ?? undefined, missingFor }),
+    () => filterSubjects(tab === 'edge' ? split.edges : split.nodes, idx, { q, onlyMissing, feature: feature ?? undefined, missingFor }),
     [split, tab, idx, q, onlyMissing, feature, missingFor],
   )
   const groups = useMemo(() => groupNodes(rows, ARCHETYPE_LABEL), [rows])
+  const tableRows = useMemo(() => {
+    const nameOf = (id: string) => list.find((x) => x.subject === id)?.name ?? id
+    const labelOf = (id: string, g: string) => {
+      const l = list.find((x) => x.subject === id)?.signals.find((y) => y.name === g)?.label ?? g
+      return l.charAt(0).toLowerCase() + l.slice(1)
+    }
+    const status = (sub: string, sig: string) => idx.get(statusKey(sub, sig))?.status
+    const value = (sub: string, sig: string) => {
+      const kind = list.find((x) => x.subject === sub)?.signals.find((y) => y.name === sig)?.kind ?? 'number'
+      return liveValue(sig, kind, snapshot?.subjects[sub])
+    }
+    return bindingRows(bindings.data ?? [], list, (b) => describeBinding(b, nameOf, labelOf), status, value)
+  }, [bindings.data, list, idx, snapshot])
   const shownSources = useMemo(() => filterRows(sources, srcQ, (s) => [s.source, s.desc]), [sources, srcQ])
 
   if (subjects.isLoading || bindings.isLoading) return <Loading />
@@ -184,29 +199,33 @@ export default function ConnectPage() {
         <Card
           title="Sơ đồ"
           actions={
-            <div className="flex items-center gap-2">
-              <label className="flex items-center gap-1.5 text-[11px] text-muted">
-                <input type="checkbox" checked={onlyMissing} onChange={(e) => setOnlyMissing(e.target.checked)} /> Chỉ chưa ghép đủ
-              </label>
-              <SearchBox value={q} onChange={setQ} placeholder={tab === 'node' ? 'Tìm node' : 'Tìm đường nối'} />
-            </div>
+            tab === 'all' ? undefined : (
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1.5 text-[11px] text-muted">
+                  <input type="checkbox" checked={onlyMissing} onChange={(e) => setOnlyMissing(e.target.checked)} /> Chỉ chưa ghép đủ
+                </label>
+                <SearchBox value={q} onChange={setQ} placeholder={tab === 'node' ? 'Tìm node' : 'Tìm đường nối'} />
+              </div>
+            )
           }
         >
           <div role="tablist" aria-label="Loại đối tượng" className="-mt-1 mb-3 flex gap-5 border-b border-line">
-            {([['node', `Node (${split.nodes.length})`], ['edge', `Đường nối (${split.edges.length})`]] as const).map(([t, label]) => (
+            {([['node', `Node (${split.nodes.length})`], ['edge', `Đường nối (${split.edges.length})`], ['all', `Tất cả ghép nối (${(bindings.data ?? []).length})`]] as const).map(([t, label]) => (
               <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
                 className={`-mb-px border-b-2 pb-1.5 text-xs font-medium ${tab === t ? 'border-text font-semibold text-text' : 'border-transparent text-muted hover:text-text'}`}>
                 {label}
               </button>
             ))}
           </div>
-          <p className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[10.5px] text-faint">
+          {tab !== 'all' && <p className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[10.5px] text-faint">
             <span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-ok" />lấy từ thiết bị</span>
             <span><b className="mr-1 font-semibold text-accent">Σ</b>tự tính từ tín hiệu khác</span>
             <span><b className="mr-1 font-semibold">+</b>chưa có</span>
             <span><b className="mr-1 font-semibold text-bad-text">✕</b>hỏng, bấm để xem lý do</span>
-          </p>
-          {rows.length === 0 ? (
+          </p>}
+          {tab === 'all' ? (
+            <BindingsTable model={model} rows={tableRows} coverage={idx} snapshot={snapshot} onEdit={editBinding} />
+          ) : rows.length === 0 ? (
             <EmptyState title="Không có gì để hiện">
               {feature ? 'Không còn tín hiệu nào thiếu cho chức năng này.' : tab === 'node' ? 'Đổi bộ lọc, hoặc mô hình chưa có node nào.' : 'Đổi bộ lọc, hoặc sơ đồ chưa có đường nối nào.'}
             </EmptyState>
