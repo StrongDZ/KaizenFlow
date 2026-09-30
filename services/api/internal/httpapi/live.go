@@ -58,13 +58,15 @@ func (h *handlers) ingest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
+		// Model là mô hình mà các nguồn trong lô thuộc về (feed gửi kèm); không có thì nguồn được gắn theo ghép nối khớp.
+		Model    string         `json:"model"`
 		Messages []live.Message `json:"messages"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 4<<20)
 	if !decode(w, r, &body) {
 		return
 	}
-	writeJSON(w, 200, h.Live.Ingest(body.Messages))
+	writeJSON(w, 200, h.Live.IngestFor(body.Model, body.Messages))
 }
 
 type liveResp struct {

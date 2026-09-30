@@ -2,6 +2,7 @@ package livesvc
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -15,6 +16,30 @@ type fakeStore struct {
 	bindings []live.Binding
 	sigs     []store.LiveSignal
 	evs      []store.LiveEvent
+	srcs     []store.DataSource // mỗi phần tử là một lần ghi (không gộp)
+	srcErr   error
+}
+
+func (f *fakeStore) UpsertSources(_ context.Context, list []store.DataSource) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.srcErr != nil {
+		return f.srcErr
+	}
+	f.srcs = append(f.srcs, list...)
+	return nil
+}
+
+func (f *fakeStore) sourceWrites(model, source string) []store.DataSource {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []store.DataSource
+	for _, d := range f.srcs {
+		if d.ModelKey == model && d.Source == source {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 func (f *fakeStore) AllBindings(context.Context) ([]live.Binding, error) { return f.bindings, nil }
@@ -34,6 +59,8 @@ type fakeHub struct {
 func (h *fakeHub) Broadcast(v any) { h.mu.Lock(); h.msgs = append(h.msgs, v); h.mu.Unlock() }
 
 var t0 = time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+
+var errBoom = errors.New("boom")
 
 func newSvc(t *testing.T, bs ...live.Binding) (*Service, *fakeStore, *fakeHub) {
 	t.Helper()
@@ -223,5 +250,86 @@ func TestClearDropsPendingRowsOfThatModelOnly(t *testing.T) {
 	}
 	if len(fs.sigs) != 1 || fs.sigs[0].Model != "other" {
 		t.Errorf("the other model's row must survive: %+v", fs.sigs)
+	}
+}
+
+func TestIngestForRegistersSourcesUnderTheNamedModel(t *testing.T) {
+	s, fs, _ := newSvc(t)
+	s.IngestFor("m", []live.Message{
+		{Source: "plc/prs-02/status", TS: t0, Desc: "Máy dập 2", Payload: map[string]any{"st": "RUN"}},
+		{Source: "plc/prs-02/status", TS: t0.Add(time.Second), Payload: map[string]any{"st": "IDLE"}},
+	})
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	w := fs.sourceWrites("m", "plc/prs-02/status")
+	if len(w) != 1 {
+		t.Fatalf("writes = %+v", fs.srcs)
+	}
+	if w[0].Count != 2 || w[0].Desc != "Máy dập 2" || w[0].Origin != "feed" || string(w[0].Sample) != `{"st":"IDLE"}` {
+		t.Fatalf("write = %+v (sample %s)", w[0], w[0].Sample)
+	}
+}
+
+func TestIngestWithoutModelRegistersOnlyForModelsWhoseBindingsMatch(t *testing.T) {
+	s, fs, _ := newSvc(t, bind("m1", "A", "count_ok", "dev/+/n", "n"), bind("m2", "B", "count_ok", "dev/x/n", "n"))
+	s.Ingest([]live.Message{
+		{Source: "dev/x/n", TS: t0, Payload: map[string]any{"n": 1.0}},
+		{Source: "other/y", TS: t0, Payload: map[string]any{"n": 1.0}},
+	})
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(fs.sourceWrites("m1", "dev/x/n")) != 1 || len(fs.sourceWrites("m2", "dev/x/n")) != 1 {
+		t.Fatalf("cả hai mô hình có ghép nối khớp phải có nguồn: %+v", fs.srcs)
+	}
+	for _, d := range fs.srcs {
+		if d.Source == "other/y" {
+			t.Fatalf("nguồn không thuộc mô hình nào không được ghi: %+v", d)
+		}
+	}
+}
+
+func TestSourceWritesAreThrottledAndOnlyCarryTheNewCount(t *testing.T) {
+	s, fs, _ := newSvc(t)
+	wall := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return wall }
+	ctx := context.Background()
+	s.IngestFor("m", []live.Message{{Source: "s", TS: t0, Payload: 1.0}})
+	_ = s.Flush(ctx)
+	s.IngestFor("m", []live.Message{{Source: "s", TS: t0, Payload: 2.0}, {Source: "s", TS: t0, Payload: 3.0}})
+	wall = wall.Add(3 * time.Second) // chưa đủ 10 giây
+	_ = s.Flush(ctx)
+	if n := len(fs.sourceWrites("m", "s")); n != 1 {
+		t.Fatalf("ghi quá dày: %d lần", n)
+	}
+	wall = wall.Add(8 * time.Second) // đã quá 10 giây kể từ lần ghi trước
+	_ = s.Flush(ctx)
+	w := fs.sourceWrites("m", "s")
+	if len(w) != 2 || w[1].Count != 2 {
+		t.Fatalf("lần ghi thứ hai chỉ mang phần mới (2): %+v", w)
+	}
+	wall = wall.Add(time.Minute)
+	_ = s.Flush(ctx)
+	if n := len(fs.sourceWrites("m", "s")); n != 2 {
+		t.Fatalf("không có bản tin mới thì không ghi: %d lần", n)
+	}
+}
+
+func TestFailedSourceWriteKeepsTheCount(t *testing.T) {
+	s, fs, _ := newSvc(t)
+	ctx := context.Background()
+	s.IngestFor("m", []live.Message{{Source: "s", TS: t0, Payload: 1.0}})
+	fs.srcErr = errBoom
+	if err := s.Flush(ctx); err == nil {
+		t.Fatal("phải báo lỗi ghi")
+	}
+	fs.srcErr = nil
+	if err := s.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+	w := fs.sourceWrites("m", "s")
+	if len(w) != 1 || w[0].Count != 1 {
+		t.Fatalf("lỗi ghi không được làm mất số đếm: %+v", w)
 	}
 }

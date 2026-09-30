@@ -105,3 +105,34 @@ def test_starting_again_replaces_the_world(runner, blueprint):
     runner.add_incident("machine_down", "STAMP_1", duration_s=6000)
     runner.start(blueprint(), speed=100.0)
     assert runner.list_incidents() == []
+
+
+def test_http_sink_posts_the_model_the_runner_is_playing(monkeypatch):
+    """API cần biết bản tin thuộc mô hình nào để ghi nguồn dữ liệu vào đúng mô hình."""
+    from feed_service import sinks
+
+    sent = []
+    monkeypatch.setattr(sinks, "_call", lambda method, url, body=None, timeout=10.0: sent.append(body))
+    sink = sinks.HttpSink("http://api:8080")
+    sink([{"source": "a", "ts": "x", "payload": 1}])
+    assert "model" not in sent[-1], "chưa biết mô hình thì không gửi"
+    sink.model = "denso-plant"
+    sink([{"source": "a", "ts": "x", "payload": 1}])
+    assert sent[-1]["model"] == "denso-plant" and len(sent[-1]["messages"]) == 1
+
+
+def test_runner_tells_its_sink_which_model_it_plays(blueprint):
+    class Sink:
+        model = None
+
+        def __call__(self, messages):
+            pass
+
+    sink = Sink()
+    runner = Runner(sink, tick_s=0.05)
+    bp = blueprint()
+    runner.start(bp, speed=10)
+    try:
+        assert sink.model == bp["model"]
+    finally:
+        runner.stop()

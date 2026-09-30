@@ -35,6 +35,8 @@ class Runner:
         with self._lock:
             self.world, self.emitter = world, Emitter(world, seed=seed + 1)
             self.model, self.version_id = blueprint.get("model"), blueprint.get("version_id")
+            if hasattr(self.sink, "model"):
+                self.sink.model = self.model
             self.speed = self._clamp(speed)
             self.state = "running"
             self.sent = self.send_errors = 0

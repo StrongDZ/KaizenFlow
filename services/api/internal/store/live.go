@@ -198,9 +198,9 @@ func clearLiveTx(ctx context.Context, tx pgx.Tx, model string) error {
 	return nil
 }
 
-// deleteLiveConfig xoá mapping, bản đồ AGV và dữ liệu live của một mô hình (gọi khi xoá mô hình).
+// deleteLiveConfig xoá mapping, nguồn dữ liệu, bản đồ AGV và dữ liệu live của một mô hình (gọi khi xoá mô hình).
 func deleteLiveConfig(ctx context.Context, tx pgx.Tx, model string) error {
-	for _, q := range []string{`DELETE FROM data_binding WHERE model_key = $1`, `DELETE FROM agv_map WHERE model_key = $1`} {
+	for _, q := range []string{`DELETE FROM data_binding WHERE model_key = $1`, `DELETE FROM agv_map WHERE model_key = $1`, `DELETE FROM data_source WHERE model_key = $1`} {
 		if _, err := tx.Exec(ctx, q, model); err != nil {
 			return err
 		}
@@ -272,4 +272,76 @@ func (s *Store) SupersedeDrift(ctx context.Context, model string) (int64, error)
 		SELECT r.id FROM sim_run r JOIN scenario sc ON sc.id = r.scenario_id JOIN model_version v ON v.id = sc.model_version_id
 		WHERE v.model_key = $1)`, model)
 	return tag.RowsAffected(), err
+}
+
+// DataSource là một nguồn dữ liệu (thiết bị, topic) của một mô hình. Origin: feed (tự ghi khi nhận bản tin) hoặc manual (người dùng khai báo).
+// FirstSeen, LastSeen theo giờ thật; Sample là bản tin mới nhất (hoặc mẫu người dùng dán).
+type DataSource struct {
+	ModelKey  string          `json:"model_key"`
+	Source    string          `json:"source"`
+	Desc      string          `json:"desc"`
+	Origin    string          `json:"origin"`
+	FirstSeen time.Time       `json:"first_seen"`
+	LastSeen  time.Time       `json:"last_seen"`
+	Count     int64           `json:"count"`
+	Sample    json.RawMessage `json:"sample"`
+}
+
+// UpsertSources ghi một lô nguồn: cộng dồn số bản tin, giữ lần đầu thấy, cập nhật lần cuối và mẫu; mô tả rỗng không xoá mô tả cũ;
+// nguồn đã khai báo tay vẫn là manual, và bản ghi manual mới chuyển nguồn tự ghi thành manual.
+func (s *Store) UpsertSources(ctx context.Context, list []DataSource) error {
+	if len(list) == 0 {
+		return nil
+	}
+	return s.inTx(ctx, func(tx pgx.Tx) error {
+		for _, d := range list {
+			if d.Origin == "" {
+				d.Origin = "feed"
+			}
+			var sample any
+			if len(d.Sample) > 0 {
+				sample = []byte(d.Sample)
+			}
+			if _, err := tx.Exec(ctx, `INSERT INTO data_source (model_key, source, description, origin, first_seen, last_seen, msg_count, sample)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+				ON CONFLICT (model_key, source) DO UPDATE SET
+				  description = CASE WHEN EXCLUDED.description <> '' THEN EXCLUDED.description ELSE data_source.description END,
+				  origin      = CASE WHEN EXCLUDED.origin = 'manual' THEN 'manual' ELSE data_source.origin END,
+				  last_seen   = GREATEST(data_source.last_seen, EXCLUDED.last_seen),
+				  msg_count   = data_source.msg_count + EXCLUDED.msg_count,
+				  sample      = COALESCE(EXCLUDED.sample, data_source.sample)`,
+				d.ModelKey, d.Source, d.Desc, d.Origin, d.FirstSeen, d.LastSeen, d.Count, sample); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// ListSources trả mọi nguồn của một mô hình, theo tên nguồn.
+func (s *Store) ListSources(ctx context.Context, model string) ([]DataSource, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT model_key, source, description, origin, first_seen, last_seen, msg_count, sample
+		FROM data_source WHERE model_key = $1 ORDER BY source`, model)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (DataSource, error) {
+		var d DataSource
+		var sample []byte
+		err := r.Scan(&d.ModelKey, &d.Source, &d.Desc, &d.Origin, &d.FirstSeen, &d.LastSeen, &d.Count, &sample)
+		d.Sample = json.RawMessage(sample)
+		return d, err
+	})
+}
+
+// DeleteSource xoá một nguồn (ErrNotFound nếu không có). Ghép nối đang dùng nguồn đó do nơi gọi xử lý trước.
+func (s *Store) DeleteSource(ctx context.Context, model, source string) error {
+	tag, err := s.Pool.Exec(ctx, `DELETE FROM data_source WHERE model_key = $1 AND source = $2`, model, source)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
