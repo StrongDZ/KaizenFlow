@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Graph, NodeType } from '../api/types'
-import { defaultMaterial, edgeKey, fromFlow, newNodeKey, toFlow } from './graph'
+import { defaultMaterial, edgeKey, fromFlow, makeNode, newNodeKey, toFlow } from './graph'
 
 const types: Record<string, NodeType> = {
   DOCK_IN: { id: 1, code: 'DOCK_IN', name: 'Cửa nhận hàng', archetype: 'SOURCE', param_schema: {}, default_params: {}, signals: [], failure_modes: [], ui: { color: '#111111' }, is_builtin: true },
@@ -40,6 +40,19 @@ describe('graph conversion', () => {
     expect(toFlow(vertical, types).nodes.map((n) => n.data.dir)).toEqual(['TB', 'TB'])
     const horizontal: Graph = { ...vertical, nodes: [vertical.nodes[0], { ...vertical.nodes[1], canvas_pos: { x: 300, y: 5 } }] }
     expect(toFlow(horizontal, types).nodes.map((n) => n.data.dir)).toEqual(['LR', 'LR'])
+  })
+
+  it('makes a fresh node of a chosen type at a position, with a key no other node has', () => {
+    const type = { ...types.DOCK_IN, ui: { icon: 'truck' } }
+    const n = makeNode(type, ['DOCK_IN_1', 'SRC'], { x: 12, y: 34 })
+    expect(n).toMatchObject({ id: 'DOCK_IN_2', type: 'kf', position: { x: 12, y: 34 } })
+    expect(n.data).toMatchObject({ key: 'DOCK_IN_2', nodeType: 'DOCK_IN', archetype: 'SOURCE', name: 'Cửa nhận hàng', params: {}, icon: 'truck' })
+  })
+
+  it('carries the type icon onto nodes loaded from a saved diagram', () => {
+    const withIcon = { ...types, DOCK_IN: { ...types.DOCK_IN, ui: { icon: 'truck', color: '#111111' } } }
+    expect(toFlow(graph, withIcon).nodes[0].data.icon).toBe('truck')
+    expect(toFlow(graph, withIcon).nodes[1].data.icon).toBeUndefined()
   })
 
   it('makes unique keys', () => {

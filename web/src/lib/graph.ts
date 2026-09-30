@@ -21,11 +21,18 @@ export type FlowData = {
   pinState?: { open: number | null; setOpen: (n: number | null) => void }
   /** Hướng sơ đồ: quyết định cổng nối nằm hai bên (LR) hay trên/dưới (TB). */
   dir?: Dir
+  /** Tên biểu tượng lucide của loại node (ui.icon), để thẻ node và danh sách loại có cùng hình. */
+  icon?: string
 }
 /** dots/cycleS/running chỉ có ở Control Room (hạt chạy trên edge); không bao giờ được lưu vào sơ đồ. */
 export type EdgeData = { material: string; params: Json; dots?: number; cycleS?: number; running?: boolean }
 export type FlowNode = Node<FlowData, 'kf'>
 export type FlowEdge = Edge<EdgeData>
+
+export function iconOfType(t: NodeType | undefined): string | undefined {
+  const icon = t?.ui?.icon
+  return typeof icon === 'string' && icon !== '' ? icon : undefined
+}
 
 export function edgeLabel(material: string, params: Json): string {
   return params.mode === 'POOL' ? `${material} · ${String(params.pool ?? '?')}` : material
@@ -44,6 +51,7 @@ export function toFlow(g: Graph, types: Record<string, NodeType>): { nodes: Flow
         archetype: n.archetype || t?.archetype || '',
         name: n.name || t?.name || n.node_type,
         params: n.params ?? {},
+        icon: iconOfType(t),
       },
     }
   })
@@ -84,6 +92,12 @@ export function newNodeKey(existing: string[], code: string): string {
   let i = 1
   while (existing.includes(`${base}_${i}`)) i++
   return `${base}_${i}`
+}
+
+/** Node mới của một loại, đặt ở vị trí cho trước, với khoá chưa node nào dùng. */
+export function makeNode(t: NodeType, existing: string[], position: { x: number; y: number }): FlowNode {
+  const key = newNodeKey(existing, t.code)
+  return { id: key, type: 'kf', position, data: { key, nodeType: t.code, archetype: t.archetype, name: t.name, params: {}, icon: iconOfType(t) } }
 }
 
 export function edgeKey(src: string, dst: string, existing: string[]): string {
