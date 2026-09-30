@@ -88,10 +88,10 @@ export function Dock({ times, ti, onSeek, playing, onToggle, speed, onSpeed, zon
         <button className={btn} aria-label="Tiến một bước" onClick={() => onSeek(stepIndex(ti, times.length, 'ArrowRight', false))}><ChevronRight size={12} /></button>
       </div>
       <Ruler times={times} ti={ti} onSeek={onSeek} zones={zones} marks={marks} />
-      <button onClick={onSpeed} aria-label="Đổi tốc độ phát" className="flex-none rounded-md border border-line-2 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-text-2 hover:text-text">
+      <button onClick={onSpeed} aria-label="Đổi tốc độ phát" title={`Tốc độ phát ×${speed}. Bấm để đổi giữa ×1, ×4 và ×16.`} className="flex-none rounded-md border border-line-2 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-text-2 hover:text-text">
         ×{speed}
       </button>
-      <span className="w-24 flex-none text-[11px] leading-tight text-muted">{fmtStep(step)}</span>
+      <span className="w-36 flex-none text-[11px] leading-tight text-muted" title="Thời gian mô phỏng giữa hai điểm trên thước">{fmtStep(step)}</span>
     </div>
   )
 }

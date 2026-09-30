@@ -20,7 +20,7 @@ export default function ScenariosPage() {
     { key: 'reps', header: 'Số lần lặp', cell: (s) => s.replications, sort: (s) => s.replications, align: 'right' },
     { key: 'origin', header: 'Nguồn gốc', cell: (s) => <Tag>{s.origin === 'RECOMMENDER' ? 'Từ đề xuất' : 'Người dùng'}</Tag>, sort: (s) => s.origin },
     { key: 'runs', header: 'Số run', cell: (s) => s.runs, sort: (s) => s.runs, align: 'right' },
-    { key: 'last', header: 'Run gần nhất', cell: (s) => (s.last_run_status ? <StatusChip status={s.last_run_status} /> : '—') },
+    { key: 'last', header: 'Lần chạy gần nhất', cell: (s) => (s.last_run_status ? <StatusChip status={s.last_run_status} /> : '—') },
     {
       key: 'actions',
       header: '',

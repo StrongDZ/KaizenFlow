@@ -1,7 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 
 const LINKS = [
-  { to: '/library/node-types', label: 'Node type' },
+  { to: '/library/node-types', label: 'Loại node' },
   { to: '/library/materials', label: 'Vật tư' },
 ]
 

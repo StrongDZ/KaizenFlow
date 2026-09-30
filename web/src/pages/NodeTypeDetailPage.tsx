@@ -25,13 +25,13 @@ export default function NodeTypeDetailPage() {
   const qc = useQueryClient()
   const t = useQuery({ queryKey: ['node-type', code], queryFn: () => api.nodeType(code) })
   const [tab, setTab] = useState<(typeof TABS)[number]>('Tham số')
-  if (t.error) return <PageBody><Link className="text-xs text-muted hover:text-text" to="/library/node-types">Danh sách node type</Link><ErrorBox error={t.error} /></PageBody>
+  if (t.error) return <PageBody><Link className="text-xs text-muted hover:text-text" to="/library/node-types">Danh sách loại node</Link><ErrorBox error={t.error} /></PageBody>
   if (!t.data) return <Loading />
   const d = t.data
   const rules = nodeTypeRules(d, d.usage.versions)
   return (
     <PageBody>
-      <Link className="text-xs text-muted hover:text-text" to="/library/node-types">‹ Danh sách node type</Link>
+      <Link className="text-xs text-muted hover:text-text" to="/library/node-types">‹ Danh sách loại node</Link>
       <PageHeader
         title={d.name}
         subtitle={<span className="flex items-center gap-2"><Tag>{d.code}</Tag><Tag>{ARCHETYPE_LABEL[d.archetype]}</Tag></span>}
@@ -41,7 +41,7 @@ export default function NodeTypeDetailPage() {
             {rules.canEdit && <Link className={btn} to={`/library/node-types/${encodeURIComponent(d.code)}/edit`}>Sửa</Link>}
             {rules.canDelete && (
               <DeleteAction
-                what={`node type ${d.code}`}
+                what={`loại node ${d.code}`}
                 run={() => api.deleteNodeType(d.code)}
                 onDone={() => {
                   void qc.invalidateQueries({ queryKey: ['node-types'] })

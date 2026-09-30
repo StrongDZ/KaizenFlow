@@ -11,7 +11,7 @@ import { filterRows } from '../lib/table'
 
 const BASE_COLUMNS: Column<ModelSummary>[] = [
   { key: 'model', header: 'Mô hình', cell: (m) => <span className="font-medium text-text">{m.model_key}</span>, sort: (m) => m.model_key },
-  { key: 'version', header: 'Version mới nhất', cell: (m) => `v${m.latest_version}`, sort: (m) => m.latest_version },
+  { key: 'version', header: 'Phiên bản mới nhất', cell: (m) => `v${m.latest_version}`, sort: (m) => m.latest_version },
   { key: 'status', header: 'Trạng thái', cell: (m) => versionStatusLabel(m.status), sort: (m) => m.status },
   { key: 'scenarios', header: 'Scenario', cell: (m) => m.scenarios, sort: (m) => m.scenarios, align: 'right' },
   { key: 'runs', header: 'Lần chạy', cell: (m) => m.runs, sort: (m) => m.runs, align: 'right' },

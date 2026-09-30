@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { ApiError } from '../api/client'
 import type { Issue, RunStatus } from '../api/types'
+import { friendlyMessage } from '../lib/errors'
 import { statusLabel } from '../lib/format'
 
 export const btn =
@@ -22,7 +23,7 @@ export function issuesOf(e: unknown): Issue[] {
 
 export function ErrorBox({ error }: { error: unknown }) {
   if (!error) return null
-  const msg = error instanceof Error ? error.message : String(error)
+  const msg = friendlyMessage(error)
   const issues = issuesOf(error)
   return (
     <div role="alert" className="rounded-lg border border-bad/50 bg-bad-bg p-3 text-xs text-bad-text">

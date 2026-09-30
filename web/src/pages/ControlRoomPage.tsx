@@ -44,12 +44,18 @@ function badgeFor(n: FlowNode, idx: BandIndex, t: number, types: Record<string, 
   if (n.data.archetype === 'STORAGE') {
     const cov = valueAt(series(idx, n.id, 'coverage_h'), t)?.p50
     const text = cov === undefined ? '—' : cov >= 999 ? 'không tiêu thụ' : `còn ${cov.toFixed(1).replace('.', ',')} giờ`
-    return { color: colorFor(cov, thresholdsFor(ref, types)), text }
+    return {
+      color: colorFor(cov, thresholdsFor(ref, types)), text,
+      hint: 'Tồn kho đủ dùng thêm chừng này ở tốc độ tiêu thụ gần đây. Xanh là ổn, Vàng là hơi thiếu hoặc thừa, Đỏ là sắp hết hàng.',
+    }
   }
   if (n.data.archetype === 'RESOURCE_POOL') {
     const busy = valueAt(series(idx, n.id, 'busy'), t)?.p50
     const queue = valueAt(series(idx, n.id, 'queue_len'), t)?.p50 ?? 0
-    return busy === undefined ? undefined : { color: 'INFO', text: `${Math.round(busy)}/${poolCount(ref, types)} bận, ${Math.round(queue)} chờ` }
+    return busy === undefined ? undefined : {
+      color: 'INFO', text: `${Math.round(busy)}/${poolCount(ref, types)} bận, ${Math.round(queue)} chờ`,
+      hint: 'Số xe hoặc người đang làm việc trên tổng số, và số lượt đang xếp hàng chờ họ.',
+    }
   }
   return undefined
 }
@@ -189,6 +195,12 @@ function Room({ run, scenario, graph, types, rows }: {
       </ReactFlow>
 
       {!focus && <Ribbon kpis={run.kpis} at={cursor} time={hasTime ? t : undefined} deltaRed={deltaRed} />}
+      {!focus && hasTime && (
+        <p className="pointer-events-none absolute left-3.5 top-[38px] z-10 flex items-center gap-1.5 text-[11px] text-muted">
+          <i className="h-2 w-2 flex-none rounded-full bg-text/85" />
+          Chấm chạy dọc đường nối là hàng đang chảy; nhiều chấm là lưu lượng lớn. Bấm ▶ để phát.
+        </p>
+      )}
 
       {showPanel && (
         <FloatingPanel side="right" top={42} bottom={82} title="Cảnh báo và đề xuất" onClose={() => setPanelOpen(false)}>

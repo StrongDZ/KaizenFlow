@@ -36,7 +36,7 @@ const LABELS: Record<string, Label> = {
   ng_rate: { title: 'Tỉ lệ hàng lỗi', hint: 'Từ 0 đến 1, ví dụ 0,03 là 3%. Bỏ trống là không có hàng lỗi.' },
   in_buffer: { title: 'Sức chứa đầu vào', hint: 'Số đơn vị mỗi vật tư máy giữ trước khi chạy.' },
   out_buffer: { title: 'Sức chứa đầu ra', hint: 'Đầy thì máy dừng chờ.' },
-  mtbf: { title: 'Thời gian giữa hai lần hỏng ngẫu nhiên (MTBF)', hint: 'Để trống nếu không mô phỏng hỏng ngẫu nhiên.' },
+  mtbf: { title: 'Thời gian giữa hai lần hỏng ngẫu nhiên (MTBF)', hint: 'Không đặt thì dùng mặc định của loại node (thường là không hỏng ngẫu nhiên).' },
   mttr: { title: 'Thời gian sửa mỗi lần hỏng (MTTR)' },
   signals: { title: 'Cảm biến', hint: 'Tín hiệu máy phát ra, dùng để tạo dữ liệu cho bảo trì dự đoán.' },
   'signals[].name': { title: 'Tên tín hiệu' },

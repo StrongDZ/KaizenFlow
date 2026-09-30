@@ -28,7 +28,7 @@ export default function NodeTypesPage() {
   const count = (a: Archetype) => all.filter((t) => t.archetype === a).length
   return (
     <PageBody>
-      <PageHeader title="Node type" subtitle={`${all.length} loại`} actions={<Link className={btnPrimary} to="/library/node-types/new">Tạo node type</Link>} />
+      <PageHeader title="Loại node" subtitle={`${all.length} loại`} actions={<Link className={btnPrimary} to="/library/node-types/new">Tạo loại node</Link>} />
       <div className="flex flex-wrap items-center gap-2">
         <SearchBox value={q} onChange={setQ} />
         <FilterChip active={arch === 'ALL'} onClick={() => setArch('ALL')}>Tất cả {all.length}</FilterChip>
@@ -42,7 +42,7 @@ export default function NodeTypesPage() {
         columns={COLUMNS}
         rowKey={(t) => t.code}
         onRowClick={(t) => navigate(`/library/node-types/${encodeURIComponent(t.code)}`)}
-        empty={<EmptyState title="Không có node type khớp">Thử từ khoá hoặc bộ lọc khác, hoặc bấm "Tạo node type".</EmptyState>}
+        empty={<EmptyState title="Không có loại node khớp">Thử từ khoá hoặc bộ lọc khác, hoặc bấm "Tạo loại node".</EmptyState>}
       />
     </PageBody>
   )

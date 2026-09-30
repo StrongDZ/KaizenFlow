@@ -22,7 +22,7 @@ export default function VersionsPage() {
   const rows = [...(versions.data ?? [])].reverse()
   const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
   const columns: Column<VersionInfo>[] = [
-    { key: 'version', header: 'Version', cell: (v) => <span className="font-medium text-text">v{v.version}</span>, sort: (v) => v.version },
+    { key: 'version', header: 'Phiên bản', cell: (v) => <span className="font-medium text-text">v{v.version}</span>, sort: (v) => v.version },
     { key: 'status', header: 'Trạng thái', cell: (v) => <Tag>{versionStatusLabel(v.status)}</Tag>, sort: (v) => v.status },
     { key: 'created', header: 'Ngày tạo', cell: (v) => fmtDateTime(v.created_at), sort: (v) => Date.parse(v.created_at) },
     { key: 'nodes', header: 'Node', cell: (v) => v.nodes, sort: (v) => v.nodes, align: 'right' },

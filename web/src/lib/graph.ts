@@ -5,7 +5,7 @@ import { inferDir, type Dir } from './layout'
 import type { PinTone } from './pins'
 
 export type Color = 'GREEN' | 'YELLOW' | 'RED' | 'NONE'
-export type Badge = { color: Color | 'INFO'; text: string }
+export type Badge = { color: Color | 'INFO'; text: string; hint?: string }
 
 export type PinView = { n: number; tone: PinTone; content: ReactNode }
 

@@ -296,7 +296,7 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
       )}
 
       {!focus && selected && (
-        <FloatingPanel side="right" width={320} title={selNode ? 'Thuộc tính node' : 'Thuộc tính edge (đường nối)'} onClose={() => setSelected(null)}>
+        <FloatingPanel side="right" width={320} title={selNode ? 'Thuộc tính node' : 'Thuộc tính đường nối (edge)'} onClose={() => setSelected(null)}>
           <div className="rjsf p-3">
             {selNode && (
               <>

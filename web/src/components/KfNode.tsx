@@ -38,7 +38,7 @@ export function KfNode({ id, data, selected }: NodeProps<FlowNode>) {
       <div className="text-xs font-semibold leading-tight text-text">{data.name}</div>
       <div className="text-[10px] text-faint">{data.key}</div>
       {badge && badge.color !== 'NONE' && (
-        <div className={`mt-1 text-[11px] font-semibold ${BADGE_TEXT[badge.color]}`}>{badge.text}</div>
+        <div title={badge.hint} className={`mt-1 text-[11px] font-semibold ${BADGE_TEXT[badge.color]} ${badge.hint ? 'cursor-help' : ''}`}>{badge.text}</div>
       )}
       {data.issue && <div className="mt-1 max-w-[200px] text-[11px] text-bad-text">{data.issue}</div>}
       {!pool && data.archetype !== 'SINK' && <Handle type="source" position={outSide} />}

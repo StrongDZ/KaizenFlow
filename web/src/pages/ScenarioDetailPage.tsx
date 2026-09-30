@@ -39,7 +39,7 @@ export default function ScenarioDetailPage() {
   const published = graph.data.status === 'PUBLISHED'
   const rules = runs.data ? scenarioRules(runs.data.length) : { canEdit: false, canDelete: true, banner: null }
   const runColumns: Column<Run>[] = [
-    { key: 'id', header: 'Run', cell: (r) => <span className="font-medium text-text">#{r.id}</span>, sort: (r) => r.id },
+    { key: 'id', header: 'Lần chạy', cell: (r) => <span className="font-medium text-text">#{r.id}</span>, sort: (r) => r.id },
     { key: 'status', header: 'Trạng thái', cell: (r) => <StatusChip status={r.status} /> },
     { key: 'red', header: 'Phút Đỏ (p50)', cell: (r) => { const v = kpiP50(r.kpis, 'red_minutes'); return v === undefined ? '—' : v.toFixed(1).replace('.', ',') }, align: 'right' },
     { key: 'start', header: 'Bắt đầu', cell: (r) => fmtDateTime(r.created_at), sort: (r) => Date.parse(r.created_at) },

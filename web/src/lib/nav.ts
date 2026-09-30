@@ -74,12 +74,12 @@ export function crumbsFor(path: string, ctx: NavCtx): Crumb[] {
     if (model) out.push({ label: model, to: modelTo })
     if (ver) out.push({ label: ver })
     if (ctx.scenarioName) out.push({ label: ctx.scenarioName })
-    out.push({ label: `Run #${run[1]}` })
+    out.push({ label: `Lần chạy #${run[1]}` })
     return out
   }
   const lib = path.match(/^\/library\/(node-types|materials)(?:\/([^/]+))?/)
   if (lib) {
-    const kind = lib[1] === 'node-types' ? 'Node type' : 'Vật tư'
+    const kind = lib[1] === 'node-types' ? 'Loại node' : 'Vật tư'
     const list = `/library/${lib[1]}`
     const out: Crumb[] = [{ label: 'Thư viện', to: list }, { label: kind, to: lib[2] ? list : undefined }]
     if (lib[2]) out.push({ label: lib[2] === 'new' ? 'Tạo mới' : decodeURIComponent(lib[2]) })

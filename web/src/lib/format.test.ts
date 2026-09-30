@@ -9,10 +9,10 @@ describe('format', () => {
   })
 
   it('describes the sampling step', () => {
-    expect(fmtStep(60_000)).toBe('1 phút mỗi bước')
-    expect(fmtStep(300_000)).toBe('5 phút mỗi bước')
-    expect(fmtStep(30_000)).toBe('30 giây mỗi bước')
-    expect(fmtStep(0)).toBe('1 giây mỗi bước')
+    expect(fmtStep(60_000)).toBe('1 phút mô phỏng mỗi bước')
+    expect(fmtStep(300_000)).toBe('5 phút mô phỏng mỗi bước')
+    expect(fmtStep(30_000)).toBe('30 giây mô phỏng mỗi bước')
+    expect(fmtStep(0)).toBe('1 giây mô phỏng mỗi bước')
   })
 
   it('labels statuses in Vietnamese', () => {

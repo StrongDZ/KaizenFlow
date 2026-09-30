@@ -21,8 +21,8 @@ export function fmtDelta(d: number): string {
 }
 
 export function fmtStep(ms: number): string {
-  if (ms >= 60_000) return `${Math.round(ms / 60_000)} phút mỗi bước`
-  return `${Math.max(1, Math.round(ms / 1000))} giây mỗi bước`
+  if (ms >= 60_000) return `${Math.round(ms / 60_000)} phút mô phỏng mỗi bước`
+  return `${Math.max(1, Math.round(ms / 1000))} giây mô phỏng mỗi bước`
 }
 
 export function fmtDateTime(iso: string | null): string {

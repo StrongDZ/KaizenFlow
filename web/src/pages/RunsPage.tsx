@@ -47,7 +47,7 @@ export default function RunsPage({ scope }: { scope: 'all' | 'version' }) {
         />
       ),
     },
-    { key: 'id', header: 'Run', cell: (r) => <span className="font-medium text-text">#{r.id}</span>, sort: (r) => r.id },
+    { key: 'id', header: 'Lần chạy', cell: (r) => <span className="font-medium text-text">#{r.id}</span>, sort: (r) => r.id },
     { key: 'model', header: 'Mô hình', cell: (r) => `${r.model_key} v${r.version}`, sort: (r) => r.model_key },
     { key: 'scenario', header: 'Scenario', cell: (r) => r.scenario_name || `Scenario #${r.scenario_id}`, sort: (r) => r.scenario_name },
     { key: 'status', header: 'Trạng thái', cell: (r) => <StatusChip status={r.status} />, sort: (r) => r.status },

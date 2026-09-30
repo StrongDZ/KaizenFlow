@@ -42,7 +42,7 @@ function NodeTypeForm({ types, source }: { types: NodeType[]; source?: NodeTypeD
   const label = 'flex flex-col gap-1 text-xs text-muted'
   return (
     <PageBody>
-      <PageHeader title={from ? 'Nhân bản node type' : 'Tạo node type'} />
+      <PageHeader title={from ? 'Nhân bản loại node' : 'Tạo loại node'} />
       <Card title="Thông tin chung">
         <div className="grid grid-cols-3 gap-3">
           <label className={label}>Tên<input className={input} value={name} onChange={(e) => setName(e.target.value)} /></label>
@@ -71,7 +71,7 @@ function NodeTypeForm({ types, source }: { types: NodeType[]; source?: NodeTypeD
       <ErrorBox error={create.error} />
       <div className="flex gap-2">
         <button className={btnPrimary} disabled={create.isPending || !name.trim() || !codeOk} onClick={() => create.mutate()}>
-          {from ? 'Tạo bản sao' : 'Tạo node type'}
+          {from ? 'Tạo bản sao' : 'Tạo loại node'}
         </button>
         <Link className={btn} to="/library/node-types">Huỷ</Link>
       </div>

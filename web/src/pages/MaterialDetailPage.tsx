@@ -47,13 +47,13 @@ export default function MaterialDetailPage() {
         ))}
       </div>
       {total === 0 ? (
-        <EmptyState title="Chưa có nơi nào dùng vật tư này">Dùng nó làm vật tư của một edge hoặc trong tham số node ở tab Sơ đồ.</EmptyState>
+        <EmptyState title="Chưa có nơi nào dùng vật tư này">Dùng nó làm vật tư của một đường nối hoặc trong tham số node ở tab Sơ đồ.</EmptyState>
       ) : (
         <div className="space-y-4">
           {d.usage.edges.length > 0 && (
-            <Card title={`Edge (${d.usage.edges.length})`}>
+            <Card title={`Đường nối (${d.usage.edges.length})`}>
               <table className="w-full border-collapse text-xs">
-                <thead><tr><th className={th}>Edge</th><th className={th}>Từ</th><th className={th}>Đến</th><th className={th}>Version</th></tr></thead>
+                <thead><tr><th className={th}>Đường nối</th><th className={th}>Từ</th><th className={th}>Đến</th><th className={th}>Phiên bản</th></tr></thead>
                 <tbody>
                   {d.usage.edges.map((e) => (
                     <tr key={`${e.version_id}-${e.key}`} className="border-t border-line">
@@ -68,7 +68,7 @@ export default function MaterialDetailPage() {
           {d.usage.nodes.length > 0 && (
             <Card title={`Tham số node (${d.usage.nodes.length})`}>
               <table className="w-full border-collapse text-xs">
-                <thead><tr><th className={th}>Node</th><th className={th}>Loại</th><th className={th}>Version</th></tr></thead>
+                <thead><tr><th className={th}>Node</th><th className={th}>Loại</th><th className={th}>Phiên bản</th></tr></thead>
                 <tbody>
                   {d.usage.nodes.map((n) => (
                     <tr key={`${n.version_id}-${n.key}`} className="border-t border-line">
@@ -81,7 +81,7 @@ export default function MaterialDetailPage() {
             </Card>
           )}
           {d.usage.node_types.length > 0 && (
-            <Card title={`Tham số mặc định của node type (${d.usage.node_types.length})`}>
+            <Card title={`Tham số mặc định của loại node (${d.usage.node_types.length})`}>
               <div className="flex flex-wrap gap-2">
                 {d.usage.node_types.map((c) => <Link key={c} to={`/library/node-types/${encodeURIComponent(c)}`}><Tag>{c}</Tag></Link>)}
               </div>

@@ -52,7 +52,7 @@ function NodeTypeEditForm({ d, schema, banner }: { d: NodeTypeDetail; schema?: J
   const area = `${input} h-40 w-full font-mono`
   return (
     <PageBody>
-      <PageHeader title="Sửa node type" subtitle={<Tag>{d.code}</Tag>} />
+      <PageHeader title="Sửa loại node" subtitle={<Tag>{d.code}</Tag>} />
       {banner && <Notice tone="lock">{banner}</Notice>}
       <Card title="Thông tin chung">
         <label className="flex max-w-md flex-col gap-1 text-xs text-muted">

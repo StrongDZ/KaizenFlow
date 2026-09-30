@@ -40,13 +40,13 @@ describe('materialRules', () => {
     expect(r).toMatchObject({ canEdit: true, canDelete: false, canEditUnit: false })
     expect(r.banner).toContain('1 node')
   })
-  it('counts references in node types too', () => {
+  it('counts references in loại nodes too', () => {
     expect(materialRules({ ...empty, node_types: ['CUST'] })).toMatchObject({ canDelete: false })
   })
 })
 
 describe('code validation', () => {
-  it('accepts upper snake node type codes only', () => {
+  it('accepts upper snake loại node codes only', () => {
     expect(isValidNodeTypeCode('LASER_CUT')).toBe(true)
     expect(isValidNodeTypeCode('laser')).toBe(false)
     expect(isValidNodeTypeCode('1ABC')).toBe(false)
