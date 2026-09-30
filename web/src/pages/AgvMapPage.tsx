@@ -6,6 +6,7 @@ import type { AgvMap, MapPoint } from '../api/types'
 import { CalibrationCard } from '../components/live/CalibrationCard'
 import { AgvMapCanvas, type MapSelection, type RingTone } from '../components/live/AgvMapCanvas'
 import { FeedControl } from '../components/live/FeedControl'
+import { MapTables } from '../components/live/MapTables'
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, Tag, btn, btnDangerOutline, btnPrimary, btnWarn, input } from '../components/ui'
 import { useFeedStatus, useLive } from '../hooks/useLive'
 import { useModelGraph } from '../hooks/useModelGraph'
@@ -226,6 +227,11 @@ export default function AgvMapPage() {
             </Card>
           </div>
         </div>
+      )}
+      {map && (
+        <Card title="Điểm và làn">
+          <MapTables map={map} names={names} occ={occ} blocked={blockedIds} selected={selected} onSelect={setSelected} />
+        </Card>
       )}
       {!editing && map && <CalibrationCard model={model} />}
       {editing && <Notice>Lưu bản đồ sẽ áp dụng cho lần phát tiếp theo của feed; feed đang chạy giữ bản đồ cũ đến khi bạn bấm Đặt lại rồi Bắt đầu.</Notice>}
