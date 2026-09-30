@@ -29,6 +29,20 @@ function fmtEta(eta: string | null): string {
   return eta ? ` (dự kiến ${new Date(eta).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })})` : ''
 }
 
+/** Câu cảnh báo lệch dự báo: "Kho NVL A · RAW-01 đang thấp hơn dự báo: thực tế 42, dải dự báo 88–110". */
+export function describeDrift(ins: Insight, nameOf: (key: string) => string = (k) => k): string {
+  const who = nameOf(ins.subject_key ?? '')
+  const p = ins.payload ?? {}
+  const metric = typeof p.metric === 'string' ? p.metric.replace(/^level:/, '') : ''
+  const subject = metric ? `${who} · ${metric}` : who
+  const [actual, p10, p90] = [p.actual, p.p10, p.p90]
+  if (typeof actual !== 'number' || typeof p10 !== 'number' || typeof p90 !== 'number' || (p.direction !== 'below' && p.direction !== 'above')) {
+    return `${subject} đang lệch dự báo`
+  }
+  const side = p.direction === 'below' ? 'thấp' : 'cao'
+  return `${subject} đang ${side} hơn dự báo: thực tế ${Math.round(actual)}, dải dự báo ${Math.round(p10)}–${Math.round(p90)}`
+}
+
 export function describeInsight(ins: Insight): string {
   const p = Math.round((ins.probability ?? 0) * 100)
   switch (ins.kind) {
@@ -40,6 +54,8 @@ export function describeInsight(ins: Insight): string {
       return `${ins.subject_key} có nguy cơ hỏng (${p}%)${fmtEta(ins.eta)}`
     case 'RECOMMENDATION':
       return `Đề xuất xử lý cho ${ins.subject_key}`
+    case 'DRIFT':
+      return describeDrift(ins)
     default:
       return `${ins.kind} ${ins.subject_key ?? ''}`
   }

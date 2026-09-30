@@ -1,5 +1,5 @@
 import type {
-  AgvMap, Binding, BindingInput, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
+  AgvMap, Binding, BindingInput, CalibrationApplied, CalibrationResp, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
   BandRow, EventRow, Graph, GraphEdge, GraphNode, InsightRow, Issue, Json, Material, MaterialDetail, MaterialUpdate, ModelSummary,
   NewMaterial, NewNodeType, NewScenario, NodeType, NodeTypeDetail, NodeTypeUpdate, Run, RunDetail, RunRow, Scenario, ScenarioBody, ScenarioRow,
   SignalRow, VersionInfo,
@@ -101,6 +101,10 @@ export const api = {
     req<SignalRow[]>(`/api/models/${encodeURIComponent(key)}/live/signals${qs({ subject: q.subject, name: q.name, since: q.since, limit: q.limit?.toString() })}`),
   liveForecast: (key: string, horizon_s: number) =>
     post<{ scenario_id: number; run_id: number; notes: string[]; at: string }>(`/api/models/${encodeURIComponent(key)}/live/forecast`, { horizon_s }),
+  calibration: (key: string) => req<CalibrationResp>(`/api/models/${encodeURIComponent(key)}/live/calibration`),
+  applyCalibration: (key: string, edges: string[]) =>
+    post<CalibrationApplied>(`/api/models/${encodeURIComponent(key)}/live/calibration/apply`, { edges }),
+  ackInsight: (id: number) => post<void>(`/api/insights/${id}/ack`),
   bindings: (key: string) => req<Binding[]>(`/api/models/${encodeURIComponent(key)}/bindings`),
   saveBindings: (key: string, bindings: BindingInput[]) =>
     put<{ bindings: Binding[] }>(`/api/models/${encodeURIComponent(key)}/bindings`, { bindings }),

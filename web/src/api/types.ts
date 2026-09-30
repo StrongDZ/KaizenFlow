@@ -195,3 +195,11 @@ export type FeedStatus = {
   incidents: Incident[]
 }
 export type IncidentInput = { kind: Incident['kind']; target: string; duration_s?: number; material?: string; fraction?: number }
+
+export type Calibration = {
+  edge: string; name: string; material: string; n: number
+  mean_s: number; sd_s: number; p50_s: number; p90_s: number
+  current_mean_s: number; delta_pct: number; significant: boolean; suggested: Json
+}
+export type CalibrationResp = { min_trips: number; edges: Calibration[]; waiting: { edge: string; name: string; n: number }[] }
+export type CalibrationApplied = { baseline_scenario_id: number; scenario_id: number; baseline_run_id: number; run_id: number; edges: number }

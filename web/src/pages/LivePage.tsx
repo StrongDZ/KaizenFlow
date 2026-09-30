@@ -7,6 +7,7 @@ import type { Graph, NodeType } from '../api/types'
 import { FloatingPanel, PanelSection } from '../components/FloatingPanel'
 import { kfEdgeTypes } from '../components/KfEdge'
 import { LiveBadgeContext, kfNodeTypes } from '../components/KfNode'
+import { DriftAlerts } from '../components/live/DriftAlerts'
 import { FeedControl } from '../components/live/FeedControl'
 import { ForecastDock } from '../components/live/ForecastDock'
 import { IncidentPanel, type IncidentNode } from '../components/live/IncidentPanel'
@@ -125,6 +126,9 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
 
       {panelOpen ? (
         <FloatingPanel side="right" top={112} bottom={12} width={272} title="Bảng điều khiển demo" onClose={() => setPanelOpen(false)}>
+          <PanelSection title="Cảnh báo lệch dự báo">
+            <DriftAlerts model={model} names={Object.fromEntries(incidentNodes.map((n) => [n.key, n.name]))} />
+          </PanelSection>
           <PanelSection title="Bơm sự cố">
             <IncidentPanel nodes={incidentNodes} lanes={agvMap.data?.lanes ?? []} incidents={feed.data?.model === model ? feed.data.incidents : []} ready={feedReady} />
           </PanelSection>

@@ -46,3 +46,24 @@ describe('pin details', () => {
     expect(insightDetail({ ...base, kind: 'RECOMMENDATION' })).toBe('')
   })
 })
+
+import { describeDrift } from './insights'
+
+describe('describeDrift', () => {
+  const drift = (payload: Record<string, unknown>) => ({
+    id: 1, sim_run_id: 9, kind: 'DRIFT' as const, subject_key: 'KHO_A', eta: null, probability: null, severity: 2, payload, status: 'OPEN', created_at: '',
+  })
+  it('nói rõ kho, vật tư, lệch về phía nào và dải dự báo', () => {
+    const p = { metric: 'level:RAW-01', direction: 'below', actual: 41.6, p10: 88.2, p90: 109.9 }
+    expect(describeDrift(drift(p), (k) => (k === 'KHO_A' ? 'Kho NVL A' : k)))
+      .toBe('Kho NVL A · RAW-01 đang thấp hơn dự báo: thực tế 42, dải dự báo 88–110')
+    expect(describeDrift(drift({ ...p, direction: 'above', actual: 200 }))).toBe('KHO_A · RAW-01 đang cao hơn dự báo: thực tế 200, dải dự báo 88–110')
+  })
+  it('thiếu số liệu thì vẫn ra câu đọc được', () => {
+    expect(describeDrift(drift({}))).toBe('KHO_A đang lệch dự báo')
+  })
+  it('describeInsight dùng chung câu này cho DRIFT', () => {
+    const ins = drift({ metric: 'level:X', direction: 'below', actual: 1, p10: 5, p90: 9 })
+    expect(describeInsight(ins)).toContain('thấp hơn dự báo')
+  })
+})

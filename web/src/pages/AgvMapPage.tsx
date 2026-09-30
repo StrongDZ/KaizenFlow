@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import type { AgvMap, MapPoint } from '../api/types'
+import { CalibrationCard } from '../components/live/CalibrationCard'
 import { AgvMapCanvas, type MapSelection, type RingTone } from '../components/live/AgvMapCanvas'
 import { FeedControl } from '../components/live/FeedControl'
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, Tag, btn, btnPrimary, input } from '../components/ui'
@@ -226,6 +227,7 @@ export default function AgvMapPage() {
           </div>
         </div>
       )}
+      {!editing && map && <CalibrationCard model={model} />}
       {editing && <Notice>Lưu bản đồ sẽ áp dụng cho lần phát tiếp theo của feed; feed đang chạy giữ bản đồ cũ đến khi bạn bấm Đặt lại rồi Bắt đầu.</Notice>}
     </PageBody>
   )
