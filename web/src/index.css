@@ -102,6 +102,13 @@ input::placeholder, textarea::placeholder { color: var(--color-faint); }
 }
 .react-flow__attribution { color: var(--color-faint); }
 
+/* Khung chọn nhiều node: nền mờ và nét đứt, cùng tông với giao diện (không có màu nhấn riêng). */
+.react-flow__selection {
+  background: color-mix(in srgb, var(--color-text) 8%, transparent);
+  border: 1px dashed var(--color-text-2);
+}
+.react-flow__nodesselection-rect { background: transparent; border: 1px dashed var(--color-muted); border-radius: 8px; }
+
 /* Hạt hàng chạy trên edge (Control Room). Màu trung tính vì xanh/vàng/đỏ đã dành cho mức tồn kho. */
 .kf-dot {
   fill: var(--color-text); fill-opacity: 0.85; pointer-events: none;

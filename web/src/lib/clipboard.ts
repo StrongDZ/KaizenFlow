@@ -66,3 +66,6 @@ export function pasteOf(clip: Clip, { nodeKeys, edgeKeys, offset }: { nodeKeys: 
   })
   return { nodes, edges }
 }
+
+/** Bộ nhớ tạm của Editor: giữ khi chuyển sang phiên bản khác, để sao chép node từ sơ đồ này sang sơ đồ kia. */
+export const clipboard: { clip: Clip | null; pastes: number } = { clip: null, pastes: 0 }
