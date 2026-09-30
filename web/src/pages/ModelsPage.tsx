@@ -4,9 +4,11 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import type { ModelSummary } from '../api/types'
 import { DeleteAction } from '../components/DeleteAction'
+import { Field, FormDialog } from '../components/FormDialog'
 import { DataTable, type Column } from '../components/table/DataTable'
-import { EmptyState, ErrorBox, Loading, PageBody, PageHeader, SearchBox, btn, btnPrimary, input } from '../components/ui'
+import { EmptyState, ErrorBox, Loading, PageBody, PageHeader, SearchBox, btnPrimary, input } from '../components/ui'
 import { fmtDateTime, versionStatusLabel } from '../lib/format'
+import { isValidModelKey } from '../lib/rules'
 import { filterRows } from '../lib/table'
 
 const BASE_COLUMNS: Column<ModelSummary>[] = [
@@ -25,6 +27,7 @@ export default function ModelsPage() {
   const [q, setQ] = useState('')
   const [key, setKey] = useState('')
   const [creating, setCreating] = useState(false)
+  const close = () => { setCreating(false); setKey(''); create.reset() }
   const create = useMutation({
     mutationFn: () => api.createModel(key.trim()),
     onSuccess: (r) => {
@@ -59,21 +62,24 @@ export default function ModelsPage() {
         actions={
           <>
             <SearchBox value={q} onChange={setQ} placeholder="Tìm mô hình" />
-            <button className={btnPrimary} onClick={() => setCreating(!creating)}>Tạo mô hình</button>
+            <button className={btnPrimary} onClick={() => setCreating(true)}>Tạo mô hình</button>
           </>
         }
       />
-      {creating && (
-        <form
-          className="flex items-center gap-2 rounded-xl border border-line bg-panel p-3"
-          onSubmit={(e) => { e.preventDefault(); if (key.trim()) create.mutate() }}
+      <FormDialog
+        open={creating} title="Tạo mô hình"
+        description="Mô hình là một sơ đồ nhà máy. Đặt tên rồi dựng sơ đồ ở tab Sơ đồ."
+        submitLabel="Tạo mô hình" pending={create.isPending} error={create.error}
+        canSubmit={isValidModelKey(key.trim())} onSubmit={() => create.mutate()} onClose={close}
+      >
+        <Field
+          label="Tên mô hình" hint="Chữ, số, gạch nối, gạch dưới; bắt đầu bằng chữ hoặc số. Ví dụ denso-line-3."
+          problem={key.trim() !== '' && !isValidModelKey(key.trim()) ? 'Tên chỉ gồm chữ, số, gạch nối, gạch dưới, không có khoảng trắng, và bắt đầu bằng chữ hoặc số.' : null}
         >
-          <input autoFocus className={`${input} w-72`} aria-label="Tên mô hình" placeholder="vd: denso-line-3" value={key} onChange={(e) => setKey(e.target.value)} />
-          <button className={btnPrimary} disabled={!key.trim() || create.isPending}>Tạo</button>
-          <button type="button" className={btn} onClick={() => setCreating(false)}>Huỷ</button>
-        </form>
-      )}
-      <ErrorBox error={models.error ?? create.error} />
+          <input autoFocus className={`${input} w-full`} placeholder="denso-line-3" value={key} onChange={(e) => setKey(e.target.value)} />
+        </Field>
+      </FormDialog>
+      <ErrorBox error={models.error} />
       <DataTable
         rows={rows}
         columns={columns}

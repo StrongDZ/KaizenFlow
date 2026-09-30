@@ -36,6 +36,8 @@ export function materialRules(u: MaterialUsage): Rules & { canEditUnit: boolean 
 
 export const isValidNodeTypeCode = (s: string): boolean => /^[A-Z][A-Z0-9_]*$/.test(s)
 export const isValidMaterialCode = (s: string): boolean => /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(s)
+/** Tên mô hình nằm trong đường dẫn (`/models/<tên>/versions`), nên không được có khoảng trắng hay dấu gạch chéo. */
+export const isValidModelKey = (s: string): boolean => /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(s)
 
 /** Scenario đã có run thì khoá sửa (đổi thông số sẽ làm kết quả cũ không còn khớp); xoá và nhân bản luôn được. */
 export function scenarioRules(runs: number): Rules {

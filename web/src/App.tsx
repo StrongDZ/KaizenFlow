@@ -8,7 +8,6 @@ import ControlRoomPage from './pages/ControlRoomPage'
 import EditorPage from './pages/EditorPage'
 import LibraryLayout from './pages/LibraryLayout'
 import MaterialDetailPage from './pages/MaterialDetailPage'
-import MaterialNewPage from './pages/MaterialNewPage'
 import MaterialsPage from './pages/MaterialsPage'
 import ModelsPage from './pages/ModelsPage'
 import NodeTypeDetailPage from './pages/NodeTypeDetailPage'
@@ -62,7 +61,6 @@ export default function App() {
               <Route path="node-types/:code/edit" element={<NodeTypeEditPage />} />
               <Route path="node-types/:code" element={<NodeTypeDetailPage />} />
               <Route path="materials" element={<MaterialsPage />} />
-              <Route path="materials/new" element={<MaterialNewPage />} />
               <Route path="materials/:code" element={<MaterialDetailPage />} />
             </Route>
           </Route>

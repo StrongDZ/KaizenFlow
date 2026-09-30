@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MaterialUsage, VersionUse } from '../api/types'
-import { isValidMaterialCode, isValidNodeTypeCode, materialRules, nodeTypeRules, runRules, scenarioRules } from './rules'
+import { isValidMaterialCode, isValidModelKey, isValidNodeTypeCode, materialRules, nodeTypeRules, runRules, scenarioRules } from './rules'
 
 const use = (over: Partial<VersionUse>): VersionUse => ({ version_id: 1, model_key: 'denso-mini', version: 1, status: 'PUBLISHED', nodes: 1, ...over })
 
@@ -57,6 +57,16 @@ describe('code validation', () => {
     expect(isValidMaterialCode('SUB_OK')).toBe(true)
     expect(isValidMaterialCode('a b')).toBe(false)
     expect(isValidMaterialCode('-x')).toBe(false)
+  })
+
+  it('accepts model names that survive a URL, and rejects the ones that do not', () => {
+    expect(isValidModelKey('denso-mini')).toBe(true)
+    expect(isValidModelKey('denso_line_3')).toBe(true)
+    expect(isValidModelKey('Line3')).toBe(true)
+    expect(isValidModelKey('')).toBe(false)
+    expect(isValidModelKey('a b')).toBe(false)
+    expect(isValidModelKey('a/b')).toBe(false)
+    expect(isValidModelKey('-x')).toBe(false)
   })
 })
 
