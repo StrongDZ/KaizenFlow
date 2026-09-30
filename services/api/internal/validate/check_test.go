@@ -197,6 +197,11 @@ func TestWarnings(t *testing.T) {
 	find(t, check(g, libMaterials), "sink_no_demand", "OUT")
 
 	g = testfix.MiniGraph()
+	g.Nodes[2].NodeType = "SCRAP" // phế phẩm không tính vào sản lượng nên không cần nhu cầu
+	g.Nodes[2].Params = map[string]any{}
+	absent(t, check(g, libMaterials), "sink_no_demand")
+
+	g = testfix.MiniGraph()
 	g.Nodes = append(g.Nodes, store.GraphNode{Key: "TUG2", NodeType: "TUGGER", Params: map[string]any{}})
 	find(t, check(g, libMaterials), "pool_unused", "TUG2")
 	absent(t, check(testfix.MiniGraph(), libMaterials), "pool_unused")

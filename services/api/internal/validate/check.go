@@ -325,7 +325,8 @@ func (c *checker) warnings() {
 				c.warnf("storage_no_stock", n.Key, "%s chưa khai báo vật tư nào: không theo dõi được tồn kho và không ghép được tín hiệu Tồn.", name)
 			}
 		case "SINK":
-			if len(listOf(c.merged[n.Key]["demand"])) == 0 {
+			// Đích không tính vào sản lượng (phế phẩm) chỉ hứng hàng, không cần nhu cầu.
+			if counts, _ := c.merged[n.Key]["throughput"].(bool); (counts || c.merged[n.Key]["throughput"] == nil) && len(listOf(c.merged[n.Key]["demand"])) == 0 {
 				c.warnf("sink_no_demand", n.Key, "%s chưa có nhu cầu nào nên không đo được việc giao hàng.", name)
 			}
 		case "PROCESS":
