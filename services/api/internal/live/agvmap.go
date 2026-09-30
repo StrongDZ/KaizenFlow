@@ -105,3 +105,57 @@ func (m *AgvMap) Validate(nodeKeys map[string]bool) []MapIssue {
 	}
 	return out
 }
+
+// Travel trả thời gian đi ngắn nhất (giây) từ node srcKey tới node dstKey theo bản đồ: từ mọi trạm gắn srcKey tới mọi trạm gắn dstKey,
+// đi theo chiều của các làn, tốc độ speed_mps. ok=false khi node không có trạm trên bản đồ, không có đường, hoặc tốc độ không hợp lệ.
+func (m *AgvMap) Travel(srcKey, dstKey string) (seconds float64, ok bool) {
+	if m.SpeedMPS <= 0 || srcKey == "" || dstKey == "" {
+		return 0, false
+	}
+	var starts []string
+	goal := map[string]bool{}
+	for _, p := range m.Points {
+		if p.Kind != "station" {
+			continue
+		}
+		if p.NodeKey == srcKey {
+			starts = append(starts, p.ID)
+		}
+		if p.NodeKey == dstKey {
+			goal[p.ID] = true
+		}
+	}
+	if len(starts) == 0 || len(goal) == 0 {
+		return 0, false
+	}
+	out := map[string][]MapLane{}
+	for _, l := range m.Lanes {
+		out[l.From] = append(out[l.From], l)
+	}
+	dist := map[string]float64{}
+	done := map[string]bool{}
+	for _, s := range starts {
+		dist[s] = 0
+	}
+	for {
+		cur, best := "", math.Inf(1)
+		for id, d := range dist {
+			if !done[id] && d < best {
+				cur, best = id, d
+			}
+		}
+		if cur == "" {
+			return 0, false
+		}
+		if goal[cur] && best > 0 {
+			return best / m.SpeedMPS, true
+		}
+		done[cur] = true
+		for _, l := range out[cur] {
+			nd := best + m.LaneLengthM(l)
+			if d, seen := dist[l.To]; !seen || nd < d {
+				dist[l.To] = nd
+			}
+		}
+	}
+}

@@ -221,28 +221,13 @@ func (h *handlers) publish(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, store.ErrNotDraft)
 		return
 	}
-	types, err := h.Store.NodeTypes(ctx)
+	rep, err := h.graphReport(ctx, g, true)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	if list := h.Validator.Graph(g, types); len(list) > 0 {
-		writeJSON(w, 422, issues(list...))
-		return
-	}
-	mats, err := h.Store.MaterialCodes(ctx)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	probe := &store.Scenario{Origin: "RECOMMENDER", HorizonS: 60, StartState: "EMPTY", Replications: 1}
-	req, err := resolve.Build(ctx, g, types, mats, probe, 0, time.Now(), nil, resolve.Options{ForValidation: true})
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	if err := h.Sim.Validate(ctx, req); err != nil {
-		writeErr(w, err)
+	if !rep.OK {
+		writeJSON(w, 422, issues(errorsOf(rep)...))
 		return
 	}
 	if err := h.Store.Publish(ctx, id); err != nil {

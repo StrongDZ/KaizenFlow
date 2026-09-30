@@ -60,6 +60,7 @@ func New(d Deps) http.Handler {
 	r.Get("/api/versions/{id}", h.getGraph)
 	r.Put("/api/versions/{id}/graph", h.putGraph)
 	r.Post("/api/versions/{id}/publish", h.publish)
+	r.Post("/api/versions/{id}/check", h.checkGraph)
 	r.Post("/api/versions/{id}/clone", h.clone)
 	r.Delete("/api/versions/{id}", h.deleteVersion)
 	r.Get("/api/versions/{id}/scenarios", h.listScenarios)

@@ -44,3 +44,29 @@ func TestValidateMapFindsProblems(t *testing.T) {
 		t.Error("bad json must fail to parse")
 	}
 }
+
+func TestTravelShortestPathBetweenNodeStations(t *testing.T) {
+	m := &AgvMap{UnitM: 2, SpeedMPS: 1, Points: []MapPoint{
+		{ID: "A", X: 0, Y: 0, Kind: "station", NodeKey: "SRC"},
+		{ID: "J", X: 5, Y: 0, Kind: "junction"},
+		{ID: "B", X: 10, Y: 0, Kind: "station", NodeKey: "DST"},
+		{ID: "X", X: 5, Y: 50, Kind: "junction"},
+	}, Lanes: []MapLane{
+		{ID: "L1", From: "A", To: "J", Capacity: 1}, {ID: "L2", From: "J", To: "B", Capacity: 1},
+		{ID: "L3", From: "A", To: "X", Capacity: 1}, {ID: "L4", From: "X", To: "B", Capacity: 1},
+	}}
+	secs, ok := m.Travel("SRC", "DST")
+	if !ok || secs < 19.99 || secs > 20.01 { // (5+5) đơn vị × 2 m ÷ 1 m/s
+		t.Fatalf("Travel = %v, %v; muốn 20", secs, ok)
+	}
+	if _, ok := m.Travel("DST", "SRC"); ok {
+		t.Fatal("làn một chiều: không có đường về")
+	}
+	if _, ok := m.Travel("SRC", "NOPE"); ok {
+		t.Fatal("node không có trạm trên bản đồ")
+	}
+	m.SpeedMPS = 0
+	if _, ok := m.Travel("SRC", "DST"); ok {
+		t.Fatal("tốc độ 0 thì không tính được")
+	}
+}

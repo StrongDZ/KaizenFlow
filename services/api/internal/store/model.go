@@ -67,7 +67,7 @@ func (s *Store) CreateModel(ctx context.Context, key string, settings map[string
 	err := s.Pool.QueryRow(ctx, `INSERT INTO model_version (model_key, version, settings) VALUES ($1, 1, $2) RETURNING id`,
 		key, settings).Scan(&id)
 	if isUnique(err) {
-		return 0, &RefError{key, "model already exists"}
+		return 0, &RefError{key, "Mô hình này đã tồn tại. Chọn tên khác."}
 	}
 	return id, err
 }
@@ -197,10 +197,10 @@ func (s *Store) ReplaceGraph(ctx context.Context, id int64, nodes []GraphNode, e
 	for _, n := range nodes {
 		t, ok := types[n.NodeType]
 		if !ok {
-			return &RefError{n.Key, "unknown node type '" + n.NodeType + "'"}
+			return &RefError{n.Key, "Loại node '" + n.NodeType + "' không còn trong Thư viện."}
 		}
 		if _, dup := nodeIDs[n.Key]; dup || n.Key == "" {
-			return &RefError{n.Key, "duplicate or empty node key"}
+			return &RefError{n.Key, "Mã node bị trùng hoặc để trống."}
 		}
 		params := n.Params
 		if params == nil {
@@ -217,19 +217,19 @@ func (s *Store) ReplaceGraph(ctx context.Context, id int64, nodes []GraphNode, e
 	seen := map[string]bool{}
 	for _, e := range edges {
 		if seen[e.Key] || e.Key == "" {
-			return &RefError{e.Key, "duplicate or empty edge key"}
+			return &RefError{e.Key, "Mã đường nối bị trùng hoặc để trống."}
 		}
 		seen[e.Key] = true
 		src, ok1 := nodeIDs[e.Src]
 		dst, ok2 := nodeIDs[e.Dst]
 		if !ok1 || !ok2 {
-			return &RefError{e.Key, "unknown node '" + e.Src + "' or '" + e.Dst + "'"}
+			return &RefError{e.Key, "Đường nối trỏ tới node không còn trong sơ đồ ('" + e.Src + "' hoặc '" + e.Dst + "')."}
 		}
 		var mat *int64
 		if e.Material != "" {
 			mid, ok := mats[e.Material]
 			if !ok {
-				return &RefError{e.Key, "unknown material '" + e.Material + "'"}
+				return &RefError{e.Key, "Vật tư '" + e.Material + "' chưa có trong Thư viện."}
 			}
 			mat = &mid
 		}
