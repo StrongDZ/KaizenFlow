@@ -31,7 +31,7 @@ export default function OverviewPage() {
             ))
           )}
         </Card>
-        <Card title="Cảnh báo Đỏ mới nhất">
+        <Card title="Cảnh báo Đỏ mới nhất" actions={<Link className="text-[11px] text-accent underline decoration-dotted" to="/alerts">Xem mọi cảnh báo</Link>}>
           {(reds.data ?? []).length === 0 ? (
             <p className="text-xs text-muted">Chưa có cảnh báo Đỏ nào.</p>
           ) : (

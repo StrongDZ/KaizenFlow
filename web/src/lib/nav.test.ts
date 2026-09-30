@@ -9,6 +9,7 @@ describe('sectionOf', () => {
     expect(sectionOf('/models/m/live')).toBe('models')
     expect(sectionOf('/versions/7/scenarios')).toBe('models')
     expect(sectionOf('/scenarios/5')).toBe('models')
+    expect(sectionOf('/alerts')).toBe('alerts')
     expect(sectionOf('/runs')).toBe('runs')
     expect(sectionOf('/runs/12/report')).toBe('runs')
     expect(sectionOf('/compare')).toBe('runs')
@@ -78,6 +79,7 @@ describe('crumbsFor', () => {
 
   it('builds crumbs for top-level pages', () => {
     expect(crumbsFor('/', {}).map((c) => c.label)).toEqual(['Tổng quan'])
+    expect(crumbsFor('/alerts', {}).map((c) => c.label)).toEqual(['Cảnh báo'])
     expect(crumbsFor('/models', {}).map((c) => c.label)).toEqual(['Mô hình'])
     expect(crumbsFor('/compare', {}).map((c) => c.label)).toEqual(['Lần chạy', 'So sánh'])
   })

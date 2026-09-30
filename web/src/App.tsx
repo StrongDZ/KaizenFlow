@@ -5,6 +5,7 @@ import { Shell } from './components/shell/Shell'
 import { shouldRetry } from './lib/retry'
 import AgvMapPage from './pages/AgvMapPage'
 import ComparePage from './pages/ComparePage'
+import AlertsPage from './pages/AlertsPage'
 import SourcesPage from './pages/SourcesPage'
 import ConnectPage from './pages/ConnectPage'
 import ControlRoomPage from './pages/ControlRoomPage'
@@ -44,6 +45,7 @@ export default function App() {
         <Routes>
           <Route element={<Shell />}>
             <Route path="/" element={<OverviewPage />} />
+            <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/models" element={<ModelsPage />} />
             <Route path="/models/:key/versions" element={<VersionsPage />} />
             <Route path="/models/:key/sources" element={<SourcesPage />} />

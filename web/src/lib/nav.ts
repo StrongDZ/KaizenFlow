@@ -1,4 +1,4 @@
-export type Section = 'overview' | 'models' | 'runs' | 'library'
+export type Section = 'overview' | 'models' | 'runs' | 'alerts' | 'library'
 export type Crumb = { label: string; to?: string; picker?: boolean }
 export type Tab = { label: string; to: string; end?: boolean; also?: string[] }
 export type NavCtx = {
@@ -11,6 +11,7 @@ export type NavCtx = {
 }
 
 export function sectionOf(path: string): Section {
+  if (path.startsWith('/alerts')) return 'alerts'
   if (path.startsWith('/runs') || path.startsWith('/compare')) return 'runs'
   if (path.startsWith('/library')) return 'library'
   if (path.startsWith('/models') || path.startsWith('/versions') || path.startsWith('/scenarios')) return 'models'
@@ -65,6 +66,7 @@ export function crumbsFor(path: string, ctx: NavCtx): Crumb[] {
   const modelTo = model ? `/models/${encodeURIComponent(model)}/versions` : undefined
 
   if (path === '/') return [{ label: 'Tổng quan' }]
+  if (path === '/alerts') return [{ label: 'Cảnh báo' }]
   if (path === '/models') return [{ label: 'Mô hình' }]
   if (/^\/models\/[^/]+\/versions/.test(path)) {
     return [{ label: 'Mô hình', to: '/models' }, { label: model ?? '…' }, { label: 'Phiên bản' }]
