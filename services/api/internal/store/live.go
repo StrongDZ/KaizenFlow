@@ -265,3 +265,11 @@ func (s *Store) RecentLiveValues(ctx context.Context, model, subject, name strin
 	}
 	return out, nil
 }
+
+// SupersedeDrift đóng (DONE) mọi cảnh báo lệch đang mở của một mô hình: dự báo mới thay dự báo cũ nên cảnh báo về dự báo cũ hết ý nghĩa.
+func (s *Store) SupersedeDrift(ctx context.Context, model string) (int64, error) {
+	tag, err := s.Pool.Exec(ctx, `UPDATE insight SET status = 'DONE' WHERE kind = 'DRIFT' AND status = 'OPEN' AND sim_run_id IN (
+		SELECT r.id FROM sim_run r JOIN scenario sc ON sc.id = r.scenario_id JOIN model_version v ON v.id = sc.model_version_id
+		WHERE v.model_key = $1)`, model)
+	return tag.RowsAffected(), err
+}

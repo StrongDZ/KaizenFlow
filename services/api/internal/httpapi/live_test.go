@@ -13,6 +13,7 @@ import (
 	"github.com/kaizenflow/api/internal/runs"
 	"github.com/kaizenflow/api/internal/simclient"
 	"github.com/kaizenflow/api/internal/simfake"
+	"github.com/kaizenflow/api/internal/store"
 	"github.com/kaizenflow/api/internal/testfix"
 	"github.com/kaizenflow/api/internal/validate"
 	"github.com/kaizenflow/api/internal/ws"
@@ -20,7 +21,8 @@ import (
 
 type liveAPI struct {
 	*api
-	svc *livesvc.Service
+	svc   *livesvc.Service
+	store *store.Store
 }
 
 func newLiveAPI(t *testing.T, feedURL string) *liveAPI {
@@ -34,7 +36,7 @@ func newLiveAPI(t *testing.T, feedURL string) *liveAPI {
 		Runs: &runs.Service{Store: st, Sim: sim, Hub: hub, Poll: 10 * time.Millisecond}})
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return &liveAPI{&api{t, srv, fake}, svc}
+	return &liveAPI{&api{t, srv, fake}, svc, st}
 }
 
 // publishedModel tạo mô hình có graph mini đã Publish, trả id version.
@@ -258,9 +260,18 @@ func TestLiveForecastBuildsANowcastScenarioFromLiveStateAndRunsIt(t *testing.T) 
 	if want := time.Date(2026, 10, 1, 1, 0, 0, 0, time.UTC); err != nil || !got.Equal(want) {
 		t.Errorf("the forecast starts at the live factory time %v, got %v (%v)", want, got, err)
 	}
+	// dự báo mới thay thế dự báo cũ: cảnh báo lệch của dự báo cũ tự đóng
+	subj := "S"
+	if _, err := a.store.InsertInsight(context.Background(), store.Insight{SimRunID: &rid, Kind: "DRIFT", SubjectKey: &subj, Payload: map[string]any{"metric": "level:RAW-01"}}); err != nil {
+		t.Fatal(err)
+	}
+	a.call("POST", "/api/models/lm/live/forecast", map[string]any{"horizon_s": 3600}, 202)
+	if left := a.call("GET", "/api/insights?kind=DRIFT&status=OPEN", nil, 200)["items"]; left != nil && len(left.([]any)) != 0 {
+		t.Errorf("a newer forecast must close the old drift alerts: %v", left)
+	}
 	// lọc theo nguồn gốc scenario
 	rows := a.call("GET", "/api/runs?model=lm&origin=NOWCAST", nil, 200)["items"].([]any)
-	if len(rows) != 1 || rows[0].(map[string]any)["scenario_origin"] != "NOWCAST" {
+	if len(rows) != 2 || rows[0].(map[string]any)["scenario_origin"] != "NOWCAST" {
 		t.Errorf("rows = %v", rows)
 	}
 	if n := len(a.call("GET", "/api/runs?model=lm&origin=USER", nil, 200)["items"].([]any)); n != 0 {

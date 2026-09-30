@@ -50,7 +50,10 @@ export function ForecastDock({ model, snapshot, names, insetRight }: {
 
   const go = useMutation({
     mutationFn: () => api.liveForecast(model, horizon),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['runs', 'nowcast', model] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['runs', 'nowcast', model] })
+      void qc.invalidateQueries({ queryKey: ['insights'] }) // dự báo mới đóng các cảnh báo lệch của dự báo cũ
+    },
   })
 
   const rows = useMemo(() => buildForecastRows(

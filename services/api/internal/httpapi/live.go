@@ -508,6 +508,10 @@ func (h *handlers) liveForecast(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	if _, err := h.Store.SupersedeDrift(ctx, key); err != nil { // dự báo mới thay dự báo cũ
+		writeErr(w, err)
+		return
+	}
 	writeJSON(w, 202, map[string]any{"scenario_id": sid, "run_id": rid, "notes": snap.Notes, "at": now})
 }
 

@@ -236,3 +236,40 @@ func TestRecentLiveValuesReturnsTheLastNInChronologicalOrder(t *testing.T) {
 		t.Errorf("none = %v", none)
 	}
 }
+
+func TestSupersedeDriftClosesOnlyThisModelsOpenDriftInsights(t *testing.T) {
+	st := testfix.Seeded(t, "store_supersede")
+	vid := seededVersion(t, st, "sm")
+	other := seededVersion(t, st, "om")
+	mk := func(version int64, name string) int64 {
+		sid, _ := st.CreateScenario(ctx, store.Scenario{ModelVersionID: version, Name: name, HorizonS: 3600, Origin: "NOWCAST", StartState: "LIVE_SNAPSHOT"})
+		return doneRun(t, st, sid)
+	}
+	mine, theirs := mk(vid, "a"), mk(other, "b")
+	subj := "K"
+	add := func(run int64, kind string) int64 {
+		id, err := st.InsertInsight(ctx, store.Insight{SimRunID: &run, Kind: kind, SubjectKey: &subj, Payload: map[string]any{"metric": "level:X"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	d1, d2, other1, red := add(mine, "DRIFT"), add(mine, "DRIFT"), add(theirs, "DRIFT"), add(mine, "RED_RISK")
+	n, err := st.SupersedeDrift(ctx, "sm")
+	if err != nil || n != 2 {
+		t.Fatalf("superseded %d, err %v", n, err)
+	}
+	status := func(id int64) string {
+		in, err := st.GetInsight(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return in.Status
+	}
+	if status(d1) != "DONE" || status(d2) != "DONE" {
+		t.Error("this model's open DRIFT insights must be closed")
+	}
+	if status(other1) != "OPEN" || status(red) != "OPEN" {
+		t.Error("another model's DRIFT and other kinds must stay open")
+	}
+}
