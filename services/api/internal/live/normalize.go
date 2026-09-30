@@ -35,6 +35,9 @@ type Binding struct {
 	JSONPath  string    `json:"json_path"`
 	Transform Transform `json:"transform"`
 	Enabled   bool      `json:"enabled"`
+	// Mode: ModeSource (mặc định, lấy từ trường của nguồn) hoặc ModeDerived (tự tính bằng Derive, không có nguồn).
+	Mode   string  `json:"mode"`
+	Derive *Derive `json:"derive,omitempty"`
 }
 
 // Vehicle là vị trí một xe trên bản đồ.
@@ -131,7 +134,7 @@ func Normalize(model string, bindings []Binding, msg Message) ([]Reading, []erro
 	var rs []Reading
 	var errs []error
 	for _, b := range bindings {
-		if !b.Enabled || !MatchSource(b.Source, msg.Source) {
+		if !b.Enabled || b.Mode == ModeDerived || !MatchSource(b.Source, msg.Source) {
 			continue
 		}
 		var r Reading

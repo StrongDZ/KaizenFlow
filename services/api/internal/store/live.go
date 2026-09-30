@@ -10,11 +10,11 @@ import (
 	"github.com/kaizenflow/api/internal/live"
 )
 
-const bindingCols = `id, model_key, subject, signal, source, json_path, transform, enabled`
+const bindingCols = `id, model_key, subject, signal, source, json_path, transform, enabled, mode, derive`
 
 func scanBinding(r pgx.Row) (live.Binding, error) {
 	var b live.Binding
-	err := r.Scan(&b.ID, &b.ModelKey, &b.Subject, &b.Signal, &b.Source, &b.JSONPath, &b.Transform, &b.Enabled)
+	err := r.Scan(&b.ID, &b.ModelKey, &b.Subject, &b.Signal, &b.Source, &b.JSONPath, &b.Transform, &b.Enabled, &b.Mode, &b.Derive)
 	return b, err
 }
 
@@ -38,23 +38,31 @@ func (s *Store) AllBindings(ctx context.Context) ([]live.Binding, error) {
 
 // SaveBindings ghi (thêm hoặc cập nhật theo subject+signal) một lô mapping trong một transaction.
 func (s *Store) SaveBindings(ctx context.Context, modelKey string, bs []live.Binding) error {
-	for _, b := range bs {
+	for i, b := range bs {
+		if b.Mode == "" {
+			bs[i].Mode = live.ModeSource
+		}
 		switch {
 		case b.Subject == "":
 			return &RefError{Key: "subject", Msg: "thiếu đối tượng (node hoặc edge)"}
 		case b.Signal == "":
 			return &RefError{Key: b.Subject, Msg: "thiếu tín hiệu"}
-		case b.Source == "":
+		case bs[i].Mode == live.ModeDerived && b.Derive == nil:
+			return &RefError{Key: b.Subject, Msg: "thiếu công thức tự tính"}
+		case bs[i].Mode == live.ModeSource && b.Source == "":
 			return &RefError{Key: b.Subject, Msg: "thiếu nguồn dữ liệu"}
+		case bs[i].Mode != live.ModeSource && bs[i].Mode != live.ModeDerived:
+			return &RefError{Key: b.Subject, Msg: "cách lấy giá trị phải là từ nguồn hoặc tự tính"}
 		}
 	}
 	return s.inTx(ctx, func(tx pgx.Tx) error {
 		for _, b := range bs {
-			if _, err := tx.Exec(ctx, `INSERT INTO data_binding (model_key, subject, signal, source, json_path, transform, enabled)
-				VALUES ($1, $2, $3, $4, $5, $6, $7)
+			if _, err := tx.Exec(ctx, `INSERT INTO data_binding (model_key, subject, signal, source, json_path, transform, enabled, mode, derive)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 				ON CONFLICT (model_key, subject, signal) DO UPDATE
-				SET source = EXCLUDED.source, json_path = EXCLUDED.json_path, transform = EXCLUDED.transform, enabled = EXCLUDED.enabled`,
-				modelKey, b.Subject, b.Signal, b.Source, b.JSONPath, b.Transform, b.Enabled); err != nil {
+				SET source = EXCLUDED.source, json_path = EXCLUDED.json_path, transform = EXCLUDED.transform, enabled = EXCLUDED.enabled,
+				    mode = EXCLUDED.mode, derive = EXCLUDED.derive`,
+				modelKey, b.Subject, b.Signal, b.Source, b.JSONPath, b.Transform, b.Enabled, b.Mode, b.Derive); err != nil {
 				return err
 			}
 		}

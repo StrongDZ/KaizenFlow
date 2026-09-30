@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -464,4 +465,90 @@ func TestDeleteSourceAsksBeforeBreakingBindings(t *testing.T) {
 	if n := len(a.call("GET", "/api/models/lm/bindings", nil, 200)["items"].([]any)); n != 0 {
 		t.Fatalf("ghép nối phụ thuộc phải bị xoá theo: %d", n)
 	}
+}
+
+func putBindingsRaw(a *liveAPI, model string, list []any, want int) map[string]any {
+	return a.call("PUT", "/api/models/"+model+"/bindings", map[string]any{"bindings": list}, want)
+}
+
+func derivedSum(subject, signal string, terms ...map[string]any) map[string]any {
+	ts := make([]any, len(terms))
+	for i, t := range terms {
+		ts[i] = t
+	}
+	return map[string]any{"subject": subject, "signal": signal, "mode": "derived", "derive": map[string]any{"kind": "sum", "terms": ts}}
+}
+
+func term(subject, signal string, sign int) map[string]any {
+	return map[string]any{"subject": subject, "signal": signal, "sign": sign}
+}
+
+func TestDerivedBindingRoundTripsAndSwitchesBackToSource(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	bindSource(a, "lm", "SRC", "arrived", "dock/src/count", "n")
+	putBindingsRaw(a, "lm", []any{derivedSum("SRC>S", "moved", term("SRC", "arrived", 1))}, 200)
+	var got map[string]any
+	for _, raw := range a.call("GET", "/api/models/lm/bindings", nil, 200)["items"].([]any) {
+		if m := raw.(map[string]any); m["subject"] == "SRC>S" {
+			got = m
+		}
+	}
+	if got == nil || got["mode"] != "derived" || got["source"] != "" {
+		t.Fatalf("binding = %v", got)
+	}
+	d := got["derive"].(map[string]any)
+	if d["kind"] != "sum" || d["terms"].([]any)[0].(map[string]any)["subject"] != "SRC" {
+		t.Fatalf("derive = %v", d)
+	}
+	// đổi lại sang lấy từ nguồn: công thức bị bỏ
+	putBindingsRaw(a, "lm", []any{map[string]any{"subject": "SRC>S", "signal": "moved", "source": "belt/x", "json_path": "moved"}}, 200)
+	for _, raw := range a.call("GET", "/api/models/lm/bindings", nil, 200)["items"].([]any) {
+		if m := raw.(map[string]any); m["subject"] == "SRC>S" && (m["mode"] != "source" || m["derive"] != nil) {
+			t.Fatalf("binding sau khi đổi lại = %v", m)
+		}
+	}
+}
+
+func TestDerivedBindingIsValidatedBeforeSaving(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	bindSource(a, "lm", "SRC", "arrived", "dock/src/count", "n")
+	msg := func(res map[string]any) string { return res["issues"].([]any)[0].(map[string]any)["message"].(string) }
+	// đầu vào chưa ghép
+	res := putBindingsRaw(a, "lm", []any{derivedSum("SRC>S", "moved", term("S", "level:RAW-01", 1))}, 422)
+	if m := msg(res); !strings.Contains(m, "chưa có nguồn") {
+		t.Fatalf("message = %q", m)
+	}
+	// tín hiệu không có trong sơ đồ
+	res = putBindingsRaw(a, "lm", []any{derivedSum("SRC>S", "moved", term("NOPE", "arrived", 1))}, 422)
+	if m := msg(res); !strings.Contains(m, "không có trong sơ đồ") {
+		t.Fatalf("message = %q", m)
+	}
+	// vòng: hai edge tính từ nhau trong cùng một lần lưu
+	res = putBindingsRaw(a, "lm", []any{
+		derivedSum("SRC>S", "moved", term("S>OUT", "moved", 1)),
+		derivedSum("S>OUT", "moved", term("SRC>S", "moved", 1)),
+	}, 422)
+	if m := msg(res); !strings.Contains(m, "vòng") {
+		t.Fatalf("message = %q", m)
+	}
+	// thiếu công thức
+	putBindingsRaw(a, "lm", []any{map[string]any{"subject": "SRC>S", "signal": "moved", "mode": "derived"}}, 422)
+	// không có gì bị lưu sau các lần lỗi
+	for _, raw := range a.call("GET", "/api/models/lm/bindings", nil, 200)["items"].([]any) {
+		if raw.(map[string]any)["mode"] == "derived" {
+			t.Fatalf("lần lưu lỗi không được để lại ghép nối tự tính: %v", raw)
+		}
+	}
+}
+
+func TestDerivedChainInOneSaveIsAcceptedWhenOrdered(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	bindSource(a, "lm", "SRC", "arrived", "dock/src/count", "n")
+	putBindingsRaw(a, "lm", []any{
+		derivedSum("SRC>S", "moved", term("SRC", "arrived", 1)),
+		derivedSum("S>OUT", "moved", term("SRC>S", "moved", 1)), // dựa vào ghép nối tự tính ngay trong lô này
+	}, 200)
 }

@@ -335,3 +335,44 @@ func TestDeletingModelRemovesItsDataSources(t *testing.T) {
 		t.Fatalf("nguồn còn sót sau khi xoá mô hình: %+v", list)
 	}
 }
+
+func TestDerivedBindingRoundTripAndShapeChecks(t *testing.T) {
+	st := testfix.Seeded(t, "store_derived")
+	d := live.Derive{Kind: live.KindSum, Const: 40, Terms: []live.Term{{Subject: "A", Signal: "moved", Sign: 1}, {Subject: "B", Signal: "moved", Sign: -1}}}
+	err := st.SaveBindings(ctx, "m", []live.Binding{
+		{Subject: "S", Signal: "level:RAW-01", Mode: live.ModeDerived, Derive: &d, Enabled: true},
+		binding("A", "moved", "belt/a", "moved"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, err := st.ListBindings(ctx, "m")
+	if err != nil || len(list) != 2 {
+		t.Fatalf("list = %+v, %v", list, err)
+	}
+	for _, b := range list {
+		switch b.Subject {
+		case "S":
+			if b.Mode != live.ModeDerived || b.Source != "" || b.Derive == nil || b.Derive.Const != 40 || len(b.Derive.Terms) != 2 || b.Derive.Terms[1].Sign != -1 {
+				t.Fatalf("derived = %+v (%+v)", b, b.Derive)
+			}
+		case "A":
+			if b.Mode != live.ModeSource || b.Derive != nil {
+				t.Fatalf("source = %+v", b)
+			}
+		}
+	}
+	// AllBindings (đường ingest) mang đủ cả hai kiểu
+	all, err := st.AllBindings(ctx)
+	if err != nil || len(all) != 2 {
+		t.Fatalf("all = %+v, %v", all, err)
+	}
+	// thiếu công thức, hoặc kiểu lạ, bị từ chối trước khi chạm DB
+	var re *store.RefError
+	if err := st.SaveBindings(ctx, "m", []live.Binding{{Subject: "S", Signal: "x", Mode: live.ModeDerived, Enabled: true}}); !errors.As(err, &re) {
+		t.Fatalf("thiếu công thức: %v", err)
+	}
+	if err := st.SaveBindings(ctx, "m", []live.Binding{{Subject: "S", Signal: "x", Mode: "abc", Source: "s", Enabled: true}}); !errors.As(err, &re) {
+		t.Fatalf("kiểu lạ: %v", err)
+	}
+}

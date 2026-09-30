@@ -221,6 +221,8 @@ func (h *handlers) putBindings(w http.ResponseWriter, r *http.Request) {
 			JSONPath  string         `json:"json_path"`
 			Transform live.Transform `json:"transform"`
 			Enabled   *bool          `json:"enabled"`
+			Mode      string         `json:"mode"`
+			Derive    *live.Derive   `json:"derive"`
 		} `json:"bindings"`
 	}
 	if !decode(w, r, &body) {
@@ -240,6 +242,15 @@ func (h *handlers) putBindings(w http.ResponseWriter, r *http.Request) {
 	for _, s := range subs {
 		bySubject[s.Subject] = s
 	}
+	// signalOK: tín hiệu có nằm trong danh mục của đối tượng không (kho nhận mọi `level:<vật tư>`, vì vật tư có thể thêm sau).
+	signalOK := func(s subjectView, name string) bool {
+		for _, d := range s.Signals {
+			if d.Name == name {
+				return true
+			}
+		}
+		return s.Archetype == "STORAGE" && live.ValidSignal("STORAGE", nil, name)
+	}
 	var list []validate.Issue
 	bs := make([]live.Binding, 0, len(body.Bindings))
 	for _, in := range body.Bindings {
@@ -248,22 +259,54 @@ func (h *handlers) putBindings(w http.ResponseWriter, r *http.Request) {
 			list = append(list, validate.Issue{Key: in.Subject, Message: "không có node hoặc edge này trong sơ đồ"})
 			continue
 		}
-		valid := false
-		for _, d := range s.Signals {
-			if d.Name == in.Signal {
-				valid = true
-			}
-		}
-		if s.Archetype == "STORAGE" && live.ValidSignal("STORAGE", nil, in.Signal) {
-			valid = true
-		}
-		if !valid {
+		if !signalOK(s, in.Signal) {
 			list = append(list, validate.Issue{Key: in.Subject, Message: "tín hiệu '" + in.Signal + "' không hợp lệ cho đối tượng này"})
 			continue
 		}
 		enabled := in.Enabled == nil || *in.Enabled
-		bs = append(bs, live.Binding{Subject: in.Subject, Signal: in.Signal, Source: in.Source, JSONPath: in.JSONPath,
-			Transform: in.Transform, Enabled: enabled})
+		b := live.Binding{Subject: in.Subject, Signal: in.Signal, Source: in.Source, JSONPath: in.JSONPath,
+			Transform: in.Transform, Enabled: enabled, Mode: in.Mode, Derive: in.Derive}
+		if b.Mode == "" {
+			b.Mode = live.ModeSource
+		}
+		if b.Mode == live.ModeDerived {
+			b.Source, b.JSONPath, b.Transform = "", "", live.Transform{} // tự tính không có nguồn
+		} else {
+			b.Derive = nil
+		}
+		bs = append(bs, b)
+	}
+	if len(list) == 0 {
+		// Công thức tự tính được kiểm trên trạng thái sau khi lưu: các ghép nối cũ (bớt những cái sắp bị thay) cộng các ghép nối mới.
+		existing, err := h.Store.ListBindings(ctx, key)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		replaced := map[live.Ref]bool{}
+		for _, b := range bs {
+			replaced[live.Ref{Subject: b.Subject, Signal: b.Signal}] = true
+		}
+		final := append([]live.Binding{}, bs...)
+		for _, b := range existing {
+			if !replaced[live.Ref{Subject: b.Subject, Signal: b.Signal}] {
+				final = append(final, b)
+			}
+		}
+		known := func(ref live.Ref) bool {
+			s, ok := bySubject[ref.Subject]
+			return ok && signalOK(s, ref.Signal)
+		}
+		for _, b := range bs {
+			if b.Mode != live.ModeDerived {
+				continue
+			}
+			if b.Derive == nil {
+				list = append(list, validate.Issue{Key: b.Subject, Message: "Thiếu công thức tự tính."})
+			} else if err := live.ValidateDerive(live.Ref{Subject: b.Subject, Signal: b.Signal}, *b.Derive, final, known); err != nil {
+				list = append(list, validate.Issue{Key: b.Subject, Message: err.Error()})
+			}
+		}
 	}
 	if len(list) > 0 {
 		writeJSON(w, 422, issues(list...))
