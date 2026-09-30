@@ -109,6 +109,7 @@ export default function ScenarioDetailPage() {
       </div>
       <Card title="Các lần chạy">
         <DataTable
+          flat
           rows={runs.data ?? []}
           columns={runColumns}
           rowKey={(r) => r.id}

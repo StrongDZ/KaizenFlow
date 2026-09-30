@@ -11,13 +11,15 @@ export type Column<T> = {
   className?: string
 }
 
-export function DataTable<T>({ rows, columns, rowKey, onRowClick, empty, initialSort }: {
+export function DataTable<T>({ rows, columns, rowKey, onRowClick, empty, initialSort, flat }: {
   rows: T[]
   columns: Column<T>[]
   rowKey: (row: T) => string | number
   onRowClick?: (row: T) => void
   empty?: ReactNode
   initialSort?: Sort
+  /** Bảng nằm trong một Card: bỏ viền riêng để không thành hộp trong hộp. */
+  flat?: boolean
 }) {
   const [sort, setSort] = useState<Sort | null>(initialSort ?? null)
   const sorted = useMemo(() => {
@@ -29,7 +31,7 @@ export function DataTable<T>({ rows, columns, rowKey, onRowClick, empty, initial
     if (onRowClick && isRowEnter(e.key, e.target, e.currentTarget)) onRowClick(row)
   }
   return (
-    <div className="overflow-x-auto rounded-xl border border-line">
+    <div className={`overflow-x-auto ${flat ? '' : 'rounded-xl border border-line'}`}>
       <table className="w-full border-collapse text-xs">
         <thead>
           <tr>

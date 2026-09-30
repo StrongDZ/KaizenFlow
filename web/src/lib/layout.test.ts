@@ -90,6 +90,15 @@ describe('autoLayout', () => {
     for (const q of Object.values(p)) expect(Number.isInteger(q.x) && Number.isInteger(q.y)).toBe(true)
   })
 
+  it('lays out a diagram made only of pools', () => {
+    const nodes = [box('TUG', true), box('OP', true)]
+    for (const dir of ['LR', 'TB'] as const) {
+      const p = autoLayout(nodes, [], dir)
+      expect(Object.keys(p).sort()).toEqual(['OP', 'TUG'])
+      expect(overlaps(p, nodes)).toEqual([])
+    }
+  })
+
   it('handles an empty graph', () => {
     expect(autoLayout([], [], 'LR')).toEqual({})
   })
