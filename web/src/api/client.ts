@@ -1,5 +1,5 @@
 import type {
-  AgvMap, Binding, BindingInput, DataSourceRow, SourceTestResult, CalibrationApplied, CalibrationResp, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
+  AgvMap, Binding, BindingInput, CoverageReport, DataSourceRow, SourceTestResult, CalibrationApplied, CalibrationResp, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
   BandRow, CheckReport, EventRow, Graph, GraphEdge, GraphNode, InsightRow, Issue, Json, Material, MaterialDetail, MaterialUpdate, ModelSummary,
   NewMaterial, NewNodeType, NewScenario, NodeType, NodeTypeDetail, NodeTypeUpdate, Run, RunDetail, RunRow, Scenario, ScenarioBody, ScenarioRow,
   SignalRow, VersionInfo,
@@ -113,6 +113,7 @@ export const api = {
     put<{ bindings: Binding[] }>(`/api/models/${encodeURIComponent(key)}/bindings`, { bindings }),
   deleteBinding: (key: string, id: number) => del(`/api/models/${encodeURIComponent(key)}/bindings/${id}`),
   deleteAllBindings: (key: string) => del(`/api/models/${encodeURIComponent(key)}/bindings`),
+  liveCheck: (key: string) => req<CoverageReport>(`/api/models/${encodeURIComponent(key)}/live/check`),
   sources: (key: string) => req<{ sources: DataSourceRow[] }>(`/api/models/${encodeURIComponent(key)}/sources`).then((r) => r.sources),
   addSource: (key: string, body: { source: string; desc?: string; sample?: unknown }) =>
     post<{ source: string }>(`/api/models/${encodeURIComponent(key)}/sources`, body),

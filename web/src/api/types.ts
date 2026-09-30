@@ -154,10 +154,30 @@ export type SubjectView = {
 }
 export type Subjects = { model: string; version_id: number; version: number; status: string; subjects: SubjectView[] }
 export type Transform = { scale?: number; offset?: number; enum?: Record<string, string>; fields?: Record<string, string> }
+/** Công thức tự tính: cộng trừ các tín hiệu khác (có hệ số nhân), hoặc trạng thái máy suy từ việc một bộ đếm còn tăng. */
+export type DeriveTerm = { subject: string; signal: string; sign: 1 | -1; factor?: number }
+export type Derive = { kind: 'sum' | 'activity'; const?: number; terms?: DeriveTerm[]; watch?: { subject: string; signal: string }; idle_after_s?: number }
 export type Binding = {
   id: number; model_key: string; subject: string; signal: string; source: string; json_path: string; transform: Transform; enabled: boolean
+  mode: 'source' | 'derived'; derive?: Derive | null
 }
-export type BindingInput = { subject: string; signal: string; source: string; json_path: string; transform?: Transform; enabled?: boolean }
+export type BindingInput = {
+  subject: string; signal: string; source?: string; json_path?: string; transform?: Transform; enabled?: boolean; mode?: 'source' | 'derived'; derive?: Derive
+}
+
+/** Độ phủ ghép nối (GET /api/models/{key}/live/check). */
+export type CoverageStatus = 'source' | 'derived' | 'missing' | 'broken'
+export type DeriveSuggestion = { derive: Derive; note: string }
+export type SignalCoverage = {
+  subject: string; signal: string; label: string; status: CoverageStatus; need: string[]; reason?: string; suggestions?: DeriveSuggestion[]
+}
+export type Readiness = { feature: string; ok: boolean; missing: { subject: string; signal: string }[] }
+export type CoverageReport = {
+  summary: { signals: number; source: number; derived: number; missing: number; broken: number }
+  readiness: Readiness[]
+  signals: SignalCoverage[]
+  problems: { subject: string; signal: string; severity: string; message: string }[]
+}
 
 export type SigVal = { v: number; ts: string }
 export type SubjectSnap = { state?: string; state_ts?: string; signals: Record<string, SigVal>; age_ms: number; rate?: number }

@@ -71,6 +71,7 @@ export function BindingDialog({ open, model, subjects, sources, draft, existing,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['bindings', model] })
       void qc.invalidateQueries({ queryKey: ['live', model] })
+      void qc.invalidateQueries({ queryKey: ['live-check', model] })
       onClose()
     },
   })
@@ -79,6 +80,7 @@ export function BindingDialog({ open, model, subjects, sources, draft, existing,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['bindings', model] })
       void qc.invalidateQueries({ queryKey: ['live', model] })
+      void qc.invalidateQueries({ queryKey: ['live-check', model] })
       onClose()
     },
   })
