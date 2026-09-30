@@ -1,8 +1,9 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Moon, Sun } from 'lucide-react'
 import { Fragment } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useNavCtx } from '../../hooks/useNavCtx'
+import { useTheme } from '../../hooks/useTheme'
 import { versionStatusLabel } from '../../lib/format'
 import { crumbsFor, isTabActive, switchVersionPath, tabsFor, type NavCtx } from '../../lib/nav'
 
@@ -30,6 +31,19 @@ function VersionPicker({ label, ctx, path }: { label: string; ctx: NavCtx; path:
         </Dropdown.Content>
       </Dropdown.Portal>
     </Dropdown.Root>
+  )
+}
+
+function ThemeToggle() {
+  const { theme, toggle } = useTheme()
+  const label = theme === 'dark' ? 'Chuyển sang chế độ sáng' : 'Chuyển sang chế độ tối'
+  return (
+    <button
+      onClick={toggle} aria-label={label} title={label}
+      className="flex-none rounded-md p-1.5 text-muted hover:bg-panel hover:text-text"
+    >
+      {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+    </button>
   )
 }
 
@@ -72,7 +86,10 @@ export function Header({ actionsRef }: { actionsRef: (el: HTMLDivElement | null)
           </Link>
         ))}
       </nav>
-      <div ref={actionsRef} className="flex items-center justify-end gap-2" />
+      <div className="flex items-center justify-end gap-2">
+        <div ref={actionsRef} className="flex items-center gap-2" />
+        <ThemeToggle />
+      </div>
     </header>
   )
 }

@@ -13,6 +13,7 @@ import { RunGate } from '../components/controlroom/RunGate'
 import { FloatingPanel, PanelSection } from '../components/FloatingPanel'
 import { kfNodeTypes } from '../components/KfNode'
 import { HeaderActions, useShell } from '../components/shell/ShellContext'
+import { useTheme } from '../hooks/useTheme'
 import { StatusChip, btn } from '../components/ui'
 import { atCursor } from '../lib/atCursor'
 import { toFlow, type Badge, type FlowNode, type PinView } from '../lib/graph'
@@ -57,6 +58,7 @@ function Room({ run, scenario, graph, types, rows }: {
   const navigate = useNavigate()
   const rf = useReactFlow()
   const { focus, setFocus } = useShell()
+  const { theme } = useTheme()
   const idx = useMemo(() => indexBands(rows), [rows])
   const times = useMemo(() => timeline(idx), [idx])
   const last = Math.max(0, times.length - 1)
@@ -164,7 +166,7 @@ function Room({ run, scenario, graph, types, rows }: {
 
       <ReactFlow
         nodes={nodes} edges={edges} nodeTypes={kfNodeTypes} nodesConnectable={false} nodesDraggable={false}
-        colorMode="dark" fitView fitViewOptions={{ padding: { top: '56px', right: '280px', bottom: '96px', left: '24px' } }}
+        colorMode={theme} fitView fitViewOptions={{ padding: { top: '56px', right: '280px', bottom: '96px', left: '24px' } }}
         onPaneClick={() => setOpenPin(null)}
       >
         <Background gap={18} size={1} color="var(--color-line)" />

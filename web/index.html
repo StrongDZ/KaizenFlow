@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark light" />
     <title>KaizenFlow</title>
+    <script>
+      // Đặt chế độ sáng/tối trước khi vẽ để không nháy màu; khoá 'kf-theme' khớp src/lib/theme.ts.
+      try {
+        document.documentElement.setAttribute('data-theme', localStorage.getItem('kf-theme') === 'light' ? 'light' : 'dark')
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark')
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

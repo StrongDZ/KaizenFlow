@@ -13,6 +13,7 @@ import type { Graph, Issue, Json, NodeType } from '../api/types'
 import { FloatingPanel } from '../components/FloatingPanel'
 import { ARCHETYPE_LABEL, kfNodeTypes } from '../components/KfNode'
 import { HeaderActions, useShell } from '../components/shell/ShellContext'
+import { useTheme } from '../hooks/useTheme'
 import { ErrorBox, Loading, btn, btnPrimary, input, issuesOf } from '../components/ui'
 import { edgeSchema, edgeToForm, formToEdge, type EdgeForm } from '../lib/edgeForm'
 import { versionStatusLabel } from '../lib/format'
@@ -62,6 +63,7 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
   const navigate = useNavigate()
   const { screenToFlowPosition } = useReactFlow()
   const { focus, setFocus } = useShell()
+  const { theme } = useTheme()
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -178,7 +180,7 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
       </HeaderActions>
 
       <ReactFlow
-        nodes={decorated} edges={decoratedEdges} nodeTypes={kfNodeTypes} colorMode="dark"
+        nodes={decorated} edges={decoratedEdges} nodeTypes={kfNodeTypes} colorMode={theme}
         onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={readOnly ? undefined : onConnect}
         nodesDraggable={!readOnly} nodesConnectable={!readOnly}
         onNodeClick={(_, n) => setSelected({ kind: 'node', id: n.id })}
