@@ -11,11 +11,13 @@ import { RecommendationList } from '../components/controlroom/RecommendationList
 import { Ribbon } from '../components/controlroom/Ribbon'
 import { RunGate } from '../components/controlroom/RunGate'
 import { FloatingPanel, PanelSection } from '../components/FloatingPanel'
+import { kfEdgeTypes } from '../components/KfEdge'
 import { kfNodeTypes } from '../components/KfNode'
 import { HeaderActions, useShell } from '../components/shell/ShellContext'
 import { useTheme } from '../hooks/useTheme'
 import { StatusChip, btn } from '../components/ui'
 import { atCursor } from '../lib/atCursor'
+import { cycleSeconds, dotCount, peakRate, travelSeconds } from '../lib/flow'
 import { toFlow, type Badge, type FlowNode, type PinView } from '../lib/graph'
 import { candidatesOf, kpiP50 } from '../lib/insights'
 import { poolCount, thresholdsFor } from '../lib/model'
@@ -132,10 +134,23 @@ function Room({ run, scenario, graph, types, rows }: {
     }
   }), [flow, graph.nodes, byNode, recs, idx, t, hasTime, types, openPin])
 
+  const peak = useMemo(() => peakRate(idx, graph.edges.map((e) => e.key)), [idx, graph.edges])
+  // Tua nhanh ×4/×16 thì hạt chỉ nhanh gấp √ lần (×2/×4): nhanh hơn nữa là hạt nhoè, không còn đọc được.
+  const dotSpeed = Math.sqrt(speed)
   const edges = useMemo(() => flow.edges.map((e) => {
     const v = valueAt(series(idx, e.id, 'in_transit'), t)?.p50 ?? 0
-    return { ...e, animated: v >= 0.5, label: v >= 0.5 ? `${String(e.label)}, ${Math.round(v)} đang chạy` : e.label }
-  }), [flow, idx, t])
+    const params = e.data?.params ?? {}
+    return {
+      ...e, type: 'flow',
+      label: v >= 0.5 ? `${String(e.label)}, ${Math.round(v)} đang chạy` : e.label,
+      data: {
+        material: e.data?.material ?? '', params,
+        dots: hasTime ? dotCount(idx, e.id, params, t, peak) : 0,
+        cycleS: cycleSeconds(travelSeconds(params)) / dotSpeed,
+        running: playing,
+      },
+    }
+  }), [flow, idx, t, peak, dotSpeed, playing, hasTime])
 
   const apply = useMutation({
     mutationFn: ({ id, rank }: { id: number; rank: number }) => api.applyInsight(id, rank),
@@ -165,7 +180,7 @@ function Room({ run, scenario, graph, types, rows }: {
       </HeaderActions>
 
       <ReactFlow
-        nodes={nodes} edges={edges} nodeTypes={kfNodeTypes} nodesConnectable={false} nodesDraggable={false}
+        nodes={nodes} edges={edges} nodeTypes={kfNodeTypes} edgeTypes={kfEdgeTypes} nodesConnectable={false} nodesDraggable={false}
         colorMode={theme} fitView fitViewOptions={{ padding: { top: '56px', right: '280px', bottom: '96px', left: '24px' } }}
         onPaneClick={() => setOpenPin(null)}
       >

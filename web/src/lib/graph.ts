@@ -22,7 +22,8 @@ export type FlowData = {
   /** Hướng sơ đồ: quyết định cổng nối nằm hai bên (LR) hay trên/dưới (TB). */
   dir?: Dir
 }
-export type EdgeData = { material: string; params: Json }
+/** dots/cycleS/running chỉ có ở Control Room (hạt chạy trên edge); không bao giờ được lưu vào sơ đồ. */
+export type EdgeData = { material: string; params: Json; dots?: number; cycleS?: number; running?: boolean }
 export type FlowNode = Node<FlowData, 'kf'>
 export type FlowEdge = Edge<EdgeData>
 

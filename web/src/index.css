@@ -102,6 +102,16 @@ input::placeholder, textarea::placeholder { color: var(--color-faint); }
 }
 .react-flow__attribution { color: var(--color-faint); }
 
+/* Hạt hàng chạy trên edge (Control Room). Màu trung tính vì xanh/vàng/đỏ đã dành cho mức tồn kho. */
+.kf-dot {
+  fill: var(--color-text); fill-opacity: 0.85; pointer-events: none;
+  offset-rotate: 0deg; animation-name: kf-flow; animation-timing-function: linear; animation-iteration-count: infinite;
+}
+@keyframes kf-flow { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+@media (prefers-reduced-motion: reduce) {
+  .kf-dot { animation: none; offset-distance: var(--kf-at); }
+}
+
 /* Form sinh từ JSON Schema (@rjsf): phẳng, không hộp lồng nhau. Cấp bậc thể hiện bằng chữ và thụt lề. */
 .rjsf .form-group { margin-bottom: 0.5rem; }
 .rjsf label, .rjsf .control-label { display: block; font-size: 11px; font-weight: 500; color: var(--color-muted); }
