@@ -50,3 +50,26 @@ def test_reorder_point_caps_destination_level():
     levels = [v for _, v in run_replication(req).series[("B", "level:X")]]
     assert max(levels) <= 15
     assert max(levels) >= 10
+
+
+def test_edge_records_cumulative_units_moved():
+    req = make_request(base_nodes(), [*EDGES_IN, pool_edge(lot=10), *EDGE_OUT],
+                       [{"key": "TUG", "kind": "TUGGER", "count": 3}], horizon_s=3600, sample_s=60)
+    values = [v for _, v in run_replication(req).series[("A>B", "moved")]]
+    assert values == sorted(values)
+    assert values[-1] > 0
+    assert values[-1] % 10 == 0  # chỉ đếm theo lô đã giao tới nơi
+
+
+def test_instant_edge_still_reports_flow_when_nothing_is_ever_in_transit():
+    req = make_request(base_nodes(), [*EDGES_IN, pool_edge(lot=10), *EDGE_OUT],
+                       [{"key": "TUG", "kind": "TUGGER", "count": 3}], horizon_s=3600, sample_s=60)
+    series = run_replication(req).series
+    assert max(v for _, v in series[("SRC>A", "in_transit")]) == 0
+    assert series[("SRC>A", "moved")][-1][1] > 0
+
+
+def test_moved_counts_only_the_recorded_window_not_the_warmup():
+    req = make_request(base_nodes(), [*EDGES_IN, *EDGE_OUT], horizon_s=3600, warmup_s=1800, sample_s=60)
+    total = run_replication(req).series[("SRC>A", "moved")][-1][1]
+    assert 0 < total <= 7300  # nguồn cấp 20 đơn vị mỗi 10 giây = 7200 trong 3600 giây; tính cả warm-up sẽ ~10800

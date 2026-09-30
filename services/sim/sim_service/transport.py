@@ -23,6 +23,7 @@ class Transfer:
             raise ContractError(spec.key, f"lot {lot} exceeds '{spec.dst}' capacity {cap:g}")
         self.travel = make_sampler(spec.travel, ctx.stream(f"{spec.key}:travel"))
         self.in_transit = 0.0
+        self.moved = 0.0  # tổng đơn vị đã giao tới nơi trong khoảng được ghi (sau warm-up)
 
     def workers(self) -> int:
         s = self.spec
@@ -59,6 +60,7 @@ class Transfer:
             yield from self.dst.give(m, lot)
             self.dst.unreserve(m, lot)
             self.in_transit -= lot
+            self._delivered(lot)
             rec.event(env.now, self.key, "TASK_END", {"qty": lot})
 
     def _pool_worker(self):
@@ -89,6 +91,7 @@ class Transfer:
                 yield from self.dst.give(m, lot)
                 self.dst.unreserve(m, lot)
                 self.in_transit -= lot
+                self._delivered(lot)
                 rec.event(env.now, self.key, "TASK_END", {"qty": lot})
                 yield env.timeout(self.travel())
                 pool.add_busy(t_acq, env.now)
@@ -103,8 +106,13 @@ class Transfer:
             yield env.timeout(hook.service())
             hook.add_busy(t1, env.now)
 
+    def _delivered(self, lot):
+        if self.ctx.rec.recording(self.ctx.env.now):
+            self.moved += lot
+
     def sample(self, now):
         self.ctx.rec.sample(now, self.key, "in_transit", self.in_transit)
+        self.ctx.rec.sample(now, self.key, "moved", self.moved)
 
     def kpi(self):
         t = self.ctx.rec.tallies
