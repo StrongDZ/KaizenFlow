@@ -76,6 +76,7 @@ type sourceInfo struct {
 	seenWall     time.Time
 	count        int64
 	last         any
+	gapS         float64 // trung bình trượt của khoảng cách giữa hai bản tin liên tiếp (giây thật)
 }
 
 type modelState struct {
@@ -118,6 +119,15 @@ func (s *State) NoteSource(msg Message, wall time.Time) {
 	}
 	if msg.Desc != "" {
 		so.desc = msg.Desc
+	}
+	if !so.seenWall.IsZero() {
+		if dt := wall.Sub(so.seenWall).Seconds(); dt > 0 {
+			if so.gapS == 0 {
+				so.gapS = dt
+			} else {
+				so.gapS = 0.8*so.gapS + 0.2*dt
+			}
+		}
 	}
 	so.lastTS, so.seenWall, so.last = msg.TS, wall, msg.Payload
 	so.count++
@@ -238,6 +248,8 @@ type SourceSnap struct {
 	Count  int64     `json:"count"`
 	Last   any       `json:"last"`
 	Bound  bool      `json:"bound"`
+	// PerMin: số bản tin mỗi phút (giờ thật), suy từ khoảng cách trung bình gần đây; 0 nếu chưa đủ dữ liệu.
+	PerMin float64 `json:"per_min"`
 }
 
 type Snapshot struct {
@@ -307,8 +319,12 @@ func (s *State) Snapshot(model string, wall time.Time, bindings []Binding) Snaps
 				break
 			}
 		}
+		perMin := 0.0
+		if so.gapS > 0 {
+			perMin = 60 / so.gapS
+		}
 		out.Sources = append(out.Sources, SourceSnap{Source: so.source, Desc: so.desc, LastTS: so.lastTS,
-			AgeMS: wall.Sub(so.seenWall).Milliseconds(), Count: so.count, Last: so.last, Bound: bound})
+			AgeMS: wall.Sub(so.seenWall).Milliseconds(), Count: so.count, Last: so.last, Bound: bound, PerMin: perMin})
 	}
 	sort.Slice(out.Sources, func(i, j int) bool { return out.Sources[i].Source < out.Sources[j].Source })
 	return out
