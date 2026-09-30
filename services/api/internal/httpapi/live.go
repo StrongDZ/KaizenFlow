@@ -99,18 +99,8 @@ func (h *handlers) clearLive(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
-type subjectView struct {
-	Subject   string           `json:"subject"`
-	Kind      string           `json:"kind"`
-	Name      string           `json:"name"`
-	NodeType  string           `json:"node_type,omitempty"`
-	Archetype string           `json:"archetype,omitempty"`
-	Material  string           `json:"material,omitempty"`
-	Mode      string           `json:"mode,omitempty"`
-	Src       string           `json:"src,omitempty"`
-	Dst       string           `json:"dst,omitempty"`
-	Signals   []live.SignalDef `json:"signals"`
-}
+// subjectView là live.Subject: node hoặc edge cùng các tín hiệu chuẩn của nó.
+type subjectView = live.Subject
 
 func (h *handlers) liveSubjects(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
@@ -148,7 +138,9 @@ func subjectsOf(g *store.Graph, types map[string]store.NodeType) ([]subjectView,
 		if defs == nil {
 			defs = []live.SignalDef{}
 		}
-		subs = append(subs, subjectView{Subject: n.Key, Kind: "node", Name: name, NodeType: n.NodeType, Archetype: t.Archetype, Signals: defs})
+		sv := subjectView{Subject: n.Key, Kind: "node", Name: name, NodeType: n.NodeType, Archetype: t.Archetype, Signals: defs}
+		fillHints(&sv, params)
+		subs = append(subs, sv)
 	}
 	for _, e := range g.Edges {
 		mode, _ := e.Params["mode"].(string)
@@ -158,10 +150,144 @@ func subjectsOf(g *store.Graph, types map[string]store.NodeType) ([]subjectView,
 			}
 			return key
 		}
-		subs = append(subs, subjectView{Subject: e.Key, Kind: "edge", Name: label(e.Src) + " → " + label(e.Dst), Material: e.Material,
-			Mode: mode, Src: e.Src, Dst: e.Dst, Signals: live.EdgeSignals(mode)})
+		sv := subjectView{Subject: e.Key, Kind: "edge", Name: label(e.Src) + " → " + label(e.Dst), Material: e.Material,
+			Mode: mode, Src: e.Src, Dst: e.Dst, Signals: live.EdgeSignals(mode)}
+		sv.Pool, _ = e.Params["pool"].(string)
+		sv.Lot = 1
+		if lot, ok := numOf(e.Params["lot"]); ok && lot > 0 {
+			sv.Lot = lot
+		}
+		subs = append(subs, sv)
 	}
 	return subs, nil
+}
+
+func numOf(v any) (float64, bool) {
+	switch x := v.(type) {
+	case float64:
+		return x, true
+	case int:
+		return float64(x), true
+	case int64:
+		return float64(x), true
+	}
+	return 0, false
+}
+
+// meanSeconds: giá trị trung bình của một thời gian cho dạng số hoặc phân phối ({dist: const|norm|lognorm|exp|tri|uniform...}).
+func meanSeconds(v any) float64 {
+	if f, ok := numOf(v); ok {
+		return f
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return 0
+	}
+	for _, k := range []string{"value", "mean", "mean_s"} {
+		if f, ok := numOf(m[k]); ok {
+			return f
+		}
+	}
+	if lo, ok := numOf(m["min"]); ok {
+		if hi, ok := numOf(m["max"]); ok {
+			return (lo + hi) / 2
+		}
+	}
+	return 0
+}
+
+// fillHints điền các dữ kiện từ tham số hiệu lực của node mà phần gợi ý công thức tự tính cần (tồn đầu kỳ, số đơn vị mỗi lượt, chu kỳ).
+func fillHints(sv *subjectView, params map[string]any) {
+	switch sv.Archetype {
+	case "STORAGE":
+		sv.Initial = map[string]float64{}
+		for _, raw := range listAny(params["stock"]) {
+			m, _ := raw.(map[string]any)
+			if code, _ := m["material"].(string); code != "" {
+				init, _ := numOf(m["initial"])
+				sv.Initial[code] = init
+			}
+		}
+	case "PROCESS":
+		sv.CycleS = meanSeconds(params["cycle"])
+		sv.InQty, sv.OutQty = map[string]float64{}, map[string]float64{}
+		recipes := listAny(params["recipes"])
+		if len(recipes) == 0 {
+			return
+		}
+		r0, _ := recipes[0].(map[string]any)
+		for _, raw := range listAny(r0["inputs"]) {
+			m, _ := raw.(map[string]any)
+			if code, _ := m["material"].(string); code != "" {
+				q, _ := numOf(m["qty"])
+				sv.InQty[code] = q
+			}
+		}
+		for _, raw := range listAny(r0["outputs"]) {
+			m, _ := raw.(map[string]any)
+			port, _ := m["port"].(string)
+			if code, _ := m["material"].(string); code != "" && port != "NG" {
+				q, _ := numOf(m["qty"])
+				sv.OutQty[code] = q
+			}
+		}
+	}
+}
+
+func listAny(v any) []any {
+	l, _ := v.([]any)
+	return l
+}
+
+// sourceSamples trả các nguồn đã đăng ký của mô hình cùng bản tin mẫu (bản tin mới nhất đang phát nếu có, không thì mẫu đã lưu).
+func (h *handlers) sourceSamples(ctx context.Context, model string) ([]live.SourceSample, error) {
+	rows, err := h.Store.ListSources(ctx, model)
+	if err != nil {
+		return nil, err
+	}
+	ram := map[string]any{}
+	for _, s := range h.Live.Snapshot(model).Sources {
+		ram[s.Source] = s.Last
+	}
+	out := make([]live.SourceSample, 0, len(rows))
+	for _, d := range rows {
+		var sample any
+		if last, ok := ram[d.Source]; ok && last != nil {
+			sample = last
+		} else if len(d.Sample) > 0 {
+			_ = json.Unmarshal(d.Sample, &sample)
+		}
+		out = append(out, live.SourceSample{Source: d.Source, Sample: sample})
+	}
+	return out, nil
+}
+
+// liveCheck: GET /api/models/{key}/live/check. Độ phủ ghép nối: tín hiệu nào đã có nguồn, đã tự tính, chưa có hay hỏng;
+// chức năng nào đã đủ tín hiệu; và gợi ý công thức tự tính cho tín hiệu chưa có.
+func (h *handlers) liveCheck(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	key := chi.URLParam(r, "key")
+	g, types, err := h.modelGraph(ctx, key, false)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	subs, err := subjectsOf(g, types)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	bs, err := h.Store.ListBindings(ctx, key)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	samples, err := h.sourceSamples(ctx, key)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, live.AnalyzeCoverage(live.CoverageInput{Subjects: subs, Bindings: bs, Sources: samples}))
 }
 
 func (h *handlers) liveSignals(w http.ResponseWriter, r *http.Request) {

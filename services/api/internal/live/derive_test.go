@@ -174,3 +174,17 @@ func TestEvalActivityIsRunningOnlyWhileTheWatchedCounterKeepsChanging(t *testing
 		t.Fatal("chưa có tín hiệu theo dõi thì không phát trạng thái")
 	}
 }
+
+func TestEvalSumAppliesFactorAndDefaultsToOne(t *testing.T) {
+	vals := map[Ref]SigVal{{"P", "count_in"}: {V: 10, TS: t0}, {"E", "moved"}: {V: 3, TS: t0}}
+	d := Derive{Kind: KindSum, Terms: []Term{{Subject: "P", Signal: "count_in", Sign: 1, Factor: 2}, minus("E", "moved")}}
+	r, ok := Eval(d, Ref{"X", "y"}, reader(vals), t0)
+	if !ok || r.Num != 17 { // 10×2 − 3×1
+		t.Fatalf("reading = %+v", r)
+	}
+}
+
+func TestValidateDeriveRejectsNegativeFactor(t *testing.T) {
+	d := Derive{Kind: KindSum, Terms: []Term{{Subject: "A", Signal: "count_ok", Sign: 1, Factor: -2}}}
+	wantErr(t, ValidateDerive(Ref{"E", "moved"}, d, []Binding{src("A", "count_ok")}, allKnown), "Hệ số nhân")
+}

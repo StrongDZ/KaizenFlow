@@ -25,11 +25,20 @@ type Ref struct {
 
 func (r Ref) String() string { return r.Subject + "/" + r.Signal }
 
-// Term là một số hạng của công thức cộng trừ. Sign là 1 hoặc -1.
+// Term là một số hạng của công thức cộng trừ. Sign là 1 hoặc -1; Factor là hệ số nhân (bỏ trống hoặc 0 nghĩa là 1), dùng để đổi
+// giữa số lượt của máy (count_in, count_ok) và số đơn vị đã chuyển (moved) khi công thức mỗi lượt dùng nhiều hơn một đơn vị.
 type Term struct {
-	Subject string `json:"subject"`
-	Signal  string `json:"signal"`
-	Sign    int    `json:"sign"`
+	Subject string  `json:"subject"`
+	Signal  string  `json:"signal"`
+	Sign    int     `json:"sign"`
+	Factor  float64 `json:"factor,omitempty"`
+}
+
+func (t Term) factor() float64 {
+	if t.Factor == 0 {
+		return 1
+	}
+	return t.Factor
 }
 
 // Derive là công thức tính một tín hiệu từ các tín hiệu khác.
@@ -75,6 +84,9 @@ func ValidateDerive(target Ref, d Derive, final []Binding, known func(Ref) bool)
 		for _, t := range d.Terms {
 			if t.Sign != 1 && t.Sign != -1 {
 				return fmt.Errorf("Mỗi số hạng phải là cộng hoặc trừ")
+			}
+			if t.Factor < 0 {
+				return fmt.Errorf("Hệ số nhân của %s/%s không được âm (dùng dấu trừ để trừ)", t.Subject, t.Signal)
 			}
 			if !numeric(t.Signal) {
 				return fmt.Errorf("%s/%s không phải tín hiệu số nên không đưa vào phép cộng trừ được", t.Subject, t.Signal)
@@ -218,7 +230,7 @@ func Eval(d Derive, target Ref, read func(Ref) (SigVal, bool), now time.Time) (R
 			if !ok {
 				return Reading{}, false
 			}
-			total += float64(t.Sign) * v.V
+			total += float64(t.Sign) * t.factor() * v.V
 			if v.TS.After(ts) {
 				ts = v.TS
 			}

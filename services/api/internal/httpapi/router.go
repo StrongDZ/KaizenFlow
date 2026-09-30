@@ -86,6 +86,7 @@ func New(d Deps) http.Handler {
 	r.Get("/api/models/{key}/live/subjects", h.liveSubjects)
 	r.Get("/api/models/{key}/live/signals", h.liveSignals)
 	r.Get("/api/models/{key}/live/blueprint", h.blueprint)
+	r.Get("/api/models/{key}/live/check", h.liveCheck)
 	r.Post("/api/models/{key}/live/forecast", h.liveForecast)
 	r.Get("/api/models/{key}/live/calibration", h.calibration)
 	r.Post("/api/models/{key}/live/calibration/apply", h.applyCalibration)

@@ -552,3 +552,55 @@ func TestDerivedChainInOneSaveIsAcceptedWhenOrdered(t *testing.T) {
 		derivedSum("S>OUT", "moved", term("SRC>S", "moved", 1)), // dựa vào ghép nối tự tính ngay trong lô này
 	}, 200)
 }
+
+func TestLiveCheckReportsCoverageReadinessAndSuggestions(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	a.call("GET", "/api/models/nope/live/check", nil, 404)
+	bindSource(a, "lm", "SRC", "arrived", "dock/src/count", "n")
+	a.call("POST", "/api/models/lm/sources", map[string]any{"source": "dock/src/count", "sample": map[string]any{"n": 5}}, 201)
+	rep := a.call("GET", "/api/models/lm/live/check", nil, 200)
+	sum := rep["summary"].(map[string]any)
+	if sum["source"].(float64) != 1 || sum["signals"].(float64) < 5 || sum["broken"].(float64) != 0 {
+		t.Fatalf("summary = %v", sum)
+	}
+	var moved map[string]any
+	for _, raw := range rep["signals"].([]any) {
+		c := raw.(map[string]any)
+		if c["subject"] == "SRC>S" && c["signal"] == "moved" {
+			moved = c
+		}
+	}
+	if moved == nil || moved["status"] != "missing" {
+		t.Fatalf("SRC>S moved = %v", moved)
+	}
+	sugg := moved["suggestions"].([]any)
+	if len(sugg) != 1 {
+		t.Fatalf("SRC arrived đã ghép nên phải gợi ý moved = arrived: %v", moved)
+	}
+	d := sugg[0].(map[string]any)["derive"].(map[string]any)
+	if d["kind"] != "sum" || d["terms"].([]any)[0].(map[string]any)["signal"] != "arrived" {
+		t.Fatalf("derive = %v", d)
+	}
+	// gợi ý áp dụng được nguyên xi: lưu rồi coi như đã tự tính
+	putBindingsRaw(a, "lm", []any{map[string]any{"subject": "SRC>S", "signal": "moved", "mode": "derived", "derive": d}}, 200)
+	rep = a.call("GET", "/api/models/lm/live/check", nil, 200)
+	if rep["summary"].(map[string]any)["derived"].(float64) != 1 {
+		t.Fatalf("summary sau khi áp dụng gợi ý = %v", rep["summary"])
+	}
+	live := false
+	for _, raw := range rep["readiness"].([]any) {
+		if r := raw.(map[string]any); r["feature"] == "live" && r["ok"] == false && len(r["missing"].([]any)) > 0 {
+			live = true
+		}
+	}
+	if !live {
+		t.Fatalf("live chưa đủ tín hiệu phải báo thiếu: %v", rep["readiness"])
+	}
+	// trường không có trong bản tin mẫu → hỏng
+	bindSource(a, "lm", "SRC", "arrived", "dock/src/count", "khong_co")
+	rep = a.call("GET", "/api/models/lm/live/check", nil, 200)
+	if rep["summary"].(map[string]any)["broken"].(float64) < 1 {
+		t.Fatalf("trường không có trong mẫu phải báo hỏng: %v", rep["summary"])
+	}
+}
