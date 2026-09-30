@@ -57,6 +57,11 @@ def create_app(runner: Runner, client: ApiClient) -> FastAPI:
         except ApiError as exc:
             raise api_error(exc)
         try:
+            # Giờ ảo bắt đầu lại từ giờ hiện tại nên dữ liệu live của phiên trước (có thể ở "tương lai") không còn khớp.
+            client.clear_live(body.model)
+        except ApiError as exc:
+            raise api_error(exc)
+        try:
             runner.start(blueprint, speed=body.speed, truth=Truth(body.cycle_factor, body.demand_factor))
         except Exception as exc:  # RunRequest hỏng, bản đồ hỏng…
             raise HTTPException(status_code=422, detail=f"không dựng được nhà máy: {exc}")
@@ -120,7 +125,9 @@ def _autostart(runner: Runner, client: ApiClient, model: str, speed: float) -> N
     """Bật sẵn cho demo: đợi API sẵn sàng rồi tự start."""
     for _ in range(40):
         try:
-            runner.start(client.blueprint(model), speed=speed)
+            blueprint = client.blueprint(model)
+            client.clear_live(model)
+            runner.start(blueprint, speed=speed)
             return
         except Exception:
             time.sleep(3)

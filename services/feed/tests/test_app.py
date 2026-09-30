@@ -70,5 +70,14 @@ def test_incident_lifecycle_and_validation(env):
 def test_reset_stops_and_asks_the_api_to_clear_live_data(env):
     c, _, client = env
     c.post("/start", json={"model": "denso-mini"})
+    client.cleared.clear()  # bắt đầu cũng xoá dữ liệu cũ; ở đây chỉ kiểm riêng nút Đặt lại
     r = c.post("/reset", json={"model": "denso-mini"}).json()
     assert r["state"] == "idle" and client.cleared == ["denso-mini"]
+
+
+def test_start_clears_old_live_data_first_because_virtual_time_restarts(env):
+    c, _, client = env
+    c.post("/start", json={"model": "denso-mini"})
+    assert client.cleared == ["denso-mini"]
+    c.post("/start", json={"model": "denso-mini"})
+    assert client.cleared == ["denso-mini", "denso-mini"]

@@ -125,3 +125,29 @@ func TestStateClearForgetsModel(t *testing.T) {
 		t.Errorf("not cleared: %+v", snap)
 	}
 }
+
+// Feed bắt đầu lại với giờ ảo sớm hơn giờ ảo của phiên trước (phiên trước chạy ×600 nên đã đi xa vào tương lai): bản tin mới
+// không được bị coi là "cũ hơn" rồi bỏ đi, nếu không giao diện đứng hình.
+func TestStateStartsANewSessionWhenTimeJumpsFarBackwards(t *testing.T) {
+	s := NewState()
+	wall := time.Now()
+	s.Apply("m", []Reading{num("A", "count_ok", t0.Add(48*time.Hour), 500), {Model: "m", Subject: "A", Signal: "state", TS: t0.Add(48 * time.Hour), Text: "DOWN", IsText: true}}, wall)
+	s.Apply("m", []Reading{num("A", "count_ok", t0, 3), {Model: "m", Subject: "A", Signal: "state", TS: t0, Text: "RUNNING", IsText: true}}, wall)
+	snap := s.Snapshot("m", wall, nil)
+	if snap.Subjects["A"].Signals["count_ok"].V != 3 || snap.Subjects["A"].State != "RUNNING" || !snap.Now.Equal(t0) {
+		t.Errorf("the new session must replace the old one: %+v now=%v", snap.Subjects["A"], snap.Now)
+	}
+	if s.Now("m") != t0 {
+		t.Errorf("Now = %v, want %v", s.Now("m"), t0)
+	}
+}
+
+func TestStateKeepsIgnoringSmallOutOfOrderReadings(t *testing.T) {
+	s := NewState()
+	wall := time.Now()
+	s.Apply("m", []Reading{num("A", "count_ok", t0.Add(10*time.Minute), 10)}, wall)
+	s.Apply("m", []Reading{num("A", "count_ok", t0.Add(7*time.Minute), 7)}, wall) // muộn 3 phút: chỉ là bản tin đến trễ
+	if s.Snapshot("m", wall, nil).Subjects["A"].Signals["count_ok"].V != 10 {
+		t.Error("a late reading within the tolerance must not overwrite a newer value")
+	}
+}

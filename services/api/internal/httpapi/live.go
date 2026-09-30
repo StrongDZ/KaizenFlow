@@ -89,11 +89,11 @@ func (h *handlers) liveState(w http.ResponseWriter, r *http.Request) {
 
 func (h *handlers) clearLive(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
+	h.Live.Clear(key) // trước: bỏ hàng đợi ghi DB rồi mới xoá DB, để dòng của phiên cũ không được ghi sau khi đã xoá
 	if err := h.Store.ClearLive(r.Context(), key); err != nil {
 		writeErr(w, err)
 		return
 	}
-	h.Live.Clear(key)
 	w.WriteHeader(204)
 }
 

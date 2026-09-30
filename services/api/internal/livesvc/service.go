@@ -23,7 +23,10 @@ type Broadcaster interface{ Broadcast(v any) }
 const (
 	// persistGap: khoảng nghỉ tối thiểu (giờ ảo) giữa hai lần ghi DB của cùng một tín hiệu số.
 	persistGap = 30 * time.Second
-	maxErrors  = 20
+	// persistWallGap: khoảng nghỉ tối thiểu theo giờ thực. Feed chạy ×600 phát cách nhau hàng phút giờ ảo nên khoảng nghỉ giờ ảo
+	// một mình không đủ: mọi tín hiệu sẽ được ghi ở mọi lần phát và bảng signal phình ra hàng triệu dòng mỗi giờ.
+	persistWallGap = time.Second
+	maxErrors      = 20
 )
 
 // alwaysPersist: tín hiệu rời rạc (mỗi mẫu là một chuyến xe) không được bỏ mẫu nào, vì hiệu chỉnh cần đủ mẫu.
@@ -63,6 +66,7 @@ type Service struct {
 	pendingSigs []store.LiveSignal
 	pendingEvs  []store.LiveEvent
 	lastPersist map[string]time.Time
+	lastWall    map[string]time.Time
 	lastState   map[string]string
 	dirty       map[string]bool
 	errs        map[string][]ErrCount
@@ -70,7 +74,7 @@ type Service struct {
 
 func New(st Store, hub Broadcaster) *Service {
 	return &Service{st: st, hub: hub, state: live.NewState(), now: time.Now,
-		byModel: map[string][]live.Binding{}, lastPersist: map[string]time.Time{}, lastState: map[string]string{},
+		byModel: map[string][]live.Binding{}, lastPersist: map[string]time.Time{}, lastWall: map[string]time.Time{}, lastState: map[string]string{},
 		dirty: map[string]bool{}, errs: map[string][]ErrCount{}}
 }
 
@@ -121,7 +125,7 @@ func (s *Service) Ingest(msgs []live.Message) IngestResult {
 			res.Errors += len(errs)
 			if len(rs) > 0 {
 				s.state.Apply(model, rs, wall)
-				s.queue(model, rs)
+				s.queue(model, rs, wall)
 			}
 			for _, e := range errs {
 				s.noteError(model, e.Error(), msg.TS)
@@ -155,7 +159,7 @@ func (s *Service) RecentErrors(model string) []ErrCount {
 	return append([]ErrCount(nil), s.errs[model]...)
 }
 
-func (s *Service) queue(model string, rs []live.Reading) {
+func (s *Service) queue(model string, rs []live.Reading, wall time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.dirty[model] = true
@@ -173,10 +177,15 @@ func (s *Service) queue(model string, rs []live.Reading) {
 			continue
 		}
 		pk := key + "|" + r.Signal
-		if last, ok := s.lastPersist[pk]; !alwaysPersist[r.Signal] && ok && r.TS.Sub(last) < persistGap {
-			continue
+		if !alwaysPersist[r.Signal] {
+			if last, ok := s.lastPersist[pk]; ok && r.TS.Sub(last) >= 0 && r.TS.Sub(last) < persistGap {
+				continue
+			}
+			if lw, ok := s.lastWall[pk]; ok && wall.Sub(lw) < persistWallGap {
+				continue
+			}
 		}
-		s.lastPersist[pk] = r.TS
+		s.lastPersist[pk], s.lastWall[pk] = r.TS, wall
 		s.pendingSigs = append(s.pendingSigs, store.LiveSignal{Time: r.TS, Model: model, Subject: r.Subject, Name: r.Signal, Value: r.Num})
 	}
 }
@@ -224,6 +233,11 @@ func (s *Service) Clear(model string) {
 			delete(s.lastPersist, k)
 		}
 	}
+	for k := range s.lastWall {
+		if strings.HasPrefix(k, prefix) {
+			delete(s.lastWall, k)
+		}
+	}
 	for k := range s.lastState {
 		if strings.HasPrefix(k, prefix) {
 			delete(s.lastState, k)
@@ -231,6 +245,21 @@ func (s *Service) Clear(model string) {
 	}
 	delete(s.errs, model)
 	delete(s.dirty, model)
+	// Hàng đợi ghi DB: bỏ dòng của mô hình này, nếu không chúng được ghi sau khi đã xoá.
+	sigs := s.pendingSigs[:0]
+	for _, r := range s.pendingSigs {
+		if r.Model != model {
+			sigs = append(sigs, r)
+		}
+	}
+	s.pendingSigs = sigs
+	evs := s.pendingEvs[:0]
+	for _, e := range s.pendingEvs {
+		if e.Model != model {
+			evs = append(evs, e)
+		}
+	}
+	s.pendingEvs = evs
 }
 
 // Run ghi DB mỗi giây và phát WebSocket mỗi 400 ms cho đến khi ctx kết thúc.

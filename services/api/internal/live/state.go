@@ -23,6 +23,9 @@ const (
 	histCap          = 512
 	rateSamples      = 5
 	maxSources       = 2000
+	// sessionBackstep: giờ ảo của bản tin mới lùi quá chừng này so với giờ ảo đang giữ thì đó là phiên feed mới (feed bắt đầu lại),
+	// không phải bản tin đến trễ.
+	sessionBackstep = 10 * time.Minute
 )
 
 // Coverage = tồn hiện tại ÷ tốc độ giảm trong cửa sổ. Chỉ tính các lần giảm (nạp thêm không phải tiêu thụ), giống sim.
@@ -125,6 +128,12 @@ func (s *State) Apply(model string, rs []Reading, wall time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m := s.model(model)
+	if newest := newestTS(rs); !m.now.IsZero() && m.now.Sub(newest) > sessionBackstep {
+		// Feed bắt đầu lại với giờ ảo sớm hơn phiên trước (phiên trước có thể đã chạy ×600 vào tương lai): bỏ trạng thái cũ,
+		// nếu không mọi bản tin mới đều bị coi là cũ hơn và giao diện đứng hình.
+		delete(s.models, model)
+		m = s.model(model)
+	}
 	for _, r := range rs {
 		if r.TS.After(m.now) {
 			m.now = r.TS
@@ -158,6 +167,16 @@ func (s *State) Apply(model string, rs []Reading, wall time.Time) {
 		sub.signals[r.Signal] = SigVal{V: r.Num, TS: r.TS}
 		sub.push(r.Signal, Sample{TS: r.TS, V: r.Num})
 	}
+}
+
+func newestTS(rs []Reading) time.Time {
+	var out time.Time
+	for _, r := range rs {
+		if r.TS.After(out) {
+			out = r.TS
+		}
+	}
+	return out
 }
 
 func (sub *subject) push(name string, sm Sample) {

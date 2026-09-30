@@ -115,7 +115,10 @@ func TestFlushPersistsThrottledSignalsAndStateChanges(t *testing.T) {
 		bind("m", "K", "level:RAW-01", "wms", "qty"),
 		bind("m", "P", "state", "plc", "st"),
 		bind("m", "E", "trip_s", "trip", "dur"))
+	wall := s.now()
 	feed := func(at time.Duration, qty float64, st string, dur float64) {
+		wall = wall.Add(2 * time.Second) // mỗi lần phát cách nhau 2 giây thực
+		s.now = func() time.Time { return wall }
 		s.Ingest([]live.Message{
 			{Source: "wms", TS: t0.Add(at), Payload: map[string]any{"qty": qty}},
 			{Source: "plc", TS: t0.Add(at), Payload: map[string]any{"st": st}},
@@ -180,5 +183,45 @@ func TestClearForgetsModelAndSources(t *testing.T) {
 	snap := s.Snapshot("m")
 	if len(snap.Subjects) != 0 || len(snap.Sources) != 0 {
 		t.Errorf("not cleared: %+v", snap)
+	}
+}
+
+// Ở tốc độ ×600 mỗi lần phát cách nhau hàng phút giờ ảo: nếu chỉ dựa vào khoảng nghỉ giờ ảo thì mọi tín hiệu đều được ghi ở
+// mọi lần phát. Phải có thêm giới hạn theo giờ thực để bảng signal không phình ra hàng triệu dòng mỗi giờ.
+func TestFlushAlsoThrottlesByWallClockSoFastFeedsDoNotFloodTheDatabase(t *testing.T) {
+	s, fs, _ := newSvc(t, bind("m", "K", "level:RAW-01", "wms", "qty"))
+	wall := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return wall }
+	for i := 0; i < 20; i++ {
+		// giờ ảo nhảy 10 phút mỗi lần, giờ thực chỉ 0,1 giây
+		s.Ingest([]live.Message{{Source: "wms", TS: t0.Add(time.Duration(i) * 10 * time.Minute), Payload: map[string]any{"qty": float64(100 - i)}}})
+		wall = wall.Add(100 * time.Millisecond)
+	}
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(fs.sigs); n > 3 {
+		t.Errorf("20 messages in 2 wall-clock seconds wrote %d rows; want at most one per wall second", n)
+	}
+	if len(fs.sigs) == 0 {
+		t.Error("the first sample must be written")
+	}
+}
+
+// Đặt lại demo: dòng của phiên cũ còn nằm trong hàng đợi ghi DB không được ghi sau khi đã xoá.
+func TestClearDropsPendingRowsOfThatModelOnly(t *testing.T) {
+	s, fs, _ := newSvc(t, bind("m", "K", "level:RAW-01", "wms", "qty"), bind("other", "K", "level:RAW-01", "wms", "qty"))
+	s.Ingest([]live.Message{{Source: "wms", TS: t0, Payload: map[string]any{"qty": 5.0}}})
+	s.Clear("m")
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range fs.sigs {
+		if r.Model == "m" {
+			t.Errorf("a row of the cleared model was still written: %+v", r)
+		}
+	}
+	if len(fs.sigs) != 1 || fs.sigs[0].Model != "other" {
+		t.Errorf("the other model's row must survive: %+v", fs.sigs)
 	}
 }
