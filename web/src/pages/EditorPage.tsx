@@ -6,7 +6,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
-import type { Graph, Issue, NodeType } from '../api/types'
+import type { CheckReport, Graph, Issue, NodeType } from '../api/types'
 import { CanvasToolbar, type Tool } from '../components/editor/CanvasToolbar'
 import { Inspector } from '../components/editor/Inspector'
 import { DRAG_TYPE, NodePalette } from '../components/editor/NodePalette'
@@ -14,11 +14,13 @@ import { QuickAdd } from '../components/editor/QuickAdd'
 import { ShortcutsDialog } from '../components/editor/ShortcutsDialog'
 import { kfNodeTypes } from '../components/KfNode'
 import { CheckControl } from '../components/editor/CheckControl'
+import { SaveGuard } from '../components/editor/SaveGuard'
 import { HeaderActions, useShell } from '../components/shell/ShellContext'
 import { useGraphCheck } from '../hooks/useGraphCheck'
 import { useTheme } from '../hooks/useTheme'
 import { ErrorBox, Loading, btnOk, btnPrimary, issuesOf } from '../components/ui'
-import { mergeServerIssues, nodeSummary, toneOf } from '../lib/checkView'
+import { groupIssues, mergeServerIssues, nodeSummary, toneOf } from '../lib/checkView'
+import { canConnect } from '../lib/connect'
 import { formToEdge, type EdgeForm } from '../lib/edgeForm'
 import { versionStatusLabel } from '../lib/format'
 import { clipboard, copyOf, pasteOf } from '../lib/clipboard'
@@ -97,19 +99,33 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
     setEdges((es) => applyEdgeChanges(c, es))
     if (!readOnly && c.some(isEdit)) setDirty(true)
   }, [readOnly])
+  // Một dòng báo ngắn cạnh thanh công cụ khi một thao tác bị từ chối (vd. nối node với chính nó), để không im lặng không làm gì.
+  const [note, setNote] = useState<string | null>(null)
+  const noteTimer = useRef<number>(undefined)
+  const flash = (m: string) => {
+    setNote(m)
+    window.clearTimeout(noteTimer.current)
+    noteTimer.current = window.setTimeout(() => setNote(null), 4000)
+  }
+  useEffect(() => () => window.clearTimeout(noteTimer.current), [])
+  const archetypeOf = useCallback((id: string) => nodes.find((n) => n.id === id)?.data.archetype, [nodes])
   const onConnect = useCallback((c: Connection) => {
+    const verdict = canConnect(c, archetypeOf)
+    if (!verdict.ok) { flash(verdict.reason); return }
     const src = nodes.find((n) => n.id === c.source)
     const dst = nodes.find((n) => n.id === c.target)
-    if (!src || !dst || src.data.archetype === 'RESOURCE_POOL' || dst.data.archetype === 'RESOURCE_POOL') return
+    if (!src || !dst) return
     remember()
-    const material = defaultMaterial(src, materials)
+    // Cặp node này đã có đường nối chở vật tư nào thì điền sẵn vật tư khác, để không tự tạo ra đường nối trùng.
+    const avoid = edges.filter((e) => e.source === c.source && e.target === c.target).map((e) => e.data?.material ?? '')
+    const material = defaultMaterial(src, materials, types, avoid)
     setEdges((es) => [...es, {
       id: edgeKey(c.source, c.target, es.map((e) => e.id)), source: c.source, target: c.target,
       data: { material, params: {} }, label: edgeLabel(material, {}),
     }])
     setDirty(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, materials, readOnly])
+  }, [nodes, edges, materials, types, readOnly, archetypeOf])
 
   const deselectAll = () => {
     setNodes((ns) => (ns.some((n) => n.selected) ? ns.map((n) => ({ ...n, selected: false })) : ns))
@@ -126,7 +142,7 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
       if (!from) return cleared
       const [src, dst] = from.type === 'source' ? [from.nodeId, n.id] : [n.id, from.nodeId]
       const srcNode = src === n.id ? n : live.current.nodes.find((x) => x.id === src)
-      const material = defaultMaterial(srcNode, materials)
+      const material = defaultMaterial(srcNode, materials, types)
       return [...cleared, { id: edgeKey(src, dst, es.map((e) => e.id)), source: src, target: dst, data: { material, params: {} }, label: edgeLabel(material, {}) }]
     })
     setDirty(true)
@@ -244,6 +260,21 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
     mutationFn: async () => { await api.saveGraph(graph.version_id, body()); return api.publish(graph.version_id) },
     onSuccess: done, onError: (e) => setIssues(issuesOf(e)),
   })
+  // Lưu và Publish đều kiểm tra sâu trước. Có lỗi: Lưu cho "Vẫn lưu nháp", Publish chặn cứng.
+  const [guard, setGuard] = useState<{ report: CheckReport; mode: 'save' | 'publish' } | null>(null)
+  const [gating, setGating] = useState(false)
+  const guarded = async (mode: 'save' | 'publish') => {
+    setGating(true)
+    try {
+      const r = await check.run(true)
+      if (groupIssues(r).errors.length > 0) { setGuard({ report: r, mode }); return }
+    } catch {
+      // Không kiểm tra được (mất kết nối, server lỗi): để chính thao tác lưu báo lỗi nếu có.
+    } finally {
+      setGating(false)
+    }
+    if (mode === 'save') save.mutate(); else publish.mutate()
+  }
   const clone = useMutation({ mutationFn: () => api.clone(graph.version_id), onSuccess: (r) => navigate(`/versions/${r.version_id}`) })
 
   const setNodeData = (id: string, patch: Partial<FlowNode['data']>) => {
@@ -274,7 +305,7 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
   keys.current = {
     undo: undoStep, redo: redoStep, copy: copySelected, paste, duplicate,
     selectAll: () => setNodes((ns) => ns.map((n) => ({ ...n, selected: true }))),
-    save: () => { if (!published && dirty && !save.isPending) save.mutate() },
+    save: () => { if (!published && dirty && !save.isPending && !gating) void guarded('save') },
     toolSelect: () => setTool('select'), toolHand: () => setTool('hand'),
     focus: () => setFocus((f) => !f), help: () => setHelpOpen(true),
     escape: () => { if (focus) setFocus(false); else deselectAll() },
@@ -327,17 +358,23 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
           <button className={btnPrimary} disabled={clone.isPending} onClick={() => clone.mutate()} title="Bản đã Publish không sửa được. Tạo bản sửa để có một bản nháp mới sao từ bản này.">Tạo bản sửa (v{graph.version + 1})</button>
         ) : (
           <>
-            <button className={btnPrimary} disabled={save.isPending} onClick={() => save.mutate()} title="Lưu thay đổi vào bản nháp (Ctrl/⌘ S). Chưa khoá phiên bản.">Lưu</button>
-            <button className={btnOk} disabled={publish.isPending} onClick={() => publish.mutate()} title="Lưu rồi khoá phiên bản này để chạy mô phỏng. Muốn sửa tiếp thì tạo bản sửa mới.">Publish</button>
+            <button className={btnPrimary} disabled={save.isPending || gating} onClick={() => void guarded('save')} title="Lưu thay đổi vào bản nháp (Ctrl/⌘ S). Chưa khoá phiên bản.">Lưu</button>
+            <button className={btnOk} disabled={publish.isPending || gating} onClick={() => void guarded('publish')} title="Lưu rồi khoá phiên bản này để chạy mô phỏng. Muốn sửa tiếp thì tạo bản sửa mới.">Publish</button>
           </>
         )}
       </HeaderActions>
 
       <ReactFlow
         nodes={decorated} edges={decoratedEdges} nodeTypes={kfNodeTypes} colorMode={theme}
-        onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={readOnly ? undefined : onConnect}
+        onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={readOnly ? undefined : onConnect} isValidConnection={(c) => canConnect(c, archetypeOf).ok}
         onNodeDragStart={() => remember()} onSelectionDragStart={() => remember()}
         onConnectEnd={(ev, state) => {
+          // Thả dây lên một cổng không nối được: nói lý do thay vì im lặng.
+          if (state.isValid === false && state.fromNode && state.toNode) {
+            const v = canConnect({ source: state.fromNode.id, target: state.toNode.id }, archetypeOf)
+            if (!v.ok) flash(v.reason)
+            return
+          }
           // Thả dây ra chỗ trống (không trúng node nào): mở ô tìm loại node, chọn xong tự nối.
           if (state.isValid || state.toNode || !state.fromNode || !state.fromHandle) return
           const pt = 'changedTouches' in ev ? ev.changedTouches[0] : ev
@@ -367,6 +404,8 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
       <ShortcutsDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
 
       {error && <div className="absolute left-1/2 top-3 z-20 w-[420px] -translate-x-1/2"><ErrorBox error={error} /></div>}
+      {note && <div role="status" className="absolute bottom-16 left-1/2 z-20 max-w-[460px] -translate-x-1/2 rounded-lg border border-lock-line bg-lock-bg px-3 py-2 text-xs text-lock-text shadow-lg">{note}</div>}
+      {guard && <SaveGuard report={guard.report} mode={guard.mode} onBack={() => setGuard(null)} onSaveAnyway={() => { setGuard(null); save.mutate() }} />}
 
       {nodes.length === 0 && (
         <div className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center">

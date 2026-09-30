@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Graph, NodeType } from '../api/types'
-import { defaultMaterial, edgeKey, fromFlow, makeNode, newNodeKey, toFlow } from './graph'
+import { defaultMaterial, edgeKey, fromFlow, makeNode, newNodeKey, outputMaterials, toFlow } from './graph'
 
 const types: Record<string, NodeType> = {
   DOCK_IN: { id: 1, code: 'DOCK_IN', name: 'Cửa nhận hàng', archetype: 'SOURCE', param_schema: {}, default_params: {}, signals: [], failure_modes: [], ui: { color: '#111111' }, is_builtin: true },
@@ -67,6 +67,26 @@ describe('graph conversion', () => {
     const proc = { ...flow.nodes[1], data: { ...flow.nodes[1].data, params: { recipes: [{ inputs: [], outputs: [{ material: 'BOX', qty: 1 }] }] } } }
     expect(defaultMaterial(proc, ['X'])).toBe('BOX')
     expect(defaultMaterial(undefined, ['X'])).toBe('X')
+  })
+
+  it('đọc cả mặc định của loại node khi node chưa tự đặt tham số', () => {
+    const withDefaults: Record<string, NodeType> = {
+      ...types,
+      PACKING: { ...types.PACKING, default_params: { recipes: [{ inputs: [], outputs: [{ material: 'BOX', qty: 1 }] }] } },
+      RACK: { id: 3, code: 'RACK', name: 'Kho', archetype: 'STORAGE', param_schema: {}, default_params: { stock: [{ material: 'PART' }, { material: 'SUB' }] }, signals: [], failure_modes: [], ui: {}, is_builtin: true },
+    }
+    const flow = toFlow(graph, withDefaults)
+    expect(defaultMaterial(flow.nodes[1], ['X'], withDefaults)).toBe('BOX')
+    const store = makeNode(withDefaults.RACK, [], { x: 0, y: 0 })
+    expect(outputMaterials(store, withDefaults)).toEqual(['PART', 'SUB'])
+    expect(defaultMaterial(store, ['X'], withDefaults)).toBe('PART')
+  })
+
+  it('tránh vật tư đã có trên cặp node này, rồi mới tới vật tư bất kỳ trong Thư viện', () => {
+    const src = toFlow({ ...graph, nodes: [{ ...graph.nodes[0], params: { lots: [{ material: 'RAW-01', qty: 1 }, { material: 'RAW-02', qty: 1 }] } }, graph.nodes[1]] }, types).nodes[0]
+    expect(defaultMaterial(src, ['X'], types, ['RAW-01'])).toBe('RAW-02')
+    expect(defaultMaterial(src, ['RAW-01', 'RAW-02', 'Y'], types, ['RAW-01', 'RAW-02'])).toBe('Y')
+    expect(defaultMaterial(src, ['RAW-01'], types, ['RAW-01', 'RAW-02'])).toBe('RAW-01') // hết lựa chọn: để bước Kiểm tra báo trùng
   })
 })
 

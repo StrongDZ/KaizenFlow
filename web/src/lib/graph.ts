@@ -112,17 +112,35 @@ export function edgeKey(src: string, dst: string, existing: string[]): string {
 
 type Line = { material: string }
 
-export function defaultMaterial(src: FlowNode | undefined, materials: string[]): string {
-  if (src?.data.archetype === 'PROCESS') {
-    const recipes = src.data.params.recipes as { outputs?: Line[] }[] | undefined
-    const out = recipes?.[0]?.outputs ?? []
-    if (out.length) return out[0].material
+const mats = (list: Line[] | undefined): string[] => (list ?? []).map((l) => l.material).filter((m): m is string => typeof m === 'string' && m !== '')
+
+/** Tham số hiệu lực của node ở mức đọc: tham số riêng, không có thì mặc định của loại node. */
+function effective(src: FlowNode, types: Record<string, NodeType>, key: string): unknown {
+  return src.data.params[key] ?? types[src.data.nodeType]?.default_params?.[key]
+}
+
+/** Các vật tư mà node này phát ra, theo thứ tự ưu tiên: đầu ra của công thức (Trạm), lô hàng (Nguồn), tồn khai báo (Kho). */
+export function outputMaterials(src: FlowNode | undefined, types: Record<string, NodeType> = {}): string[] {
+  if (!src) return []
+  switch (src.data.archetype) {
+    case 'PROCESS': {
+      const recipes = effective(src, types, 'recipes') as { outputs?: (Line & { port?: string })[] }[] | undefined
+      const out = recipes?.[0]?.outputs ?? []
+      return mats([...out.filter((o) => o.port !== 'NG'), ...out.filter((o) => o.port === 'NG')])
+    }
+    case 'SOURCE': return mats(effective(src, types, 'lots') as Line[] | undefined)
+    case 'STORAGE': return mats(effective(src, types, 'stock') as Line[] | undefined)
+    default: return []
   }
-  if (src?.data.archetype === 'SOURCE') {
-    const lots = (src.data.params.lots as Line[] | undefined) ?? []
-    if (lots.length) return lots[0].material
-  }
-  return materials[0] ?? ''
+}
+
+/**
+ * Vật tư điền sẵn cho đường nối mới từ `src`: vật tư node này phát ra mà cặp node chưa dùng (`avoid`),
+ * rồi vật tư bất kỳ trong Thư viện chưa dùng; hết lựa chọn thì lấy vật tư đầu tiên và để bước Kiểm tra báo trùng.
+ */
+export function defaultMaterial(src: FlowNode | undefined, library: string[], types: Record<string, NodeType> = {}, avoid: string[] = []): string {
+  const own = outputMaterials(src, types)
+  return own.find((m) => !avoid.includes(m)) ?? library.find((m) => !avoid.includes(m)) ?? own[0] ?? library[0] ?? ''
 }
 
 /** Thay đổi của React Flow có phải chỉnh sửa thật không (chọn, đo kích thước, click không kéo thì không). */
