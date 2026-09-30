@@ -1,4 +1,5 @@
 import type { IconButtonProps, TitleFieldProps } from '@rjsf/utils'
+import { distFields } from './DistField'
 
 /** Nút mặc định của rjsf chỉ có biểu tượng glyphicon (không có font), nên hiện ra là ô trống. Thay bằng chữ. */
 function AddButton({ onClick, disabled }: IconButtonProps) {
@@ -16,3 +17,4 @@ function TitleFieldTemplate({ id, title }: TitleFieldProps) {
 }
 
 export const rjsfTemplates = { ButtonTemplates: { AddButton, RemoveButton }, TitleFieldTemplate }
+export const rjsfFields = distFields

@@ -1,10 +1,11 @@
 import Form from '@rjsf/core'
 import type { RJSFSchema } from '@rjsf/utils'
 import validator from '@rjsf/validator-ajv8'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import type { Json } from '../../api/types'
-import { rjsfTemplates } from '../rjsfTemplates'
+import { rjsfFields, rjsfTemplates } from '../rjsfTemplates'
 import { formSchema } from '../../lib/nodeTypeView'
+import { labelSchema } from '../../lib/paramLabels'
 
 const uiSchema = { 'ui:submitButtonOptions': { norender: true } }
 
@@ -15,15 +16,18 @@ const uiSchema = { 'ui:submitButtonOptions': { norender: true } }
  */
 export function ParamForm({ schema, value, onChange }: { schema: Json; value: Json; onChange: (v: Json) => void }) {
   const ready = useRef(false)
+  const labelled = useMemo(() => labelSchema(formSchema(schema)) as RJSFSchema, [schema])
   useEffect(() => { ready.current = true }, [])
   return (
     <Form
-      schema={formSchema(schema) as RJSFSchema}
+      schema={labelled}
       formData={value}
       validator={validator}
       noValidate
       uiSchema={uiSchema}
       templates={rjsfTemplates}
+      fields={rjsfFields}
+      formContext={{ emptyLabel: 'Không đặt' }}
       experimental_defaultFormStateBehavior={{ arrayMinItems: { populate: 'requiredOnly' }, emptyObjectFields: 'skipDefaults' }}
       onChange={(e) => { if (ready.current) onChange((e.formData ?? {}) as Json) }}
     />
