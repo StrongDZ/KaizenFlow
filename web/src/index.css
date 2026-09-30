@@ -102,20 +102,31 @@ input::placeholder, textarea::placeholder { color: var(--color-faint); }
 }
 .react-flow__attribution { color: var(--color-faint); }
 
-/* Form sinh từ JSON Schema (@rjsf) */
+/* Form sinh từ JSON Schema (@rjsf): phẳng, không hộp lồng nhau. Cấp bậc thể hiện bằng chữ và thụt lề. */
 .rjsf .form-group { margin-bottom: 0.5rem; }
 .rjsf label, .rjsf .control-label { display: block; font-size: 11px; font-weight: 500; color: var(--color-muted); }
+.rjsf .required { display: none; }
 .rjsf input, .rjsf select, .rjsf textarea {
   margin-top: 2px; width: 100%; border-radius: 6px; border: 1px solid var(--color-line-2);
   background: var(--color-bg); color: var(--color-text); padding: 4px 8px; font-size: 12px;
 }
 .rjsf input[type='checkbox'] { width: auto; }
 .rjsf input:disabled, .rjsf select:disabled, .rjsf textarea:disabled { opacity: 0.6; }
-.rjsf fieldset { min-width: 0; border: 1px solid var(--color-line); border-radius: 8px; padding: 8px; }
-.rjsf legend { width: auto; padding: 0 4px; font-size: 11px; font-weight: 600; color: var(--color-text-2); }
-.rjsf .array-item { margin-bottom: 8px; border-radius: 6px; background: var(--color-panel-2); padding: 4px; }
+.rjsf fieldset { min-width: 0; margin: 0; border: 0; padding: 0; }
+.rjsf fieldset fieldset { padding-left: 8px; }
+.rjsf legend { display: block; width: 100%; margin: 0 0 4px; padding: 0; font-size: 11px; font-weight: 600; color: var(--color-text-2); }
+.rjsf fieldset fieldset legend { font-weight: 500; color: var(--color-muted); }
+.rjsf .array-item { border-top: 1px solid var(--color-line); padding-top: 6px; margin-bottom: 6px; }
+.rjsf .array-item:first-child { border-top: 0; padding-top: 0; }
+/* rjsf đặt justify-content: space-around ngay trong thuộc tính style, nên phải !important. */
+.rjsf .array-item-toolbox .btn-group { justify-content: flex-end !important; }
+.rjsf .array-item-add { margin: 0 0 4px; }
+.rjsf .rjsf-add, .rjsf .rjsf-remove { padding-left: 0; padding-right: 0; }
 .rjsf button {
   border-radius: 6px; border: 1px solid var(--color-line-2); background: var(--color-panel);
   color: var(--color-text); padding: 2px 8px; font-size: 11px;
 }
+.rjsf button:hover:not(:disabled) { background: var(--color-raised); }
+.rjsf .rjsf-add, .rjsf .rjsf-remove { border-color: transparent; background: transparent; color: var(--color-muted); }
+.rjsf .rjsf-add:hover:not(:disabled), .rjsf .rjsf-remove:hover:not(:disabled) { color: var(--color-text); }
 .rjsf .text-danger, .rjsf .error-detail { font-size: 11px; color: var(--color-bad-text); }

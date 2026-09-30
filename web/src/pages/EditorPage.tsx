@@ -11,6 +11,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Graph, Issue, Json, NodeType } from '../api/types'
 import { FloatingPanel } from '../components/FloatingPanel'
+import { rjsfTemplates } from '../components/rjsfTemplates'
 import { ARCHETYPE_LABEL, kfNodeTypes } from '../components/KfNode'
 import { HeaderActions, useShell } from '../components/shell/ShellContext'
 import { useTheme } from '../hooks/useTheme'
@@ -32,7 +33,7 @@ const noSubmit = { 'ui:submitButtonOptions': { norender: true } }
 function UserForm({ onChange, ...rest }: ComponentProps<typeof Form>) {
   const ready = useRef(false)
   useEffect(() => { ready.current = true }, [])
-  return <Form {...rest} onChange={(e, id) => { if (ready.current) onChange?.(e, id) }} />
+  return <Form templates={rjsfTemplates} {...rest} onChange={(e, id) => { if (ready.current) onChange?.(e, id) }} />
 }
 
 export default function EditorPage() {

@@ -3,6 +3,7 @@ import type { RJSFSchema } from '@rjsf/utils'
 import validator from '@rjsf/validator-ajv8'
 import { useEffect, useRef } from 'react'
 import type { Json } from '../../api/types'
+import { rjsfTemplates } from '../rjsfTemplates'
 import { formSchema } from '../../lib/nodeTypeView'
 
 const uiSchema = { 'ui:submitButtonOptions': { norender: true } }
@@ -22,6 +23,7 @@ export function ParamForm({ schema, value, onChange }: { schema: Json; value: Js
       validator={validator}
       noValidate
       uiSchema={uiSchema}
+      templates={rjsfTemplates}
       experimental_defaultFormStateBehavior={{ arrayMinItems: { populate: 'requiredOnly' }, emptyObjectFields: 'skipDefaults' }}
       onChange={(e) => { if (ready.current) onChange((e.formData ?? {}) as Json) }}
     />
