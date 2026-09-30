@@ -151,3 +151,29 @@ func TestStateKeepsIgnoringSmallOutOfOrderReadings(t *testing.T) {
 		t.Error("a late reading within the tolerance must not overwrite a newer value")
 	}
 }
+
+func TestApplyRemembersWhenAValueLastChanged(t *testing.T) {
+	s := NewState()
+	wall := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	put := func(ts time.Time, v float64) {
+		s.Apply("m", []Reading{{Model: "m", Subject: "P", Signal: "count_in", TS: ts, Num: v}}, wall)
+	}
+	base := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	put(base, 5)
+	if v, _ := s.Value("m", Ref{"P", "count_in"}); !v.Changed.IsZero() {
+		t.Fatalf("mẫu đầu tiên chưa biết đổi lúc nào: %+v", v)
+	}
+	put(base.Add(10*time.Second), 5) // không đổi
+	put(base.Add(20*time.Second), 6) // đổi
+	put(base.Add(30*time.Second), 6) // không đổi
+	v, ok := s.Value("m", Ref{"P", "count_in"})
+	if !ok || v.V != 6 || !v.Changed.Equal(base.Add(20*time.Second)) {
+		t.Fatalf("value = %+v, ok = %v; Changed phải là lúc đổi gần nhất", v, ok)
+	}
+	if _, ok := s.Value("m", Ref{"P", "nope"}); ok {
+		t.Fatal("tín hiệu chưa có")
+	}
+	if !s.Now("m").Equal(base.Add(30 * time.Second)) {
+		t.Fatalf("Now = %v", s.Now("m"))
+	}
+}

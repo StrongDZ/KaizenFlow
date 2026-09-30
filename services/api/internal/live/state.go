@@ -60,6 +60,8 @@ func Coverage(hist []Sample, windowS float64) (float64, bool) {
 type SigVal struct {
 	V  float64   `json:"v"`
 	TS time.Time `json:"ts"`
+	// Changed là giờ ảo mà giá trị này đổi lần gần nhất; zero nếu mới thấy một mẫu (chưa biết đổi lúc nào). Dùng cho công thức hoạt động.
+	Changed time.Time `json:"-"`
 }
 
 type subject struct {
@@ -174,7 +176,14 @@ func (s *State) Apply(model string, rs []Reading, wall time.Time) {
 		if cur, ok := sub.signals[r.Signal]; ok && r.TS.Before(cur.TS) {
 			continue
 		}
-		sub.signals[r.Signal] = SigVal{V: r.Num, TS: r.TS}
+		next := SigVal{V: r.Num, TS: r.TS}
+		if cur, ok := sub.signals[r.Signal]; ok {
+			next.Changed = cur.Changed
+			if cur.V != r.Num {
+				next.Changed = r.TS
+			}
+		}
+		sub.signals[r.Signal] = next
 		sub.push(r.Signal, Sample{TS: r.TS, V: r.Num})
 	}
 }
@@ -385,4 +394,17 @@ func (s *State) Models() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// Value trả giá trị hiện tại của một tín hiệu số của một mô hình.
+func (s *State) Value(model string, r Ref) (SigVal, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if m := s.models[model]; m != nil {
+		if sub := m.subjects[r.Subject]; sub != nil {
+			v, ok := sub.signals[r.Signal]
+			return v, ok
+		}
+	}
+	return SigVal{}, false
 }

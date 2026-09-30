@@ -333,3 +333,122 @@ func TestFailedSourceWriteKeepsTheCount(t *testing.T) {
 		t.Fatalf("lỗi ghi không được làm mất số đếm: %+v", w)
 	}
 }
+
+func derivedBind(model, subject, signal string, d live.Derive) live.Binding {
+	return live.Binding{ModelKey: model, Subject: subject, Signal: signal, Mode: live.ModeDerived, Derive: &d, Enabled: true}
+}
+
+func sumOf(terms ...live.Term) live.Derive { return live.Derive{Kind: live.KindSum, Terms: terms} }
+
+func plusT(subject, signal string) live.Term {
+	return live.Term{Subject: subject, Signal: signal, Sign: 1}
+}
+func minusT(subject, signal string) live.Term {
+	return live.Term{Subject: subject, Signal: signal, Sign: -1}
+}
+
+func TestIngestComputesDerivedSumAndStoresItLikeRealData(t *testing.T) {
+	d := live.Derive{Kind: live.KindSum, Const: 100, Terms: []live.Term{plusT("IN", "moved"), minusT("OUT", "moved")}}
+	s, fs, _ := newSvc(t,
+		bind("m", "IN", "moved", "belt/in", "moved"), bind("m", "OUT", "moved", "belt/out", "moved"),
+		derivedBind("m", "KHO", "level:RAW-01", d))
+	res := s.Ingest([]live.Message{
+		{Source: "belt/in", TS: t0, Payload: map[string]any{"moved": 30.0}},
+		{Source: "belt/out", TS: t0, Payload: map[string]any{"moved": 12.0}},
+	})
+	if res.Derived != 1 {
+		t.Fatalf("result = %+v", res)
+	}
+	got := s.Snapshot("m").Subjects["KHO"].Signals["level:RAW-01"]
+	if got.V != 118 || !got.TS.Equal(t0) {
+		t.Fatalf("level = %+v, muốn 100 + 30 - 12 = 118", got)
+	}
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, sg := range fs.sigs {
+		if sg.Subject == "KHO" && sg.Name == "level:RAW-01" && sg.Value == 118 && sg.Model == "m" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("giá trị tự tính phải được lưu như dữ liệu thật: %+v", fs.sigs)
+	}
+	// dự báo từ live đọc tồn qua State.Levels nên phải thấy giá trị tự tính
+	if lv := s.State().Levels("m"); lv["KHO"]["RAW-01"] != 118 {
+		t.Fatalf("Levels = %+v", lv)
+	}
+}
+
+func TestDerivedChainsFollowDependencyOrder(t *testing.T) {
+	s, _, _ := newSvc(t,
+		bind("m", "A", "count_ok", "dev/a", "n"),
+		// ghi ngược thứ tự phụ thuộc để chắc chắn Plan sắp lại
+		derivedBind("m", "E2", "moved", sumOf(plusT("E1", "moved"))),
+		derivedBind("m", "E1", "moved", sumOf(plusT("A", "count_ok"))))
+	s.Ingest([]live.Message{{Source: "dev/a", TS: t0, Payload: map[string]any{"n": 7.0}}})
+	if got := s.Snapshot("m").Subjects["E2"].Signals["moved"].V; got != 7 {
+		t.Fatalf("E2 = %v, muốn 7 (qua E1)", got)
+	}
+}
+
+func TestDerivedValueDoesNotLookFreshWhenItsInputsStopped(t *testing.T) {
+	s, _, _ := newSvc(t,
+		bind("m", "A", "count_ok", "dev/a", "n"), bind("m", "B", "count_ok", "dev/b", "n"),
+		derivedBind("m", "E", "moved", sumOf(plusT("A", "count_ok"))))
+	wall := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return wall }
+	s.Ingest([]live.Message{{Source: "dev/a", TS: t0, Payload: map[string]any{"n": 1.0}}})
+	wall = wall.Add(30 * time.Second)
+	// chỉ nguồn B (không phải đầu vào của E) tiếp tục phát
+	s.Ingest([]live.Message{{Source: "dev/b", TS: t0.Add(30 * time.Second), Payload: map[string]any{"n": 1.0}}})
+	age := s.Snapshot("m").Subjects["E"].AgeMS
+	if age < 29_000 {
+		t.Fatalf("age_ms = %d: E không được tính lại khi đầu vào của nó không đổi, nên tuổi phải tăng theo giờ thật", age)
+	}
+}
+
+func TestDerivedActivityTurnsIdleWhenTheCounterStopsWhileTimeAdvances(t *testing.T) {
+	act := live.Derive{Kind: live.KindActivity, Watch: &live.Ref{Subject: "P", Signal: "count_in"}, IdleAfterS: 60}
+	s, fs, _ := newSvc(t,
+		bind("m", "P", "count_in", "dev/p", "n"), bind("m", "Q", "count_in", "dev/q", "n"),
+		derivedBind("m", "P", "state", act))
+	state := func() string { return s.Snapshot("m").Subjects["P"].State }
+	s.Ingest([]live.Message{
+		{Source: "dev/p", TS: t0, Payload: map[string]any{"n": 1.0}},
+		{Source: "dev/q", TS: t0, Payload: map[string]any{"n": 1.0}},
+	})
+	if state() != "IDLE" {
+		t.Fatalf("mẫu đầu tiên chưa biết máy chạy: %q", state())
+	}
+	s.Ingest([]live.Message{{Source: "dev/p", TS: t0.Add(10 * time.Second), Payload: map[string]any{"n": 2.0}}})
+	if state() != "RUNNING" {
+		t.Fatalf("bộ đếm vừa tăng: %q", state())
+	}
+	// bộ đếm của P đứng yên, giờ vẫn trôi nhờ nguồn Q: đến lúc phải chuyển IDLE
+	s.Ingest([]live.Message{{Source: "dev/q", TS: t0.Add(200 * time.Second), Payload: map[string]any{"n": 2.0}}})
+	if state() != "IDLE" {
+		t.Fatalf("đứng yên hơn 60 giây: %q", state())
+	}
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var seq []string
+	for _, e := range fs.evs {
+		if e.Subject == "P" && e.Type == "STATE" {
+			seq = append(seq, e.Payload["state"].(string))
+		}
+	}
+	if len(seq) != 3 || seq[0] != "IDLE" || seq[1] != "RUNNING" || seq[2] != "IDLE" {
+		t.Fatalf("chuỗi sự kiện trạng thái = %v", seq)
+	}
+}
+
+func TestSourceBindingsStillWorkAlongsideDerivedOnes(t *testing.T) {
+	s, _, _ := newSvc(t, bind("m", "A", "count_ok", "dev/a", "n"), derivedBind("m", "E", "moved", sumOf(plusT("A", "count_ok"))))
+	res := s.Ingest([]live.Message{{Source: "dev/a", TS: t0, Payload: map[string]any{"n": 3.0}}})
+	if res.Readings != 1 || res.Errors != 0 || res.Derived != 1 {
+		t.Fatalf("result = %+v", res)
+	}
+}

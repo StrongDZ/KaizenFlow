@@ -48,6 +48,8 @@ type IngestResult struct {
 	Rejected int `json:"rejected"`
 	Readings int `json:"readings"`
 	Errors   int `json:"errors"`
+	// Derived: số giá trị tự tính được sinh ra từ lô này (ngoài Readings lấy thẳng từ bản tin).
+	Derived int `json:"derived"`
 }
 
 // LiveMsg là bản tin WebSocket: trạng thái một mô hình, không kèm danh sách nguồn (chỉ đếm).
@@ -68,6 +70,7 @@ type Service struct {
 
 	mu          sync.Mutex
 	byModel     map[string][]live.Binding
+	derived     map[string][]live.Binding // ghép nối tự tính của từng mô hình, đã sắp theo thứ tự tính (live.Plan)
 	pendingSigs []store.LiveSignal
 	pendingEvs  []store.LiveEvent
 	lastPersist map[string]time.Time
@@ -89,7 +92,7 @@ type srcAgg struct {
 
 func New(st Store, hub Broadcaster) *Service {
 	return &Service{st: st, hub: hub, state: live.NewState(), now: time.Now,
-		byModel: map[string][]live.Binding{}, lastPersist: map[string]time.Time{}, lastWall: map[string]time.Time{}, lastState: map[string]string{},
+		byModel: map[string][]live.Binding{}, derived: map[string][]live.Binding{}, lastPersist: map[string]time.Time{}, lastWall: map[string]time.Time{}, lastState: map[string]string{},
 		dirty: map[string]bool{}, errs: map[string][]ErrCount{}, srcAgg: map[string]*srcAgg{}, srcFlushed: map[string]time.Time{}}
 }
 
@@ -105,8 +108,14 @@ func (s *Service) ReloadBindings(ctx context.Context) error {
 	for _, b := range all {
 		by[b.ModelKey] = append(by[b.ModelKey], b)
 	}
+	der := map[string][]live.Binding{}
+	for m, bs := range by {
+		if plan := live.Plan(bs); len(plan) > 0 {
+			der[m] = plan
+		}
+	}
 	s.mu.Lock()
-	s.byModel = by
+	s.byModel, s.derived = by, der
 	s.mu.Unlock()
 	return nil
 }
@@ -130,7 +139,12 @@ func (s *Service) IngestFor(model string, msgs []live.Message) IngestResult {
 	for k, v := range s.byModel {
 		byModel[k] = v
 	}
+	derived := make(map[string][]live.Binding, len(s.derived))
+	for k, v := range s.derived {
+		derived[k] = v
+	}
 	s.mu.Unlock()
+	touched := map[string]map[live.Ref]bool{} // mô hình → tín hiệu vừa nhận giá trị mới trong lô này
 	for _, msg := range msgs {
 		if msg.Source == "" || msg.TS.IsZero() {
 			res.Rejected++
@@ -146,13 +160,61 @@ func (s *Service) IngestFor(model string, msgs []live.Message) IngestResult {
 			if len(rs) > 0 {
 				s.state.Apply(model, rs, wall)
 				s.queue(model, rs, wall)
+				if touched[model] == nil {
+					touched[model] = map[live.Ref]bool{}
+				}
+				for _, r := range rs {
+					if r.Fleet == nil {
+						touched[model][live.Ref{Subject: r.Subject, Signal: r.Signal}] = true
+					}
+				}
 			}
 			for _, e := range errs {
 				s.noteError(model, e.Error(), msg.TS)
 			}
 		}
 	}
+	for model, refs := range touched {
+		res.Derived += s.runDerived(model, derived[model], refs, wall)
+	}
 	return res
+}
+
+// runDerived tính các tín hiệu tự tính của một mô hình sau một lô bản tin, theo thứ tự phụ thuộc, và đưa kết quả vào cùng đường
+// với dữ liệu thật (trạng thái live, lưu DB, dự báo). Công thức cộng trừ chỉ tính lại khi một đầu vào vừa có giá trị mới,
+// để giá trị tự tính không trông "tươi" khi đầu vào đã mất tín hiệu; công thức hoạt động phụ thuộc vào thời gian nên tính lại mỗi lô.
+func (s *Service) runDerived(model string, plan []live.Binding, touched map[live.Ref]bool, wall time.Time) int {
+	if len(plan) == 0 {
+		return 0
+	}
+	now := s.state.Now(model)
+	read := func(r live.Ref) (live.SigVal, bool) { return s.state.Value(model, r) }
+	n := 0
+	for _, b := range plan {
+		stale := b.Derive.Kind != live.KindActivity
+		if stale {
+			for _, in := range b.Derive.Inputs() {
+				if touched[in] {
+					stale = false
+					break
+				}
+			}
+			if stale {
+				continue
+			}
+		}
+		target := live.Ref{Subject: b.Subject, Signal: b.Signal}
+		r, ok := live.Eval(*b.Derive, target, read, now)
+		if !ok {
+			continue
+		}
+		r.Model = model
+		s.state.Apply(model, []live.Reading{r}, wall)
+		s.queue(model, []live.Reading{r}, wall)
+		touched[target] = true
+		n++
+	}
+	return n
 }
 
 // noteSource ghi nhận nguồn của một bản tin để Flush ghi xuống bảng data_source.

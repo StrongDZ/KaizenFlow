@@ -3,6 +3,7 @@ package live
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func src(subject, signal string) Binding {
@@ -103,5 +104,73 @@ func TestDeriveInputs(t *testing.T) {
 	}
 	if got := (Derive{Kind: KindActivity, Watch: &Ref{"A", "x"}}).Inputs(); len(got) != 1 || got[0] != (Ref{"A", "x"}) {
 		t.Fatalf("activity inputs = %v", got)
+	}
+}
+
+func TestPlanOrdersDerivedByDependencyAndDropsOthers(t *testing.T) {
+	e1 := derived("E1", "moved", sum(plus("A", "count_ok")))
+	e2 := derived("E2", "moved", sum(plus("E1", "moved")))
+	e3 := derived("E3", "moved", sum(plus("E2", "moved"), plus("E1", "moved")))
+	off := derived("E4", "moved", sum(plus("A", "count_ok")))
+	off.Enabled = false
+	plan := Plan([]Binding{e3, src("A", "count_ok"), e2, off, e1})
+	var got []string
+	for _, b := range plan {
+		got = append(got, b.Subject)
+	}
+	if strings.Join(got, ",") != "E1,E2,E3" {
+		t.Fatalf("plan = %v, muốn E1,E2,E3 (nguồn và ghép nối tắt bị bỏ)", got)
+	}
+}
+
+func TestPlanKeepsBindingsEvenWhenCyclicSoNothingIsLost(t *testing.T) {
+	a := derived("A", "moved", sum(plus("B", "moved")))
+	b := derived("B", "moved", sum(plus("A", "moved")))
+	if plan := Plan([]Binding{a, b}); len(plan) != 2 {
+		t.Fatalf("plan = %v", plan)
+	}
+}
+
+func reader(vals map[Ref]SigVal) func(Ref) (SigVal, bool) {
+	return func(r Ref) (SigVal, bool) { v, ok := vals[r]; return v, ok }
+}
+
+func TestEvalSumAddsSignedTermsAndConstAtTheLatestInputTime(t *testing.T) {
+	t1 := t0.Add(10 * time.Second)
+	vals := map[Ref]SigVal{
+		{"A", "moved"}: {V: 30, TS: t0},
+		{"B", "moved"}: {V: 12, TS: t1},
+	}
+	d := Derive{Kind: KindSum, Const: 40, Terms: []Term{plus("A", "moved"), minus("B", "moved")}}
+	r, ok := Eval(d, Ref{"S", "level:RAW-01"}, reader(vals), t1)
+	if !ok || r.Num != 58 || !r.TS.Equal(t1) || r.Subject != "S" || r.Signal != "level:RAW-01" || r.IsText {
+		t.Fatalf("reading = %+v, ok = %v", r, ok)
+	}
+	delete(vals, Ref{"B", "moved"})
+	if _, ok := Eval(d, Ref{"S", "level:RAW-01"}, reader(vals), t1); ok {
+		t.Fatal("thiếu một đầu vào thì không được phát giá trị (tránh số sai)")
+	}
+}
+
+func TestEvalActivityIsRunningOnlyWhileTheWatchedCounterKeepsChanging(t *testing.T) {
+	d := Derive{Kind: KindActivity, Watch: &Ref{"P", "count_in"}, IdleAfterS: 60}
+	at := func(changed time.Time) map[Ref]SigVal {
+		return map[Ref]SigVal{{"P", "count_in"}: {V: 5, TS: t0.Add(5 * time.Minute), Changed: changed}}
+	}
+	now := t0.Add(5 * time.Minute)
+	r, ok := Eval(d, Ref{"P", "state"}, reader(at(now.Add(-30*time.Second))), now)
+	if !ok || !r.IsText || r.Text != "RUNNING" || !r.TS.Equal(now) {
+		t.Fatalf("còn hoạt động: %+v, %v", r, ok)
+	}
+	r, _ = Eval(d, Ref{"P", "state"}, reader(at(now.Add(-2*time.Minute))), now)
+	if r.Text != "IDLE" {
+		t.Fatalf("đứng yên quá 60 giây phải là IDLE: %+v", r)
+	}
+	r, _ = Eval(d, Ref{"P", "state"}, reader(at(time.Time{})), now)
+	if r.Text != "IDLE" {
+		t.Fatalf("chưa từng thấy đổi giá trị thì chưa biết máy chạy: %+v", r)
+	}
+	if _, ok := Eval(d, Ref{"P", "state"}, reader(map[Ref]SigVal{}), now); ok {
+		t.Fatal("chưa có tín hiệu theo dõi thì không phát trạng thái")
 	}
 }

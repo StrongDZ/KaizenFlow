@@ -2,6 +2,7 @@ package live
 
 import (
 	"fmt"
+	"time"
 )
 
 // Cách lấy giá trị của một ghép nối: từ trường của một nguồn, hoặc tự tính từ tín hiệu khác trong sơ đồ.
@@ -154,4 +155,88 @@ func joinRefs(rs []Ref) string {
 		s += r.String()
 	}
 	return s
+}
+
+// Plan trả các ghép nối tự tính đang bật của một mô hình theo thứ tự tính được: đầu vào tính trước đầu ra.
+// Nếu lỡ có vòng (ValidateDerive đã chặn), các ghép nối trong vòng vẫn được giữ ở cuối để không mất cái nào.
+func Plan(bindings []Binding) []Binding {
+	var derived []Binding
+	byRef := map[Ref]int{}
+	for _, b := range bindings {
+		if b.Enabled && b.Mode == ModeDerived && b.Derive != nil {
+			byRef[Ref{b.Subject, b.Signal}] = len(derived)
+			derived = append(derived, b)
+		}
+	}
+	waiting := make([]int, len(derived)) // số đầu vào còn chờ (chỉ tính đầu vào cũng là tự tính)
+	users := make([][]int, len(derived))
+	for i, b := range derived {
+		for _, in := range b.Derive.Inputs() {
+			if j, ok := byRef[in]; ok && j != i {
+				waiting[i]++
+				users[j] = append(users[j], i)
+			}
+		}
+	}
+	var out []Binding
+	done := make([]bool, len(derived))
+	var queue []int
+	for i := range derived {
+		if waiting[i] == 0 {
+			queue = append(queue, i)
+		}
+	}
+	for len(queue) > 0 {
+		i := queue[0]
+		queue = queue[1:]
+		done[i] = true
+		out = append(out, derived[i])
+		for _, u := range users[i] {
+			if waiting[u]--; waiting[u] == 0 {
+				queue = append(queue, u)
+			}
+		}
+	}
+	for i := range derived {
+		if !done[i] {
+			out = append(out, derived[i])
+		}
+	}
+	return out
+}
+
+// Eval tính một công thức từ giá trị hiện tại của các đầu vào. ok=false khi thiếu đầu vào (không phát số sai).
+// sum: giờ của kết quả là giờ mới nhất của các đầu vào. activity: RUNNING nếu tín hiệu theo dõi đổi giá trị trong idle_after_s giây
+// ảo gần nhất tính tới `now`, ngược lại IDLE; giờ của kết quả là `now`.
+func Eval(d Derive, target Ref, read func(Ref) (SigVal, bool), now time.Time) (Reading, bool) {
+	switch d.Kind {
+	case KindSum:
+		total := d.Const
+		var ts time.Time
+		for _, t := range d.Terms {
+			v, ok := read(Ref{t.Subject, t.Signal})
+			if !ok {
+				return Reading{}, false
+			}
+			total += float64(t.Sign) * v.V
+			if v.TS.After(ts) {
+				ts = v.TS
+			}
+		}
+		return Reading{Subject: target.Subject, Signal: target.Signal, TS: ts, Num: total}, true
+	case KindActivity:
+		if d.Watch == nil {
+			return Reading{}, false
+		}
+		v, ok := read(*d.Watch)
+		if !ok {
+			return Reading{}, false
+		}
+		state := "IDLE"
+		if !v.Changed.IsZero() && now.Sub(v.Changed) <= time.Duration(d.IdleAfterS*float64(time.Second)) {
+			state = "RUNNING"
+		}
+		return Reading{Subject: target.Subject, Signal: target.Signal, TS: now, IsText: true, Text: state}, true
+	}
+	return Reading{}, false
 }
