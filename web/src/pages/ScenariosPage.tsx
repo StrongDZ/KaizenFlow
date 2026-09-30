@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { ScenarioRow } from '../api/types'
 import { DataTable, type Column } from '../components/table/DataTable'
-import { EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, StatusChip, Tag, btn, btnPrimary } from '../components/ui'
+import { EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, StatusChip, Tag, btnAccentOutline, btnPrimary } from '../components/ui'
 
 export default function ScenariosPage() {
   const vid = Number(useParams().id)
@@ -27,7 +27,7 @@ export default function ScenariosPage() {
       align: 'right',
       cell: (s) => (
         <div className="flex justify-end" onClick={stop}>
-          <button className={btn} disabled={!published || run.isPending} onClick={() => run.mutate(s.id)}>Chạy</button>
+          <button className={btnAccentOutline} disabled={!published || run.isPending} onClick={() => run.mutate(s.id)}>Chạy</button>
         </div>
       ),
     },

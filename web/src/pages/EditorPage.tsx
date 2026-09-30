@@ -15,7 +15,7 @@ import { ShortcutsDialog } from '../components/editor/ShortcutsDialog'
 import { kfNodeTypes } from '../components/KfNode'
 import { HeaderActions, useShell } from '../components/shell/ShellContext'
 import { useTheme } from '../hooks/useTheme'
-import { ErrorBox, Loading, btn, btnPrimary, issuesOf } from '../components/ui'
+import { ErrorBox, Loading, btnOk, btnPrimary, issuesOf } from '../components/ui'
 import { formToEdge, type EdgeForm } from '../lib/edgeForm'
 import { versionStatusLabel } from '../lib/format'
 import { clipboard, copyOf, pasteOf } from '../lib/clipboard'
@@ -300,8 +300,8 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
           <button className={btnPrimary} disabled={clone.isPending} onClick={() => clone.mutate()} title="Bản đã Publish không sửa được. Tạo bản sửa để có một bản nháp mới sao từ bản này.">Tạo bản sửa (v{graph.version + 1})</button>
         ) : (
           <>
-            <button className={btn} disabled={save.isPending} onClick={() => save.mutate()} title="Lưu thay đổi vào bản nháp (Ctrl/⌘ S). Chưa khoá phiên bản.">Lưu</button>
-            <button className={btnPrimary} disabled={publish.isPending} onClick={() => publish.mutate()} title="Lưu rồi khoá phiên bản này để chạy mô phỏng. Muốn sửa tiếp thì tạo bản sửa mới.">Publish</button>
+            <button className={btnPrimary} disabled={save.isPending} onClick={() => save.mutate()} title="Lưu thay đổi vào bản nháp (Ctrl/⌘ S). Chưa khoá phiên bản.">Lưu</button>
+            <button className={btnOk} disabled={publish.isPending} onClick={() => publish.mutate()} title="Lưu rồi khoá phiên bản này để chạy mô phỏng. Muốn sửa tiếp thì tạo bản sửa mới.">Publish</button>
           </>
         )}
       </HeaderActions>

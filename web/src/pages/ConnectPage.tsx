@@ -8,7 +8,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog'
 import { BindingDialog, type BindingDraft } from '../components/live/BindingDialog'
 import { FeedControl } from '../components/live/FeedControl'
 import { SuggestDialog } from '../components/live/SuggestDialog'
-import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, SearchBox, Tag, btn, btnPrimary } from '../components/ui'
+import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, SearchBox, Tag, btn, btnDangerOutline, btnPrimary } from '../components/ui'
 import { useLive } from '../hooks/useLive'
 import { STALE_MS, stateLabel } from '../lib/liveFrame'
 import { leafPaths } from '../lib/livePath'
@@ -76,7 +76,7 @@ export default function ConnectPage() {
               <Sparkles size={12} /> Gợi ý ghép tự động{suggestion.suggestions.length > 0 ? ` (${suggestion.suggestions.length})` : ''}
             </button>
             <button className={btn} onClick={() => open({})}><Plus size={12} /> Ghép thủ công</button>
-            <button className={btn} disabled={(bindings.data ?? []).length === 0} onClick={() => setConfirmClear(true)}>Xoá mọi ghép nối</button>
+            <button className={btnDangerOutline} disabled={(bindings.data ?? []).length === 0} onClick={() => setConfirmClear(true)}>Xoá mọi ghép nối</button>
           </>
         }
       />

@@ -1,9 +1,10 @@
 import { useMutation } from '@tanstack/react-query'
+import { Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { ApiError } from '../api/client'
 import { impactText } from '../lib/impact'
 import { ConfirmDialog } from './ConfirmDialog'
-import { btn } from './ui'
+import { btnDangerOutline } from './ui'
 
 /**
  * Nút xoá với giao thức hai bước của spec §6.3: hỏi trước; nếu server trả 409 kèm `impact`
@@ -26,7 +27,7 @@ export function DeleteAction({ what, run, onDone, disabled = false, label = 'Xo�
   const cancel = () => { setOpen(false); setImpact(null); m.reset() }
   return (
     <>
-      <button className={btn} disabled={disabled} onClick={(e) => { e.stopPropagation(); setOpen(true) }}>{label}</button>
+      <button className={btnDangerOutline} disabled={disabled} onClick={(e) => { e.stopPropagation(); setOpen(true) }}><Trash2 size={12} aria-hidden />{label}</button>
       <ConfirmDialog
         open={open}
         title={impact ? `Xoá luôn dữ liệu đi kèm ${what}?` : `Xoá ${what}?`}

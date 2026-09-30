@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import { describeDrift } from '../../lib/insights'
 import { fmtFactoryTime } from '../../lib/liveFormat'
-import { ErrorBox, btn } from '../ui'
+import { ErrorBox, btn, btnAccentOutline } from '../ui'
 
 /**
  * Cảnh báo lệch dự báo: tồn kho thật ra ngoài dải của dự báo gần nhất trong nhiều lần kiểm liên tiếp. Nghĩa là mô hình
@@ -41,7 +41,7 @@ export function DriftAlerts({ model, names, horizonS = 86400 }: { model: string;
             phát hiện lúc {fmtFactoryTime(typeof i.payload.at === 'string' ? i.payload.at : i.created_at)}. Dự báo cũ không còn khớp thực tế.
           </div>
           <div className="flex gap-1.5">
-            <button className={btn} disabled={recast.isPending} onClick={() => recast.mutate(i.id)}>Dự báo lại từ bây giờ</button>
+            <button className={btnAccentOutline} disabled={recast.isPending} onClick={() => recast.mutate(i.id)}>Dự báo lại từ bây giờ</button>
             <button className={btn} disabled={ack.isPending} onClick={() => ack.mutate(i.id)}>Đã xem</button>
           </div>
         </div>

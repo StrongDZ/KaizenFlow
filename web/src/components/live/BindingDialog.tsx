@@ -8,7 +8,7 @@ import { leafPaths, matchSource } from '../../lib/livePath'
 import { stateLabel } from '../../lib/liveFrame'
 import { STATE_ENUM } from '../../lib/suggestMapping'
 import { Field, FormDialog } from '../FormDialog'
-import { btn, input } from '../ui'
+import { btn, btnDangerOutline, input } from '../ui'
 
 export type BindingDraft = { subject?: string; signal?: string; source?: string; json_path?: string; transform?: Transform }
 
@@ -162,7 +162,7 @@ export function BindingDialog({ open, model, subjects, sources, draft, existing,
           : source.trim() === '' ? 'Chọn nguồn để xem trước giá trị.' : 'Nguồn này chưa phát bản tin nào để xem trước. Vẫn lưu được.'}
       </div>
       {existing && (
-        <button type="button" className={`${btn} text-bad-text`} disabled={remove.isPending} onClick={() => remove.mutate()}>Xoá ghép nối này</button>
+        <button type="button" className={btnDangerOutline} disabled={remove.isPending} onClick={() => remove.mutate()}>Xoá ghép nối này</button>
       )}
     </FormDialog>
   )

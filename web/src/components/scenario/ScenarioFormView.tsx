@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import type { Graph, NodeType, ScenarioBody } from '../../api/types'
 import { formToScenarioBody, type ScenarioForm } from '../../lib/scenarioForm'
 import { failureModesOf, poolCount } from '../../lib/model'
-import { Card, ErrorBox, btn, btnPrimary, input } from '../ui'
+import { Card, ErrorBox, btn, btnLinkDanger, btnPrimary, input } from '../ui'
 
 export function ScenarioFormView({ graph, types, initial, submitLabel, pending, error, cancelTo, onSubmit }: {
   graph: Graph
@@ -54,7 +54,7 @@ export function ScenarioFormView({ graph, types, initial, submitLabel, pending, 
                 <label className="flex items-center gap-1 text-muted">hỏng ở phút
                   <input type="number" min={0} className={`${input} w-24`} value={row.at_min} onChange={(e) => upd({ at_min: Number(e.target.value) })} />
                 </label>
-                <button className={btn} aria-label="Bỏ dòng này" onClick={() => set({ inj: f.inj.filter((_, j) => j !== i) })}>Bỏ</button>
+                <button className={btnLinkDanger} aria-label="Bỏ dòng này" onClick={() => set({ inj: f.inj.filter((_, j) => j !== i) })}>Bỏ</button>
               </div>
             )
           })}
@@ -78,7 +78,7 @@ export function ScenarioFormView({ graph, types, initial, submitLabel, pending, 
                 <label className="flex items-center gap-1 text-muted">số lượng
                   <input type="number" min={1} className={`${input} w-20`} value={row.count} onChange={(e) => upd({ count: Number(e.target.value) })} />
                 </label>
-                <button className={btn} aria-label="Bỏ dòng này" onClick={() => set({ ovr: f.ovr.filter((_, j) => j !== i) })}>Bỏ</button>
+                <button className={btnLinkDanger} aria-label="Bỏ dòng này" onClick={() => set({ ovr: f.ovr.filter((_, j) => j !== i) })}>Bỏ</button>
               </div>
             )
           })}

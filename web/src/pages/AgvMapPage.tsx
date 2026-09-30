@@ -6,7 +6,7 @@ import type { AgvMap, MapPoint } from '../api/types'
 import { CalibrationCard } from '../components/live/CalibrationCard'
 import { AgvMapCanvas, type MapSelection, type RingTone } from '../components/live/AgvMapCanvas'
 import { FeedControl } from '../components/live/FeedControl'
-import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, Tag, btn, btnPrimary, input } from '../components/ui'
+import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, Tag, btn, btnDangerOutline, btnPrimary, btnWarn, input } from '../components/ui'
 import { useFeedStatus, useLive } from '../hooks/useLive'
 import { useModelGraph } from '../hooks/useModelGraph'
 import { nodeBadge } from '../lib/liveFrame'
@@ -187,7 +187,7 @@ export default function AgvMapPage() {
                     <div className="flex items-end gap-2">
                       <label className="space-y-1"><span className="block">Sức chứa</span>
                         <input type="number" min={1} className={`${input} w-20`} value={selLane.capacity} onChange={(e) => apply((m) => setLaneCapacity(m, selLane.id, Number(e.target.value)))} /></label>
-                      <button className={btn} onClick={() => { apply((m) => removeLane(m, selLane.id)); setSelected(null) }}>Xoá làn</button>
+                      <button className={btnDangerOutline} onClick={() => { apply((m) => removeLane(m, selLane.id)); setSelected(null) }}>Xoá làn</button>
                     </div>
                   ) : laneBlocks.has(selLane.id) ? (
                     <div className="space-y-1.5">
@@ -195,7 +195,7 @@ export default function AgvMapPage() {
                       <button className={btn} disabled={unblock.isPending} onClick={() => unblock.mutate(laneBlocks.get(selLane.id)!.id)}>Gỡ chặn</button>
                     </div>
                   ) : (
-                    <button className={btn} disabled={!running || block.isPending} onClick={() => block.mutate(selLane.id)}>Chặn làn này 30 phút</button>
+                    <button className={btnWarn} disabled={!running || block.isPending} onClick={() => block.mutate(selLane.id)}>Chặn làn này 30 phút</button>
                   )}
                   {!editing && !running && <p className="text-faint">Bật feed để bơm sự cố chặn làn.</p>}
                 </div>
@@ -249,7 +249,7 @@ function PointEditor({ point, nodes, onChange, onDelete }: {
             {nodes.map((n) => <option key={n.key} value={n.key}>{n.name} ({n.key})</option>)}
           </select></label>
       )}
-      <button className={btn} onClick={onDelete}>Xoá điểm (và các làn nối vào nó)</button>
+      <button className={btnDangerOutline} onClick={onDelete}>Xoá điểm (và các làn nối vào nó)</button>
     </div>
   )
 }

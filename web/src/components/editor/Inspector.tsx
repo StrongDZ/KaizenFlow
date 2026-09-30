@@ -12,7 +12,7 @@ import { labelSchema } from '../../lib/paramLabels'
 import { FloatingPanel } from '../FloatingPanel'
 import { NodeIcon } from '../nodeIcons'
 import { rjsfFields, rjsfTemplates } from '../rjsfTemplates'
-import { btn } from '../ui'
+import { btn, btnDangerOutline } from '../ui'
 
 const noSubmit = { 'ui:submitButtonOptions': { norender: true } }
 
@@ -27,7 +27,7 @@ function UserForm({ onChange, ...rest }: ComponentProps<typeof Form>) {
   return <Form templates={rjsfTemplates} fields={rjsfFields} {...rest} onChange={(e, id) => { if (ready.current) onChange?.(e, id) }} />
 }
 
-const iconBtn = 'flex h-7 w-7 flex-none items-center justify-center rounded-md text-muted hover:bg-raised hover:text-bad-text disabled:opacity-40'
+const iconBtn = 'flex h-7 w-7 flex-none items-center justify-center rounded-md text-bad-text hover:bg-bad-bg disabled:opacity-40'
 
 type Props = {
   node?: FlowNode; edge?: FlowEdge; selNodes: FlowNode[]; selEdgeCount: number
@@ -130,7 +130,7 @@ function MultiInspector({ selNodes, selEdgeCount, canEdit, onDelete, onDuplicate
       {canEdit && (
         <div className="flex gap-2">
           {selNodes.length > 0 && <button className={`${btn} inline-flex items-center gap-1`} onClick={onDuplicate}><Copy size={12} />Nhân đôi</button>}
-          <button className={`${btn} inline-flex items-center gap-1`} onClick={onDelete}><Trash2 size={12} />Xoá</button>
+          <button className={btnDangerOutline} onClick={onDelete}><Trash2 size={12} />Xoá</button>
         </div>
       )}
     </div>

@@ -5,7 +5,7 @@ import { api } from '../../api/client'
 import { useFeedStatus } from '../../hooks/useLive'
 import { SPEEDS, fmtFactoryTime, speedLabel } from '../../lib/liveFormat'
 import { ConfirmDialog } from '../ConfirmDialog'
-import { ErrorBox, Notice, btn, btnPrimary, input } from '../ui'
+import { ErrorBox, Notice, btn, btnDangerOutline, btnOk, input } from '../ui'
 
 /** Thanh điều khiển feed (bộ phát dữ liệu giả lập): bật/tạm dừng, tốc độ giờ nhà máy, đặt lại. */
 export function FeedControl({ model }: { model: string }) {
@@ -53,7 +53,7 @@ export function FeedControl({ model }: { model: string }) {
             <select className={input} aria-label="Tốc độ giờ nhà máy" value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
               {SPEEDS.map((x) => <option key={x} value={x}>{speedLabel(x)}</option>)}
             </select>
-            <button className={btnPrimary} disabled={start.isPending} onClick={() => start.mutate()}>
+            <button className={btnOk} disabled={start.isPending} onClick={() => start.mutate()}>
               <Play size={12} /> {s.state === 'idle' ? 'Bắt đầu phát dữ liệu giả lập' : `Chuyển sang ${model}`}
             </button>
           </>
@@ -65,10 +65,10 @@ export function FeedControl({ model }: { model: string }) {
             </select>
             {s.state === 'running'
               ? <button className={btn} disabled={pause.isPending} onClick={() => pause.mutate()}><Pause size={12} /> Tạm dừng</button>
-              : <button className={btnPrimary} disabled={resume.isPending} onClick={() => resume.mutate()}><Play size={12} /> Tiếp tục</button>}
+              : <button className={btnOk} disabled={resume.isPending} onClick={() => resume.mutate()}><Play size={12} /> Tiếp tục</button>}
           </>
         )}
-        <button className={btn} onClick={() => setConfirmReset(true)}><RotateCcw size={12} /> Đặt lại</button>
+        <button className={btnDangerOutline} onClick={() => setConfirmReset(true)}><RotateCcw size={12} /> Đặt lại</button>
       </span>
       {err ? <div className="basis-full"><ErrorBox error={err} /></div> : null}
       <ConfirmDialog
