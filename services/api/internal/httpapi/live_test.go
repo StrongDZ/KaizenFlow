@@ -428,6 +428,11 @@ func TestAddManualSourceAndDryRunTest(t *testing.T) {
 	if subj, _ := snap["subjects"].(map[string]any); len(subj) != 0 {
 		t.Fatalf("gửi thử không được ghi vào trạng thái live: %v", subj)
 	}
+	// giá trị 0 vẫn phải có trong kết quả (không bị omitempty nuốt)
+	res = a.call("POST", "/api/models/lm/sources/test", map[string]any{"source": "dev/x/count", "payload": map[string]any{"n": 0}}, 200)
+	if v, ok := res["readings"].([]any)[0].(map[string]any)["value"]; !ok || v.(float64) != 0 {
+		t.Fatalf("giá trị 0 phải có mặt: %v", res)
+	}
 	// payload không có trường → lỗi nói rõ, không vỡ
 	res = a.call("POST", "/api/models/lm/sources/test", map[string]any{"source": "dev/x/count", "payload": map[string]any{"khac": 1}}, 200)
 	if len(res["errors"].([]any)) == 0 {

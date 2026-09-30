@@ -180,10 +180,10 @@ func (h *handlers) deleteSource(w http.ResponseWriter, r *http.Request) {
 }
 
 type testReading struct {
-	Subject string  `json:"subject"`
-	Signal  string  `json:"signal"`
-	Value   float64 `json:"value,omitempty"`
-	Text    string  `json:"text,omitempty"`
+	Subject string   `json:"subject"`
+	Signal  string   `json:"signal"`
+	Value   *float64 `json:"value,omitempty"` // con trỏ: giá trị 0 vẫn phải có mặt trong JSON
+	Text    string   `json:"text,omitempty"`
 }
 
 // testSource: POST /api/models/{key}/sources/test. Chạy thử một bản tin qua các ghép nối của mô hình mà không ghi vào dữ liệu live.
@@ -206,14 +206,14 @@ func (h *handlers) testSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	matched := 0
-	var enabled []live.Binding
+	var all []live.Binding
 	for _, b := range bs {
 		if b.Enabled && live.MatchSource(b.Source, body.Source) {
 			matched++
 		}
-		enabled = append(enabled, b)
+		all = append(all, b)
 	}
-	rs, errs := live.Normalize(model, enabled, live.Message{Source: body.Source, TS: time.Now(), Payload: body.Payload})
+	rs, errs := live.Normalize(model, all, live.Message{Source: body.Source, TS: time.Now(), Payload: body.Payload})
 	readings := make([]testReading, 0, len(rs))
 	for _, x := range rs {
 		t := testReading{Subject: x.Subject, Signal: x.Signal}
@@ -223,7 +223,8 @@ func (h *handlers) testSource(w http.ResponseWriter, r *http.Request) {
 		case x.IsText:
 			t.Text = x.Text
 		default:
-			t.Value = x.Num
+			v := x.Num
+			t.Value = &v
 		}
 		readings = append(readings, t)
 	}

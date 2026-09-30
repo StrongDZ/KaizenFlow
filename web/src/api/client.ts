@@ -1,5 +1,5 @@
 import type {
-  AgvMap, Binding, BindingInput, CalibrationApplied, CalibrationResp, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
+  AgvMap, Binding, BindingInput, DataSourceRow, SourceTestResult, CalibrationApplied, CalibrationResp, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
   BandRow, CheckReport, EventRow, Graph, GraphEdge, GraphNode, InsightRow, Issue, Json, Material, MaterialDetail, MaterialUpdate, ModelSummary,
   NewMaterial, NewNodeType, NewScenario, NodeType, NodeTypeDetail, NodeTypeUpdate, Run, RunDetail, RunRow, Scenario, ScenarioBody, ScenarioRow,
   SignalRow, VersionInfo,
@@ -47,7 +47,7 @@ function qs(params: Record<string, string | undefined>): string {
 
 const post = <T>(path: string, body?: unknown) => req<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) })
 const put = <T>(path: string, body: unknown) => req<T>(path, { method: 'PUT', body: JSON.stringify(body) })
-const del = (path: string, cascade = false) => req<void>(`${path}${cascade ? '?cascade=true' : ''}`, { method: 'DELETE' })
+const del = (path: string, cascade = false) => req<void>(`${path}${cascade ? `${path.includes('?') ? '&' : '?'}cascade=true` : ''}`, { method: 'DELETE' })
 
 export const api = {
   nodeTypes: () => req<NodeType[]>('/api/node-types'),
@@ -113,6 +113,13 @@ export const api = {
     put<{ bindings: Binding[] }>(`/api/models/${encodeURIComponent(key)}/bindings`, { bindings }),
   deleteBinding: (key: string, id: number) => del(`/api/models/${encodeURIComponent(key)}/bindings/${id}`),
   deleteAllBindings: (key: string) => del(`/api/models/${encodeURIComponent(key)}/bindings`),
+  sources: (key: string) => req<{ sources: DataSourceRow[] }>(`/api/models/${encodeURIComponent(key)}/sources`).then((r) => r.sources),
+  addSource: (key: string, body: { source: string; desc?: string; sample?: unknown }) =>
+    post<{ source: string }>(`/api/models/${encodeURIComponent(key)}/sources`, body),
+  deleteSource: (key: string, source: string, cascade = false) =>
+    del(`/api/models/${encodeURIComponent(key)}/sources?source=${encodeURIComponent(source)}`, cascade),
+  testSource: (key: string, body: { source: string; payload: unknown }) =>
+    post<SourceTestResult>(`/api/models/${encodeURIComponent(key)}/sources/test`, body),
   agvMap: (key: string) => req<AgvMap>(`/api/models/${encodeURIComponent(key)}/agv-map`),
   saveAgvMap: (key: string, map: AgvMap) => put<void>(`/api/models/${encodeURIComponent(key)}/agv-map`, map),
   feed: {

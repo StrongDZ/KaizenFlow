@@ -163,6 +163,13 @@ export type SigVal = { v: number; ts: string }
 export type SubjectSnap = { state?: string; state_ts?: string; signals: Record<string, SigVal>; age_ms: number; rate?: number }
 export type Vehicle = { id: string; x: number; y: number; state: string; lane: string; load: number; ts: string; age_ms: number }
 export type SourceSnap = { source: string; desc: string; last_ts: string; age_ms: number; count: number; last: unknown; bound: boolean }
+/** Một nguồn dữ liệu đã đăng ký của mô hình (GET /api/models/{key}/sources). */
+export type SourceBindingRef = { subject: string; signal: string }
+export type DataSourceRow = {
+  source: string; desc: string; origin: 'feed' | 'manual'; first_seen: string; last_seen: string; count: number
+  sample: unknown; live: boolean; age_ms: number; per_min: number; bindings: SourceBindingRef[]
+}
+export type SourceTestResult = { matched: number; readings: { subject: string; signal: string; value?: number; text?: string }[]; errors: string[] }
 export type BindingError = { message: string; count: number; last: string }
 export type LiveSnapshot = {
   model: string

@@ -19,26 +19,27 @@ describe('sectionOf', () => {
 describe('tabsFor', () => {
   it('gives the model workspace tabs', () => {
     const tabs = tabsFor('/versions/7', { modelKey: 'm', versionId: 7 })
-    expect(tabs.map((t) => t.label)).toEqual(['Sơ đồ', 'Scenario', 'Lần chạy', 'Phiên bản', 'Trực tiếp', 'Kết nối dữ liệu', 'Bản đồ AGV'])
+    expect(tabs.map((t) => t.label)).toEqual(['Sơ đồ', 'Scenario', 'Lần chạy', 'Phiên bản', 'Trực tiếp', 'Nguồn dữ liệu', 'Kết nối dữ liệu', 'Bản đồ AGV'])
     expect(tabs.map((t) => t.to)).toEqual([
       '/versions/7', '/versions/7/scenarios', '/versions/7/runs', '/models/m/versions',
-      '/models/m/live', '/models/m/connect', '/models/m/map',
+      '/models/m/live', '/models/m/sources', '/models/m/connect', '/models/m/map',
     ])
   })
 
   it('opens the latest version from the versions page', () => {
     const tabs = tabsFor('/models/m/versions', { modelKey: 'm', latestVersionId: 9 })
     expect(tabs[0].to).toBe('/versions/9')
-    expect(tabsFor('/models/m/versions', { modelKey: 'm' }).map((t) => t.label)).toEqual(['Phiên bản', 'Trực tiếp', 'Kết nối dữ liệu', 'Bản đồ AGV'])
+    expect(tabsFor('/models/m/versions', { modelKey: 'm' }).map((t) => t.label)).toEqual(['Phiên bản', 'Trực tiếp', 'Nguồn dữ liệu', 'Kết nối dữ liệu', 'Bản đồ AGV'])
   })
 
   it('shows the model workspace on the live pages, with the model taken from the URL context', () => {
-    for (const path of ['/models/m/live', '/models/m/connect', '/models/m/map']) {
+    for (const path of ['/models/m/live', '/models/m/sources', '/models/m/connect', '/models/m/map']) {
       const tabs = tabsFor(path, { modelKey: 'm', latestVersionId: 9 })
       expect(tabs.map((t) => t.label)).toContain('Trực tiếp')
       expect(tabs[0].to).toBe('/versions/9')
       expect(tabs.filter((t) => isTabActive(t, path)).map((t) => t.label)).toHaveLength(1)
     }
+    expect(isTabActive(tabsFor('/models/m/sources', { modelKey: 'm' }).find((t) => t.label === 'Nguồn dữ liệu')!, '/models/m/sources')).toBe(true)
     expect(isTabActive(tabsFor('/models/m/connect', { modelKey: 'm' }).find((t) => t.label === 'Kết nối dữ liệu')!, '/models/m/connect')).toBe(true)
   })
 
@@ -70,6 +71,7 @@ describe('isTabActive', () => {
 describe('crumbsFor', () => {
   it('names the live pages under the model', () => {
     expect(crumbsFor('/models/m/live', { modelKey: 'm' }).map((c) => c.label)).toEqual(['Mô hình', 'm', 'Trực tiếp'])
+    expect(crumbsFor('/models/m/sources', { modelKey: 'm' }).map((c) => c.label)).toEqual(['Mô hình', 'm', 'Nguồn dữ liệu'])
     expect(crumbsFor('/models/m/connect', { modelKey: 'm' }).map((c) => c.label)).toEqual(['Mô hình', 'm', 'Kết nối dữ liệu'])
     expect(crumbsFor('/models/m/map', { modelKey: 'm' }).map((c) => c.label)).toEqual(['Mô hình', 'm', 'Bản đồ AGV'])
   })
