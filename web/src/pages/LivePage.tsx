@@ -11,20 +11,18 @@ import { FeedControl } from '../components/live/FeedControl'
 import { IncidentPanel, type IncidentNode } from '../components/live/IncidentPanel'
 import { EmptyState, Loading, btn } from '../components/ui'
 import { useFeedStatus, useLive } from '../hooks/useLive'
+import { useModelGraph } from '../hooks/useModelGraph'
 import { useTheme } from '../hooks/useTheme'
 import { cycleSeconds, travelSeconds } from '../lib/flow'
 import { toFlow } from '../lib/graph'
 import { dotsFromRate, nodeBadge, summarize, trackPeak } from '../lib/liveFrame'
-import { byCode, poolCount, thresholdsFor } from '../lib/model'
+import { poolCount, thresholdsFor } from '../lib/model'
 
 export default function LivePage() {
   const model = decodeURIComponent(useParams().key ?? '')
-  const versions = useQuery({ queryKey: ['versions', model], queryFn: () => api.versions(model) })
-  const published = [...(versions.data ?? [])].reverse().find((v) => v.status === 'PUBLISHED')
-  const graph = useQuery({ queryKey: ['graph', published?.id], queryFn: () => api.graph(published!.id), enabled: !!published })
-  const types = useQuery({ queryKey: ['node-types'], queryFn: api.nodeTypes })
-  if (versions.isLoading || graph.isLoading || types.isLoading) return <Loading />
-  if (!published || !graph.data || !types.data) {
+  const g = useModelGraph(model)
+  if (g.status === 'loading') return <Loading />
+  if (g.status === 'none') {
     return (
       <EmptyState title="Chưa có phiên bản đã Publish">
         Màn Trực tiếp dùng phiên bản đã Publish mới nhất của mô hình. Publish một phiên bản ở tab Phiên bản rồi quay lại.
@@ -33,7 +31,7 @@ export default function LivePage() {
   }
   return (
     <ReactFlowProvider>
-      <Room model={model} graph={graph.data} types={byCode(types.data)} />
+      <Room model={model} graph={g.graph} types={g.types} />
     </ReactFlowProvider>
   )
 }
@@ -124,7 +122,7 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
       {panelOpen ? (
         <FloatingPanel side="right" top={112} bottom={12} width={272} title="Bảng điều khiển demo" onClose={() => setPanelOpen(false)}>
           <PanelSection title="Bơm sự cố">
-            <IncidentPanel nodes={incidentNodes} lanes={agvMap.data?.lanes ?? []} incidents={feed.data?.incidents ?? []} ready={feedReady} />
+            <IncidentPanel nodes={incidentNodes} lanes={agvMap.data?.lanes ?? []} incidents={feed.data?.model === model ? feed.data.incidents : []} ready={feedReady} />
           </PanelSection>
         </FloatingPanel>
       ) : (

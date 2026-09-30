@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { useLiveRuns } from './api/live'
 import { Shell } from './components/shell/Shell'
 import { shouldRetry } from './lib/retry'
+import AgvMapPage from './pages/AgvMapPage'
 import ComparePage from './pages/ComparePage'
 import ConnectPage from './pages/ConnectPage'
 import ControlRoomPage from './pages/ControlRoomPage'
@@ -46,6 +47,7 @@ export default function App() {
             <Route path="/models/:key/versions" element={<VersionsPage />} />
             <Route path="/models/:key/connect" element={<ConnectPage />} />
             <Route path="/models/:key/live" element={<LivePage />} />
+            <Route path="/models/:key/map" element={<AgvMapPage />} />
             <Route path="/versions/:id" element={<EditorPage />} />
             <Route path="/versions/:id/scenarios" element={<ScenariosPage />} />
             <Route path="/versions/:id/scenarios/new" element={<ScenarioNewPage />} />
