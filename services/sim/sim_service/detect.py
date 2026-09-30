@@ -38,19 +38,27 @@ def active_periods(intervals) -> list[tuple[float, float]]:
 
 
 def active_period_shares(periods: dict, horizon: float, step: float = 60.0) -> dict[str, float]:
-    counts: dict[str, int] = defaultdict(int)
+    """Tỉ lệ mốc thời gian mà mỗi node giữ khoảng hoạt động dài nhất (hoà thì node đứng trước). Vector hoá bằng numpy."""
     ticks = np.arange(0.0, horizon, step)
-    for t in ticks:
-        best, best_len = None, 0.0
-        for subject, ps in periods.items():
-            for a, b in ps:
-                if a <= t < b:
-                    if b - a > best_len:
-                        best, best_len = subject, b - a
-                    break
-        if best is not None:
-            counts[best] += 1
-    return {s: c / len(ticks) for s, c in counts.items()}
+    if len(ticks) == 0 or not periods:
+        return {}
+    subjects = list(periods)
+    lengths = np.zeros((len(subjects), len(ticks)))
+    for i, subject in enumerate(subjects):
+        ps = periods[subject]
+        if not ps:
+            continue
+        starts = np.fromiter((a for a, _ in ps), dtype=float, count=len(ps))
+        ends = np.fromiter((b for _, b in ps), dtype=float, count=len(ps))
+        idx = np.searchsorted(starts, ticks, side="right") - 1  # khoảng có a ≤ t gần nhất
+        valid = idx >= 0
+        safe = np.where(valid, idx, 0)
+        covered = valid & (ticks < ends[safe])
+        lengths[i] = np.where(covered, (ends - starts)[safe], 0.0)
+    best = lengths.argmax(axis=0)  # argmax lấy phần tử đầu khi hoà, như bản duyệt tuần tự
+    has = lengths.max(axis=0) > 0
+    counts = np.bincount(best[has], minlength=len(subjects))
+    return {subjects[i]: int(c) / len(ticks) for i, c in enumerate(counts) if c > 0}
 
 
 def detect(req: RunRequest, reps: list[RepResult]) -> list[dict]:

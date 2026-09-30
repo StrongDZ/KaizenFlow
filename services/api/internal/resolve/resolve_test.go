@@ -114,10 +114,72 @@ func TestStartStatesSeedAndRecommend(t *testing.T) {
 	if r.InitialState.Mode != "EMPTY" || r.InitialState.WarmupS != 0 || r.Seed != 7 || r.Recommend {
 		t.Fatalf("got %+v", r)
 	}
+}
+
+// LIVE_SNAPSHOT: tồn kho và máy hỏng đến từ overrides/injections của scenario; sim chạy từ giây 0, không chạy ấm.
+func TestLiveSnapshotStartsFromEmptyStateWithoutWarmup(t *testing.T) {
+	sc := scenario()
+	sc.Origin = "NOWCAST"
 	sc.StartState = "LIVE_SNAPSHOT"
+	g := testfix.MiniGraph()
+	g.Settings = map[string]any{"warmup_s": 1800.0}
+	r, err := build(g, sc, nil, resolve.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.InitialState.Mode != "EMPTY" || r.InitialState.WarmupS != 0 {
+		t.Fatalf("initial state = %+v", r.InitialState)
+	}
 	var ie *resolve.IssueError
-	if _, err := build(testfix.MiniGraph(), sc, nil, resolve.Options{}); !errors.As(err, &ie) {
-		t.Fatalf("live snapshot: %v", err)
+	sc.StartState = "NO_SUCH_STATE"
+	if _, err := build(g, sc, nil, resolve.Options{}); !errors.As(err, &ie) {
+		t.Fatalf("unknown start state must still be rejected: %v", err)
+	}
+}
+
+func TestStockOverrideReplacesTheWholeListForALiveStart(t *testing.T) {
+	sc := scenario()
+	sc.StartState = "LIVE_SNAPSHOT"
+	sc.Overrides = []map[string]any{{"target": "S", "path": "/stock", "value": []any{map[string]any{"material": "RAW-01", "initial": 42.0, "max": 100.0}}}}
+	r, err := build(testfix.MiniGraph(), sc, nil, resolve.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stock := node(r, "S").Params["stock"].([]any)
+	if len(stock) != 1 || stock[0].(map[string]any)["initial"] != 42.0 {
+		t.Fatalf("stock = %+v", stock)
+	}
+}
+
+// Horizon dài (dự báo nhiều ngày): lấy mẫu thưa để dải dự báo không phình ra, và không chạy đề xuất (mỗi ứng viên là một lần chạy đầy đủ).
+func TestLongHorizonSamplesCoarselyAndSkipsRecommend(t *testing.T) {
+	sc := scenario()
+	sc.HorizonS = 7 * 86400
+	r, err := build(testfix.MiniGraph(), sc, nil, resolve.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Outputs.SampleS < 1500 || r.Outputs.SampleS > 1600 {
+		t.Errorf("7 days should sample about every 25 minutes, got %v s", r.Outputs.SampleS)
+	}
+	if r.Recommend {
+		t.Error("recommend must be off beyond 12 hours")
+	}
+	if len(r.Outputs.RawReps) != 0 || r.Outputs.Sensors {
+		t.Errorf("a multi-day run must not record raw events or sensor traces (millions of rows): %+v", r.Outputs)
+	}
+	short, _ := build(testfix.MiniGraph(), scenario(), nil, resolve.Options{})
+	if len(short.Outputs.RawReps) != 1 || !short.Outputs.Sensors {
+		t.Errorf("a short run keeps replication 0 raw and sensors on: %+v", short.Outputs)
+	}
+	if short.Outputs.SampleS != 60 || !short.Recommend {
+		t.Errorf("a 2-hour run keeps 60 s sampling and recommend: %+v %v", short.Outputs, short.Recommend)
+	}
+	g := testfix.MiniGraph()
+	g.Settings = map[string]any{"sample_s": 300.0}
+	kept, _ := build(g, scenario(), nil, resolve.Options{})
+	if kept.Outputs.SampleS != 300 {
+		t.Errorf("an explicit sample_s must be respected when the horizon is short: %v", kept.Outputs.SampleS)
 	}
 }
 

@@ -85,6 +85,7 @@ func New(d Deps) http.Handler {
 	r.Get("/api/models/{key}/live/subjects", h.liveSubjects)
 	r.Get("/api/models/{key}/live/signals", h.liveSignals)
 	r.Get("/api/models/{key}/live/blueprint", h.blueprint)
+	r.Post("/api/models/{key}/live/forecast", h.liveForecast)
 	r.Get("/api/models/{key}/bindings", h.listBindings)
 	r.Put("/api/models/{key}/bindings", h.putBindings)
 	r.Delete("/api/models/{key}/bindings", h.deleteAllBindings)

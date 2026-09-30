@@ -14,6 +14,15 @@ import (
 	"github.com/kaizenflow/api/internal/store"
 )
 
+const (
+	// maxRecommendHorizonS: quá chừng này thì không chạy đề xuất (mỗi ứng viên là một lần chạy đầy đủ).
+	maxRecommendHorizonS = 12 * 3600
+	// maxRawHorizonS: quá chừng này thì không ghi dữ liệu thô (sự kiện, cảm biến) của lần lặp 0.
+	maxRawHorizonS = 12 * 3600
+	// maxSamples: số điểm lấy mẫu tối đa trên một chuỗi của một lần chạy.
+	maxSamples = 400
+)
+
 // DefaultTimezone là múi giờ nhà máy khi model_version.settings.timezone trống.
 const DefaultTimezone = "Asia/Ho_Chi_Minh"
 
@@ -188,7 +197,7 @@ func Build(ctx context.Context, g *store.Graph, types map[string]store.NodeType,
 
 	req := &simapi.RunRequest{RunID: runID, SimStart: simStart, HorizonS: sc.HorizonS, Replications: sc.Replications,
 		Nodes: []simapi.Node{}, Pools: []simapi.Pool{}, Edges: []map[string]any{}, Injections: []map[string]any{},
-		Recommend: sc.Origin != "RECOMMENDER"}
+		Recommend: sc.Origin != "RECOMMENDER" && sc.HorizonS <= maxRecommendHorizonS}
 	if req.Replications <= 0 {
 		req.Replications = 1
 	}
@@ -231,17 +240,26 @@ func Build(ctx context.Context, g *store.Graph, types map[string]store.NodeType,
 	switch sc.StartState {
 	case "", "WARMUP":
 		req.InitialState = simapi.InitialState{Mode: "WARMUP", WarmupS: num(settings["warmup_s"], 3600)}
-	case "EMPTY":
+	case "EMPTY", "LIVE_SNAPSHOT":
+		// LIVE_SNAPSHOT: tồn kho và máy hỏng lúc bắt đầu đã nằm trong overrides/injections của scenario, nên không chạy ấm.
 		req.InitialState = simapi.InitialState{Mode: "EMPTY"}
 	default:
 		return nil, &IssueError{"scenario", "start_state " + sc.StartState + " is not supported yet"}
 	}
-	req.Outputs = simapi.Outputs{RawReps: []int{0}, SampleS: num(settings["sample_s"], 60)}
+	sampleS := num(settings["sample_s"], 60)
+	if minStep := math.Ceil(sc.HorizonS / maxSamples); sampleS < minStep {
+		sampleS = minStep // horizon dài: lấy mẫu thưa để số điểm dải dự báo không phình ra
+	}
+	req.Outputs = simapi.Outputs{RawReps: []int{0}, SampleS: sampleS, Sensors: true}
 	if raw, ok := settings["raw_reps"].([]any); ok {
 		req.Outputs.RawReps = []int{}
 		for _, v := range raw {
 			req.Outputs.RawReps = append(req.Outputs.RawReps, int(num(v, 0)))
 		}
+	}
+	if sc.HorizonS > maxRawHorizonS {
+		// Lần chạy dài ngày: lần lặp 0 sẽ ghi hàng trăm nghìn sự kiện và tín hiệu cảm biến, tốn nhiều thời gian hơn cả mô phỏng.
+		req.Outputs.RawReps, req.Outputs.Sensors = []int{}, false
 	}
 	return req, nil
 }

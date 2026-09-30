@@ -103,6 +103,7 @@ export type RunRow = {
   id: number
   scenario_id: number
   scenario_name: string
+  scenario_origin: 'USER' | 'RECOMMENDER' | 'NOWCAST'
   model_key: string
   version_id: number
   version: number

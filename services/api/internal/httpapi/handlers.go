@@ -455,6 +455,7 @@ func (h *handlers) listAllRuns(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f := store.RunFilter{
 		Model:     q.Get("model"),
+		Origin:    q.Get("origin"),
 		VersionID: queryInt(q.Get("version")),
 		Limit:     int(queryInt(q.Get("limit"))),
 		Offset:    int(queryInt(q.Get("offset"))),

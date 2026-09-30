@@ -71,9 +71,9 @@ export const api = {
   events: (id: number, q: { subject?: string; type?: string } = {}) => req<EventRow[]>(`/api/runs/${id}/events${qs(q)}`),
   signals: (id: number, q: { subject?: string; name?: string } = {}) => req<SignalRow[]>(`/api/runs/${id}/signals${qs(q)}`),
   applyInsight: (id: number, rank: number) => post<{ run_id: number }>(`/api/insights/${id}/apply`, { rank }),
-  allRuns: (q: { status?: string; model?: string; version?: number; limit?: number; offset?: number } = {}) =>
+  allRuns: (q: { status?: string; model?: string; origin?: string; version?: number; limit?: number; offset?: number } = {}) =>
     req<RunRow[]>(`/api/runs${qs({
-      status: q.status, model: q.model, version: q.version?.toString(), limit: q.limit?.toString(), offset: q.offset?.toString(),
+      status: q.status, model: q.model, origin: q.origin, version: q.version?.toString(), limit: q.limit?.toString(), offset: q.offset?.toString(),
     })}`),
   insights: (q: { kind?: string; status?: string; limit?: number } = {}) =>
     req<InsightRow[]>(`/api/insights${qs({ kind: q.kind, status: q.status, limit: q.limit?.toString() })}`),
@@ -99,6 +99,8 @@ export const api = {
   liveSubjects: (key: string) => req<Subjects>(`/api/models/${encodeURIComponent(key)}/live/subjects`),
   liveSignals: (key: string, q: { subject?: string; name?: string; since?: string; limit?: number } = {}) =>
     req<SignalRow[]>(`/api/models/${encodeURIComponent(key)}/live/signals${qs({ subject: q.subject, name: q.name, since: q.since, limit: q.limit?.toString() })}`),
+  liveForecast: (key: string, horizon_s: number) =>
+    post<{ scenario_id: number; run_id: number; notes: string[]; at: string }>(`/api/models/${encodeURIComponent(key)}/live/forecast`, { horizon_s }),
   bindings: (key: string) => req<Binding[]>(`/api/models/${encodeURIComponent(key)}/bindings`),
   saveBindings: (key: string, bindings: BindingInput[]) =>
     put<{ bindings: Binding[] }>(`/api/models/${encodeURIComponent(key)}/bindings`, { bindings }),

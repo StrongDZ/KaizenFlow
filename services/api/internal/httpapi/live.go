@@ -423,3 +423,87 @@ func (h *handlers) feedProxy() http.Handler {
 	}
 	return http.StripPrefix("/api/feed", proxy)
 }
+
+const (
+	minForecastS = 1800
+	maxForecastS = 7 * 86400
+	// forecastReps: số lần lặp của dự báo từ live; đủ để có dải P10–P90 mà một dự báo 7 ngày vẫn xong trong vài chục giây.
+	forecastReps = 20
+)
+
+// liveForecast dựng scenario NOWCAST từ trạng thái live hiện tại (tồn kho, máy hỏng) rồi chạy nó, bắt đầu từ giờ nhà máy hiện tại.
+func (h *handlers) liveForecast(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	key := chi.URLParam(r, "key")
+	var body struct {
+		HorizonS     float64 `json:"horizon_s"`
+		Replications int     `json:"replications"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	if body.HorizonS < minForecastS || body.HorizonS > maxForecastS {
+		writeJSON(w, 422, issues(validate.Issue{Key: "horizon_s", Message: "Thời gian dự báo phải từ 30 phút đến 7 ngày"}))
+		return
+	}
+	g, types, err := h.modelGraph(ctx, key, true)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	now := h.Live.State().Now(key)
+	if now.IsZero() {
+		writeJSON(w, 422, issues(validate.Issue{Key: "live", Message: "Chưa nhận dữ liệu live nào của mô hình này. Ghép tín hiệu ở tab Kết nối dữ liệu và bật feed."}))
+		return
+	}
+	nodes := make([]live.NodeInfo, 0, len(g.Nodes))
+	for _, n := range g.Nodes {
+		t, ok := types[n.NodeType]
+		if !ok {
+			continue
+		}
+		params, err := resolve.MergeNodeParams(t, n)
+		if err != nil {
+			writeErr(w, &resolve.IssueError{Key: n.Key, Msg: err.Error()})
+			return
+		}
+		nodes = append(nodes, live.NodeInfo{Key: n.Key, Archetype: t.Archetype, Params: params})
+	}
+	snap := live.BuildSnapshot(nodes, h.Live.State().Levels(key), h.Live.State().States(key))
+	if len(snap.Overrides) == 0 && len(snap.Injections) == 0 {
+		writeJSON(w, 422, issues(validate.Issue{Key: "live", Message: "Chưa có tồn kho hay trạng thái máy nào từ dữ liệu live để làm điểm xuất phát. Ghép các tín hiệu Tồn của kho ở tab Kết nối dữ liệu."}))
+		return
+	}
+	reps := body.Replications
+	if reps <= 0 {
+		reps = forecastReps
+	}
+	if reps > 50 {
+		reps = 50
+	}
+	overrides := snap.Overrides
+	if overrides == nil {
+		overrides = []map[string]any{}
+	}
+	injections := snap.Injections
+	if injections == nil {
+		injections = []map[string]any{}
+	}
+	sc := store.Scenario{
+		ModelVersionID: g.VersionID, Origin: "NOWCAST", HorizonS: body.HorizonS, StartState: "LIVE_SNAPSHOT",
+		Name:      "Dự báo từ trạng thái live lúc " + now.In(time.FixedZone("", 7*3600)).Format("15:04 02/01"),
+		Overrides: overrides, Injections: injections, Replications: reps,
+		Action: map[string]any{"live_snapshot": map[string]any{"at": now, "notes": snap.Notes, "levels": snap.Levels, "down": snap.Down}},
+	}
+	sid, err := h.Store.CreateScenario(ctx, sc)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	rid, err := h.Runs.Start(ctx, sid, now)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 202, map[string]any{"scenario_id": sid, "run_id": rid, "notes": snap.Notes, "at": now})
+}

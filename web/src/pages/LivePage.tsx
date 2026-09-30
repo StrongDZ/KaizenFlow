@@ -8,6 +8,7 @@ import { FloatingPanel, PanelSection } from '../components/FloatingPanel'
 import { kfEdgeTypes } from '../components/KfEdge'
 import { LiveBadgeContext, kfNodeTypes } from '../components/KfNode'
 import { FeedControl } from '../components/live/FeedControl'
+import { ForecastDock } from '../components/live/ForecastDock'
 import { IncidentPanel, type IncidentNode } from '../components/live/IncidentPanel'
 import { EmptyState, Loading, btn } from '../components/ui'
 import { useFeedStatus, useLive } from '../hooks/useLive'
@@ -93,7 +94,7 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
       <LiveBadgeContext.Provider value={badgeMap}>
       <ReactFlow
         nodes={nodes} edges={edges} nodeTypes={kfNodeTypes} edgeTypes={kfEdgeTypes} nodesConnectable={false} nodesDraggable={false}
-        colorMode={theme} fitView fitViewOptions={{ padding: { top: '120px', right: panelOpen ? '280px' : '24px', bottom: '40px', left: '24px' } }}
+        colorMode={theme} fitView fitViewOptions={{ padding: { top: '120px', right: panelOpen ? '280px' : '24px', bottom: '300px', left: '24px' } }}
       >
         <Background gap={18} size={1} color="var(--color-line)" />
         <Controls showInteractive={false} position="bottom-left" />
@@ -118,6 +119,9 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
           <Link className={`${btn} mt-3`} to={`/models/${encodeURIComponent(model)}/connect`}>Đi tới Kết nối dữ liệu</Link>
         </div>
       )}
+
+      <ForecastDock model={model} snapshot={snapshot} insetRight={panelOpen ? 296 : 12}
+        names={Object.fromEntries(incidentNodes.map((n) => [n.key, n.name]))} />
 
       {panelOpen ? (
         <FloatingPanel side="right" top={112} bottom={12} width={272} title="Bảng điều khiển demo" onClose={() => setPanelOpen(false)}>

@@ -12,6 +12,8 @@ services:
       retries: 30
   sim:
     build: services/sim
+    environment:
+      SIM_WORKERS: "6"   # dự báo dài (vài ngày × 20 lần lặp) chia đều cho các lõi; giảm nếu máy ít lõi
     ports: ["8081:8081"]
   api:
     build: services/api

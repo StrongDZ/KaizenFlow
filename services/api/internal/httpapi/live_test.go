@@ -204,3 +204,76 @@ func TestFeedProxyForwardsAndReportsMissingFeed(t *testing.T) {
 	none := newLiveAPI(t, "")
 	none.call("GET", "/api/feed/status", nil, 503)
 }
+
+func (a *liveAPI) bindStock() {
+	a.call("PUT", "/api/models/lm/bindings", map[string]any{"bindings": []any{
+		map[string]any{"subject": "S", "signal": "level:RAW-01", "source": "wms/s/stock", "json_path": "items[sku=RAW-01].qty"}}}, 200)
+}
+
+func (a *liveAPI) ingestStock(ts string, qty float64) {
+	a.call("POST", "/api/ingest", map[string]any{"messages": []any{
+		map[string]any{"source": "wms/s/stock", "ts": ts, "payload": map[string]any{"items": []any{map[string]any{"sku": "RAW-01", "qty": qty}}}}}}, 200)
+}
+
+func TestLiveForecastBuildsANowcastScenarioFromLiveStateAndRunsIt(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	a.bindStock()
+	// chưa có dữ liệu live → 422 kèm hướng dẫn
+	if res := a.call("POST", "/api/models/lm/live/forecast", map[string]any{"horizon_s": 7200}, 422); res["issues"] == nil {
+		t.Errorf("422 must explain: %v", res)
+	}
+	a.ingestStock("2026-10-01T08:00:00+07:00", 77)
+	res := a.call("POST", "/api/models/lm/live/forecast", map[string]any{"horizon_s": 7200}, 202)
+	sid := int64(res["scenario_id"].(float64))
+	rid := int64(res["run_id"].(float64))
+	if len(res["notes"].([]any)) == 0 {
+		t.Errorf("notes = %v", res)
+	}
+	sc := a.call("GET", fmt.Sprintf("/api/scenarios/%d", sid), nil, 200)
+	if sc["origin"] != "NOWCAST" || sc["start_state"] != "LIVE_SNAPSHOT" || sc["horizon_s"].(float64) != 7200 {
+		t.Fatalf("scenario = %v", sc)
+	}
+	ov := sc["overrides"].([]any)[0].(map[string]any)
+	stock := ov["value"].([]any)[0].(map[string]any)
+	if ov["target"] != "S" || ov["path"] != "/stock" || stock["material"] != "RAW-01" || stock["initial"].(float64) != 77 {
+		t.Errorf("override = %v", ov)
+	}
+	if sc["action"].(map[string]any)["live_snapshot"] == nil {
+		t.Errorf("the snapshot must be recorded on the scenario: %v", sc["action"])
+	}
+	var run map[string]any
+	for i := 0; i < 300; i++ {
+		run = a.call("GET", fmt.Sprintf("/api/runs/%d", rid), nil, 200)
+		if run["status"] == "DONE" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if run["status"] != "DONE" {
+		t.Fatalf("run = %v", run)
+	}
+	got, err := time.Parse(time.RFC3339, run["sim_start"].(string))
+	if want := time.Date(2026, 10, 1, 1, 0, 0, 0, time.UTC); err != nil || !got.Equal(want) {
+		t.Errorf("the forecast starts at the live factory time %v, got %v (%v)", want, got, err)
+	}
+	// lọc theo nguồn gốc scenario
+	rows := a.call("GET", "/api/runs?model=lm&origin=NOWCAST", nil, 200)["items"].([]any)
+	if len(rows) != 1 || rows[0].(map[string]any)["scenario_origin"] != "NOWCAST" {
+		t.Errorf("rows = %v", rows)
+	}
+	if n := len(a.call("GET", "/api/runs?model=lm&origin=USER", nil, 200)["items"].([]any)); n != 0 {
+		t.Errorf("USER rows = %d", n)
+	}
+}
+
+func TestLiveForecastRejectsBadHorizonAndUnpublishedModels(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	a.bindStock()
+	a.ingestStock("2026-10-01T08:00:00+07:00", 10)
+	for _, h := range []float64{0, 60, 8 * 86400} {
+		a.call("POST", "/api/models/lm/live/forecast", map[string]any{"horizon_s": h}, 422)
+	}
+	a.call("POST", "/api/models/nope/live/forecast", map[string]any{"horizon_s": 3600}, 404)
+}

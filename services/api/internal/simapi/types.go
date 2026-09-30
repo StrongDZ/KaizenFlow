@@ -28,6 +28,8 @@ type InitialState struct {
 type Outputs struct {
 	RawReps []int   `json:"raw_reps"`
 	SampleS float64 `json:"sample_s"`
+	// Sensors: ghi cả chuỗi cảm biến thô (nặng); tắt cho lần chạy dài ngày.
+	Sensors bool `json:"sensors"`
 }
 
 type RunRequest struct {
