@@ -19,9 +19,15 @@ services:
       KF_DB_URL: postgres://postgres:kaizen@db:5432/kaizenflow?sslmode=disable
       KF_SIM_URL: http://sim:8081
       KF_ADDR: ":8080"
+      KF_FEED_URL: http://feed:8090
     ports: ["8080:8080"]
     depends_on:
       db: {condition: service_healthy}
       sim: {condition: service_started}
+  feed:
+    build: {context: ., dockerfile: services/feed/Dockerfile}
+    environment:
+      KF_API_URL: http://api:8080
+    ports: ["8090:8090"]
 volumes:
   dbdata: {}

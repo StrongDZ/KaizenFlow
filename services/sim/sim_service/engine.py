@@ -45,7 +45,8 @@ class RepResult:
     events: list
 
 
-def build(req: RunRequest, rep: int) -> Ctx:
+def build(req: RunRequest, rep: int, edge_factory=Transfer) -> Ctx:
+    """edge_factory(ctx, spec) dựng từng edge; feed dùng để thay chuyến xe bằng chuyến đi trên bản đồ."""
     env = simpy.Environment()
     warm = req.warmup
     rec = Recorder(req.sim_start, record_from=warm, keep_raw=rep in req.outputs.raw_reps)
@@ -59,7 +60,7 @@ def build(req: RunRequest, rep: int) -> Ctx:
         ctx.nodes[n.key] = _make(n.key, cls, ctx, n)
     for e in req.edges:
         ctx.nodes[e.src].mark_output_edge(e.material)
-    ctx.edges = [_make(e.key, Transfer, ctx, e) for e in req.edges]
+    ctx.edges = [_make(e.key, edge_factory, ctx, e) for e in req.edges]
     return ctx
 
 

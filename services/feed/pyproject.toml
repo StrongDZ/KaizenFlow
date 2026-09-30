@@ -1,0 +1,27 @@
+[project]
+name = "kaizenflow-feed"
+version = "0.1.0"
+description = "Bộ sinh dữ liệu realtime giả lập cho KaizenFlow: bọc engine sim chạy theo đồng hồ thật."
+requires-python = ">=3.12"
+dependencies = [
+  "kaizenflow-sim",
+  "simpy>=4.1",
+  "numpy>=1.26",
+  "pydantic>=2.7",
+  "fastapi>=0.111",
+  "uvicorn>=0.30",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["feed_service*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "../sim"]

@@ -76,6 +76,8 @@ class Transfer:
             t_req = env.now
             with pool.res.request() as vehicle:
                 yield vehicle
+                veh = self._vehicle_got(pool)
+                self._phase(veh, "PICKUP")
                 t_acq = env.now
                 rec.tally(env.now, self.key, "WAIT_POOL", t_acq - t_req)
                 if hook is not None and self.spec.hook_at_load:
@@ -85,7 +87,8 @@ class Transfer:
                 yield env.timeout(pool.service())
                 self.in_transit += lot
                 rec.event(env.now, self.key, "TASK_START", {"qty": lot})
-                yield env.timeout(self.travel())
+                yield from self._leg(veh, "LOAD")
+                self._phase(veh, "UNLOAD")
                 if hook is not None and self.spec.hook_at_unload:
                     yield from self._hook(hook)
                 yield from self.dst.give(m, lot)
@@ -93,8 +96,24 @@ class Transfer:
                 self.in_transit -= lot
                 self._delivered(lot)
                 rec.event(env.now, self.key, "TASK_END", {"qty": lot})
-                yield env.timeout(self.travel())
+                yield from self._leg(veh, "RETURN")
                 pool.add_busy(t_acq, env.now)
+                self._vehicle_freed(pool, veh)
+
+    # --- điểm móc cho feed (bản đồ AGV): mặc định không làm gì, thời gian chặng = mẫu `travel` ---
+    def _vehicle_got(self, pool):
+        """Xe vừa được cấp cho chuyến này; trả token nhận dạng xe (mặc định None)."""
+        return None
+
+    def _phase(self, veh, phase: str) -> None:
+        """Đổi giai đoạn của chuyến: 'PICKUP' (xe đã nhận, đang móc/lấy hàng), 'UNLOAD' (đã tới đích)."""
+
+    def _leg(self, veh, kind: str):
+        """Một chặng có xe: 'LOAD' (nguồn → đích, có hàng) rồi 'RETURN' (đích → nguồn, rỗng)."""
+        yield self.ctx.env.timeout(self.travel())
+
+    def _vehicle_freed(self, pool, veh) -> None:
+        """Chuyến xong, trả xe."""
 
     def _hook(self, hook):
         env = self.ctx.env

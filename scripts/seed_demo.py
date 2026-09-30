@@ -163,13 +163,48 @@ PLANT_SCENARIOS = [
 # Vật tư ngoài bộ mặc định của denso-mini.
 EXTRA_MATERIALS = [{"code": "RAW-02", "name": "RAW-02", "unit": "pcs"}]
 
+# Bản đồ AGV (đơn vị bản đồ × unit_m = mét; xe 1,2 m/s). Mạng vòng một chiều nên xe không tự kẹt cứng:
+# hành lang trên chạy tây→đông, hành lang dưới đông→tây, các trạm máy thò xuống giữa hai hành lang.
+def _lanes(pairs, capacity=2):
+    return [{"id": f"L{i + 1:02d}", "from": a, "to": b, "capacity": capacity} for i, (a, b) in enumerate(pairs)]
+
+
+def _pt(pid, x, y, kind="junction", node=None):
+    p = {"id": pid, "x": x, "y": y, "kind": kind}
+    if node:
+        p["node_key"] = node
+    return p
+
+
+MINI_MAP = {
+    "unit_m": 1.5, "speed_mps": 1.2,
+    "points": [_pt("KHO", 5, 10, "station", "KHO_NVL"), _pt("J1", 25, 10), _pt("J2", 45, 10), _pt("J3", 65, 10), _pt("NE", 85, 10),
+               _pt("SE", 85, 40), _pt("B3", 65, 40), _pt("B2", 45, 40), _pt("B1", 25, 40), _pt("SW", 5, 40),
+               _pt("S1", 25, 25, "station", "STAMP_1"), _pt("S2", 45, 25, "station", "STAMP_2"), _pt("S3", 65, 25, "station", "STAMP_3")],
+    "lanes": _lanes([("KHO", "J1"), ("J1", "J2"), ("J2", "J3"), ("J3", "NE"), ("NE", "SE"), ("SE", "B3"), ("B3", "B2"), ("B2", "B1"),
+                     ("B1", "SW"), ("SW", "KHO"), ("J1", "S1"), ("S1", "B1"), ("J2", "S2"), ("S2", "B2"), ("J3", "S3"), ("S3", "B3")]),
+}
+
+PLANT_MAP = {
+    "unit_m": 1.5, "speed_mps": 1.2,
+    "points": [_pt("KHO_A", 5, 10, "station", "KHO_A"), _pt("KHO_B", 5, 40, "station", "KHO_B"),
+               _pt("J1", 25, 10), _pt("J2", 45, 10), _pt("J3", 65, 10), _pt("NE", 85, 10), _pt("SE", 85, 40),
+               _pt("B3", 65, 40), _pt("B2", 45, 40), _pt("B1", 25, 40),
+               _pt("S1", 25, 25, "station", "STAMP_1"), _pt("S2", 45, 25, "station", "STAMP_2"),
+               _pt("S4", 65, 25, "station", "STAMP_4"), _pt("S3", 85, 25, "station", "STAMP_3")],
+    "lanes": _lanes([("KHO_A", "J1"), ("J1", "J2"), ("J2", "J3"), ("J3", "NE"), ("NE", "S3"), ("S3", "SE"), ("SE", "B3"),
+                     ("B3", "B2"), ("B2", "B1"), ("B1", "KHO_B"), ("KHO_B", "KHO_A"),
+                     ("J1", "S1"), ("S1", "B1"), ("J2", "S2"), ("S2", "B2"), ("J3", "S4"), ("S4", "B3")]),
+}
+
 MODELS = [
-    {"key": "denso-mini", "grid": (40, 220, 200, 150), "nodes": MINI_NODES, "recipes": MINI_RECIPES, "edges": MINI_EDGES, "scenarios": [MINI_SCENARIO]},
-    {"key": "denso-plant", "grid": (40, 230, 300, 130), "nodes": PLANT_NODES, "recipes": PLANT_RECIPES, "edges": PLANT_EDGES, "scenarios": PLANT_SCENARIOS},
+    {"key": "denso-mini", "grid": (40, 220, 200, 150), "nodes": MINI_NODES, "recipes": MINI_RECIPES, "edges": MINI_EDGES, "scenarios": [MINI_SCENARIO], "map": MINI_MAP},
+    {"key": "denso-plant", "grid": (40, 230, 300, 130), "nodes": PLANT_NODES, "recipes": PLANT_RECIPES, "edges": PLANT_EDGES, "scenarios": PLANT_SCENARIOS, "map": PLANT_MAP},
 ]
 
 
-def call(api, method, path, body=None):
+def call(api, method, path, body=None, allow=()):
+    """allow: các mã HTTP được coi là bình thường (trả None) thay vì thoát."""
     req = urllib.request.Request(api + path, method=method, headers={"Content-Type": "application/json"},
                                  data=None if body is None else json.dumps(body).encode())
     try:
@@ -177,6 +212,8 @@ def call(api, method, path, body=None):
             raw = r.read()
             return json.loads(raw) if raw else None
     except urllib.error.HTTPError as e:
+        if e.code in allow:
+            return None
         sys.exit(f"{method} {path} → {e.code}: {e.read().decode()}")
 
 
@@ -207,18 +244,29 @@ def node_rows(model):
     return rows
 
 
+def ensure_map(api, model):
+    """Bản đồ AGV thuộc mô hình: chỉ đặt khi chưa có, để không ghi đè bản đã sửa trên giao diện."""
+    key = model["key"]
+    if "map" not in model or call(api, "GET", f"/api/models/{key}/agv-map", allow=(404,)) is not None:
+        return
+    call(api, "PUT", f"/api/models/{key}/agv-map", model["map"])
+    print(f"Đã đặt bản đồ AGV cho '{key}': {len(model['map']['points'])} điểm, {len(model['map']['lanes'])} làn.")
+
+
 def seed_model(api, model, existing):
     key = model["key"]
     if key in existing:
         m = existing[key]
         print(f"'{key}' đã có: version {m['latest_version_id']} ({m['status']}) — bỏ qua.")
         print(f"Mở http://localhost:5173/versions/{m['latest_version_id']}/scenarios")
+        ensure_map(api, model)
         return
     vid = call(api, "POST", "/api/models", {"model_key": key})["version_id"]
     call(api, "PUT", f"/api/versions/{vid}/graph", {"nodes": node_rows(model), "edges": edge_rows(model["edges"])})
     call(api, "POST", f"/api/versions/{vid}/publish")
     ids = [call(api, "POST", "/api/scenarios", {"model_version_id": vid, **sc})["id"] for sc in model["scenarios"]]
     print(f"Đã tạo '{key}' version {vid} (PUBLISHED), scenario {', '.join(map(str, ids))}.")
+    ensure_map(api, model)
     print(f"Mở http://localhost:5173/versions/{vid}/scenarios rồi bấm Chạy.")
 
 
