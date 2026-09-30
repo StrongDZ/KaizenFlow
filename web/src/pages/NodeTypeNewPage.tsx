@@ -4,8 +4,10 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Archetype, Json, NodeType, NodeTypeDetail } from '../api/types'
 import { ARCHETYPE_LABEL } from '../components/KfNode'
+import { IconPicker } from '../components/library/IconPicker'
 import { ParamForm } from '../components/library/ParamForm'
 import { Card, ErrorBox, Loading, PageBody, PageHeader, btn, btnPrimary, input } from '../components/ui'
+import { withIcon } from '../lib/iconChoices'
 import { isValidNodeTypeCode } from '../lib/rules'
 
 export default function NodeTypeNewPage() {
@@ -26,11 +28,12 @@ function NodeTypeForm({ types, source }: { types: NodeType[]; source?: NodeTypeD
   const [code, setCode] = useState(source ? `${source.code}_COPY` : '')
   const [archetype, setArchetype] = useState<Archetype>(source?.archetype ?? 'PROCESS')
   const [params, setParams] = useState<Json>(source?.default_params ?? {})
+  const [icon, setIcon] = useState<string | undefined>(typeof source?.ui?.icon === 'string' ? source.ui.icon : undefined)
 
   const create = useMutation({
     mutationFn: () => api.createNodeType({
       code, name: name.trim(), archetype, default_params: params,
-      signals: source?.signals, failure_modes: source?.failure_modes, ui: source?.ui,
+      signals: source?.signals, failure_modes: source?.failure_modes, ui: withIcon(source?.ui, icon),
     }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['node-types'] })
@@ -58,6 +61,7 @@ function NodeTypeForm({ types, source }: { types: NodeType[]; source?: NodeTypeD
             </select>
           </label>
         </div>
+        <div className="mt-4"><IconPicker value={icon} archetype={archetype} onChange={setIcon} /></div>
       </Card>
       <Card title="Tham số mặc định">
         <div className="rjsf">

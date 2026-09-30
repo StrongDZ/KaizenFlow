@@ -1,10 +1,18 @@
-import { Bot, Cog, Hammer, Inbox, Package, PackageCheck, Puzzle, Scan, Search, Send, Store, Tractor, Trash2, Truck, User, Users, Warehouse, type LucideIcon } from 'lucide-react'
+import {
+  Boxes, Bot, Cog, Container, Cpu, Drill, Factory, Flame, Forklift, Gauge, Hammer, Inbox, Layers, Microscope, Package, PackageCheck,
+  Paintbrush, Puzzle, Route, Scan, Search, Send, Store, Thermometer, Tractor, Trash2, Truck, User, Users, Warehouse, Wrench, Zap,
+  type LucideIcon,
+} from 'lucide-react'
 
 /** Tên biểu tượng trong ui.icon của loại node (services/api/internal/catalog/builtin.go) sang biểu tượng lucide. */
 const BY_NAME: Record<string, LucideIcon> = {
   truck: Truck, search: Search, warehouse: Warehouse, store: Store, inbox: Inbox, hammer: Hammer, puzzle: Puzzle,
-  scan: Scan, package: Package, send: Send, trash: Trash2, tractor: Tractor, bot: Bot, user: User,
+  scan: Scan, package: Package, send: Send, trash: Trash2, tractor: Tractor, bot: Bot, user: User, users: Users,
+  boxes: Boxes, container: Container, drill: Drill, paintbrush: Paintbrush, flame: Flame, cog: Cog, factory: Factory, cpu: Cpu,
+  microscope: Microscope, gauge: Gauge, forklift: Forklift, wrench: Wrench, route: Route, layers: Layers, zap: Zap, thermometer: Thermometer,
 }
+
+export const hasIcon = (name: string): boolean => name in BY_NAME
 
 /** Loại tự tạo chưa có biểu tượng thì lấy theo vai trò trong sơ đồ. */
 const BY_ARCHETYPE: Record<string, LucideIcon> = {

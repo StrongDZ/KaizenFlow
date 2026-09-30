@@ -3,8 +3,10 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Json, NodeTypeDetail } from '../api/types'
+import { IconPicker } from '../components/library/IconPicker'
 import { ParamForm } from '../components/library/ParamForm'
 import { Card, ErrorBox, Loading, Notice, PageBody, PageHeader, Tag, btn, btnPrimary, input } from '../components/ui'
+import { withIcon } from '../lib/iconChoices'
 import { parseJsonArray } from '../lib/jsonText'
 import { nodeTypeRules } from '../lib/rules'
 
@@ -32,6 +34,7 @@ function NodeTypeEditForm({ d, schema, banner }: { d: NodeTypeDetail; schema?: J
   const qc = useQueryClient()
   const navigate = useNavigate()
   const [name, setName] = useState(d.name)
+  const [icon, setIcon] = useState<string | undefined>(typeof d.ui?.icon === 'string' ? d.ui.icon : undefined)
   const [params, setParams] = useState<Json>(d.default_params)
   const [signals, setSignals] = useState(JSON.stringify(d.signals, null, 2))
   const [modes, setModes] = useState(JSON.stringify(d.failure_modes, null, 2))
@@ -39,7 +42,7 @@ function NodeTypeEditForm({ d, schema, banner }: { d: NodeTypeDetail; schema?: J
   const modeParsed = parseJsonArray(modes)
   const update = useMutation({
     mutationFn: () => api.updateNodeType(d.code, {
-      name: name.trim(), default_params: params,
+      name: name.trim(), default_params: params, ui: withIcon(d.ui, icon),
       signals: sigParsed.ok ? sigParsed.value : undefined, failure_modes: modeParsed.ok ? modeParsed.value : undefined,
     }),
     onSuccess: () => {
@@ -58,6 +61,7 @@ function NodeTypeEditForm({ d, schema, banner }: { d: NodeTypeDetail; schema?: J
         <label className="flex max-w-md flex-col gap-1 text-xs text-muted">
           Tên<input className={input} value={name} onChange={(e) => setName(e.target.value)} />
         </label>
+        <div className="mt-4"><IconPicker value={icon} archetype={d.archetype} onChange={setIcon} /></div>
       </Card>
       <Card title="Tham số mặc định">
         <div className="rjsf">

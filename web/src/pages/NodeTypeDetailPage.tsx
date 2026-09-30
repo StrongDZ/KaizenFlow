@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import { ARCHETYPE_LABEL } from '../components/KfNode'
+import { NodeIcon } from '../components/nodeIcons'
 import { DeleteAction } from '../components/DeleteAction'
 import { FailureModeTable, ParamGrid, RecipeStrip, SignalTable } from '../components/library/NodeTypeView'
 import { DataTable, type Column } from '../components/table/DataTable'
@@ -34,7 +35,7 @@ export default function NodeTypeDetailPage() {
       <Link className="text-xs text-muted hover:text-text" to="/library/node-types">‹ Danh sách loại node</Link>
       <PageHeader
         title={d.name}
-        subtitle={<span className="flex items-center gap-2"><Tag>{d.code}</Tag><Tag>{ARCHETYPE_LABEL[d.archetype]}</Tag></span>}
+        subtitle={<span className="flex items-center gap-2"><NodeIcon name={typeof d.ui?.icon === 'string' ? d.ui.icon : undefined} archetype={d.archetype} size={15} className="text-text-2" /><Tag>{d.code}</Tag><Tag>{ARCHETYPE_LABEL[d.archetype]}</Tag></span>}
         actions={
           <>
             <Link className={btn} to={`/library/node-types/new?from=${encodeURIComponent(d.code)}`}>Nhân bản</Link>

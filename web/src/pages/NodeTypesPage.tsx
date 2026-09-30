@@ -4,13 +4,22 @@ import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Archetype, NodeType } from '../api/types'
 import { ARCHETYPE_LABEL } from '../components/KfNode'
+import { NodeIcon } from '../components/nodeIcons'
 import { DataTable, type Column } from '../components/table/DataTable'
 import { EmptyState, ErrorBox, FilterChip, Loading, PageBody, PageHeader, SearchBox, Tag, btnPrimary } from '../components/ui'
 import { usedIn } from '../lib/format'
 import { filterRows } from '../lib/table'
 
 const COLUMNS: Column<NodeType>[] = [
-  { key: 'name', header: 'Tên', cell: (t) => <span className="font-medium text-text">{t.name}</span>, sort: (t) => t.name },
+  {
+    key: 'name', header: 'Tên', sort: (t) => t.name,
+    cell: (t) => (
+      <span className="flex items-center gap-2 font-medium text-text">
+        <NodeIcon name={typeof t.ui?.icon === 'string' ? t.ui.icon : undefined} archetype={t.archetype} size={14} className="flex-none text-muted" />
+        {t.name}
+      </span>
+    ),
+  },
   { key: 'code', header: 'Mã', cell: (t) => <span className="text-muted">{t.code}</span>, sort: (t) => t.code },
   { key: 'arch', header: 'Loại', cell: (t) => <Tag>{ARCHETYPE_LABEL[t.archetype]}</Tag>, sort: (t) => t.archetype },
   { key: 'used', header: 'Dùng trong', cell: (t) => usedIn(t.used_in_versions), sort: (t) => t.used_in_versions ?? 0 },
