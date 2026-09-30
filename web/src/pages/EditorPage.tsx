@@ -1,50 +1,33 @@
-import Form from '@rjsf/core'
-import type { RJSFSchema } from '@rjsf/utils'
-import validator from '@rjsf/validator-ajv8'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Background, ReactFlow, ReactFlowProvider, SelectionMode, applyEdgeChanges, applyNodeChanges, useReactFlow, useStore,
   type Connection, type EdgeChange, type NodeChange,
 } from '@xyflow/react'
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type DragEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
-import type { Graph, Issue, Json, NodeType } from '../api/types'
+import type { Graph, Issue, NodeType } from '../api/types'
 import { CanvasToolbar, type Tool } from '../components/editor/CanvasToolbar'
+import { Inspector } from '../components/editor/Inspector'
+import { DRAG_TYPE, NodePalette } from '../components/editor/NodePalette'
+import { QuickAdd } from '../components/editor/QuickAdd'
 import { ShortcutsDialog } from '../components/editor/ShortcutsDialog'
-import { FloatingPanel } from '../components/FloatingPanel'
-import { rjsfFields, rjsfTemplates } from '../components/rjsfTemplates'
-import { ARCHETYPE_LABEL, kfNodeTypes } from '../components/KfNode'
+import { kfNodeTypes } from '../components/KfNode'
 import { HeaderActions, useShell } from '../components/shell/ShellContext'
 import { useTheme } from '../hooks/useTheme'
-import { ErrorBox, Loading, btn, btnPrimary, input, issuesOf } from '../components/ui'
-import { edgeSchema, edgeToForm, formToEdge, type EdgeForm } from '../lib/edgeForm'
+import { ErrorBox, Loading, btn, btnPrimary, issuesOf } from '../components/ui'
+import { formToEdge, type EdgeForm } from '../lib/edgeForm'
 import { versionStatusLabel } from '../lib/format'
 import { clipboard, copyOf, pasteOf } from '../lib/clipboard'
 import { defaultMaterial, edgeKey, edgeLabel, fromFlow, isEdit, makeNode, toFlow, type FlowEdge, type FlowNode } from '../lib/graph'
 import { canRedo, canUndo, emptyHistory, record, redo, undo, type History } from '../lib/history'
 import { autoLayout, type Dir } from '../lib/layout'
-import { placeholderUi } from '../lib/paramDefaults'
-import { labelSchema } from '../lib/paramLabels'
-import { byCode, poolKind } from '../lib/model'
+import { byCode } from '../lib/model'
 import { isTypingTarget } from '../lib/playback'
 import { shortcutFor } from '../lib/shortcuts'
 
-const DRAG_TYPE = 'application/kf-node-type'
-const noSubmit = { 'ui:submitButtonOptions': { norender: true } }
 /** Trạng thái để hoàn tác: vị trí và nội dung mọi node/edge, cùng hướng sơ đồ. */
 type Snap = { nodes: FlowNode[]; edges: FlowEdge[]; dir: Dir }
-
-/**
- * @rjsf gọi onChange ngay trong componentDidMount để điền giá trị mặc định, trước mọi thao tác của người dùng
- * (và không phân biệt được bằng tham số id, vì thao tác mảng cũng không có id). Bỏ qua các lần gọi đó bằng cờ
- * `ready`, bật ở effect của chính component này (effect của cha chạy sau componentDidMount của con).
- */
-function UserForm({ onChange, ...rest }: ComponentProps<typeof Form>) {
-  const ready = useRef(false)
-  useEffect(() => { ready.current = true }, [])
-  return <Form templates={rjsfTemplates} fields={rjsfFields} {...rest} onChange={(e, id) => { if (ready.current) onChange?.(e, id) }} />
-}
 
 export default function EditorPage() {
   const vid = Number(useParams().id)
@@ -72,7 +55,10 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
   const [tool, setTool] = useState<Tool>('select')
   const [locked, setLocked] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
-  const [paletteOpen, setPaletteOpen] = useState(true)
+  const [paletteOpen, setPaletteOpen] = useState(initial.nodes.length === 0)
+  const [quick, setQuick] = useState<{ x: number; y: number; client: { x: number; y: number }; from?: { nodeId: string; type: 'source' | 'target' } } | null>(null)
+  const wrap = useRef<HTMLDivElement>(null)
+  const mouse = useRef({ x: 0, y: 0 })
   const published = graph.status !== 'DRAFT'
   const readOnly = published || locked
   const qc = useQueryClient()
@@ -126,19 +112,51 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
     setNodes((ns) => (ns.some((n) => n.selected) ? ns.map((n) => ({ ...n, selected: false })) : ns))
     setEdges((es) => (es.some((e) => e.selected) ? es.map((e) => ({ ...e, selected: false })) : es))
   }
-  const addNode = (t: NodeType, position: { x: number; y: number }) => {
+  /** Thêm một node; `from` là chấm đã kéo dây ra chỗ trống, thì nối luôn node mới vào đó theo đúng chiều. */
+  const addNode = (t: NodeType, position: { x: number; y: number }, from?: { nodeId: string; type: 'source' | 'target' }) => {
     if (readOnly) return
     remember()
     const n = makeNode(t, live.current.nodes.map((x) => x.id), position)
     setNodes((ns) => [...ns.map((x) => ({ ...x, selected: false })), { ...n, selected: true }])
-    setEdges((es) => es.map((e) => ({ ...e, selected: false })))
+    setEdges((es) => {
+      const cleared = es.map((e) => ({ ...e, selected: false }))
+      if (!from) return cleared
+      const [src, dst] = from.type === 'source' ? [from.nodeId, n.id] : [n.id, from.nodeId]
+      const srcNode = src === n.id ? n : live.current.nodes.find((x) => x.id === src)
+      const material = defaultMaterial(srcNode, materials)
+      return [...cleared, { id: edgeKey(src, dst, es.map((e) => e.id)), source: src, target: dst, data: { material, params: {} }, label: edgeLabel(material, {}) }]
+    })
     setDirty(true)
   }
+  /** Góc trên-trái để đặt một node sao cho tâm nằm ở điểm cho trước (kích thước thẻ node ~140 x 64). */
+  const centred = (p: { x: number; y: number }) => ({ x: p.x - 70, y: p.y - 32 })
+  /** Giữa khung nhìn hiện tại, dịch dần nếu đã có node nằm đúng chỗ đó để các lần thêm liên tiếp không chồng lên nhau. */
+  const viewCentre = () => {
+    const r = wrap.current?.getBoundingClientRect()
+    let p = centred(screenToFlowPosition({ x: (r?.left ?? 0) + (r?.width ?? 800) / 2, y: (r?.top ?? 0) + (r?.height ?? 600) / 2 }))
+    while (live.current.nodes.some((n) => Math.abs(n.position.x - p.x) < 24 && Math.abs(n.position.y - p.y) < 24)) p = { x: p.x + 32, y: p.y + 32 }
+    return p
+  }
+  const openQuick = (client: { x: number; y: number }, from?: { nodeId: string; type: 'source' | 'target' }) => {
+    if (readOnly) return
+    const r = wrap.current?.getBoundingClientRect()
+    setQuick({ x: client.x - (r?.left ?? 0), y: client.y - (r?.top ?? 0), client, from })
+  }
+  const pickQuick = (t: NodeType) => {
+    if (!quick) return
+    addNode(t, centred(screenToFlowPosition(quick.client)), quick.from)
+    setQuick(null)
+  }
+  // Loại nào hợp lệ để đặt vào chỗ vừa thả dây: đích không thể là nguồn hay đội xe; nguồn không thể là đích hay đội xe.
+  const quickAllow = useMemo(() => {
+    const no = quick?.from?.type === 'target' ? ['SINK', 'RESOURCE_POOL'] : quick?.from ? ['SOURCE', 'RESOURCE_POOL'] : []
+    return (t: NodeType) => !no.includes(t.archetype)
+  }, [quick?.from])
   const onDrop = (ev: DragEvent) => {
     ev.preventDefault()
     const t = types[ev.dataTransfer.getData(DRAG_TYPE)]
     if (!t || readOnly) return
-    addNode(t, screenToFlowPosition({ x: ev.clientX, y: ev.clientY }))
+    addNode(t, centred(screenToFlowPosition({ x: ev.clientX, y: ev.clientY })))
   }
 
   const deleteSelected = () => {
@@ -237,7 +255,11 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
     fit: () => void fitView({ padding: padding(), duration: 300 }),
     zoom100: () => void zoomTo(1, { duration: 200 }),
     fitSelection: () => { if (selNodes.length) void fitView({ nodes: selNodes, padding: padding(), duration: 300, maxZoom: 1.2 }) },
-    add: () => setPaletteOpen(true),
+    add: () => {
+      const r = wrap.current?.getBoundingClientRect()
+      const m = mouse.current
+      openQuick(m.x ? m : { x: (r?.left ?? 0) + (r?.width ?? 800) / 2, y: (r?.top ?? 0) + (r?.height ?? 600) / 3 })
+    },
   }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -263,19 +285,15 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
     return () => window.removeEventListener('beforeunload', warn)
   }, [dirty])
 
-  const pools = nodes.filter((n) => n.data.archetype === 'RESOURCE_POOL')
-  const operators = pools.filter((n) => poolKind({ node_type: n.data.nodeType, params: n.data.params }, types) === 'OPERATOR')
-  const selType = selNode?.data.nodeType
-  const nodeNames = useMemo(() => Object.fromEntries(nodes.map((n) => [n.id, n.data.name])), [nodes])
-  const nodeName = (id: string) => (nodeNames[id] ? `${nodeNames[id]} (${id})` : id)
-  const nodeDefaults = selType ? types[selType]?.default_params : undefined
-  const nodeUi = useMemo(() => ({ ...noSubmit, ...placeholderUi(nodeDefaults) }), [nodeDefaults])
-  const nodeCtx = useMemo(() => ({ defaults: nodeDefaults }), [nodeDefaults])
-  const nodeSchema = useMemo(() => (selType ? (labelSchema(types[selType]?.param_schema) as RJSFSchema) : undefined), [selType, types])
   const error = save.error ?? publish.error
 
   return (
-    <div className="relative h-full min-h-[480px]" onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }} onDrop={onDrop}>
+    <div
+      ref={wrap} className="relative h-full min-h-[480px]"
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }} onDrop={onDrop}
+      onMouseMove={(e) => { mouse.current = { x: e.clientX, y: e.clientY } }}
+      onDoubleClick={(e) => { if ((e.target as HTMLElement).classList.contains('react-flow__pane')) openQuick({ x: e.clientX, y: e.clientY }) }}
+    >
       <HeaderActions>
         <span className="text-[11px] text-muted">{versionStatusLabel(graph.status)}{dirty ? ', chưa lưu' : ''}</span>
         {published ? (
@@ -292,6 +310,12 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
         nodes={decorated} edges={decoratedEdges} nodeTypes={kfNodeTypes} colorMode={theme}
         onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={readOnly ? undefined : onConnect}
         onNodeDragStart={() => remember()} onSelectionDragStart={() => remember()}
+        onConnectEnd={(ev, state) => {
+          // Thả dây ra chỗ trống (không trúng node nào): mở ô tìm loại node, chọn xong tự nối.
+          if (state.isValid || state.toNode || !state.fromNode || !state.fromHandle) return
+          const pt = 'changedTouches' in ev ? ev.changedTouches[0] : ev
+          openQuick({ x: pt.clientX, y: pt.clientY }, { nodeId: state.fromNode.id, type: state.fromHandle.type })
+        }}
         onBeforeDelete={async () => { remember(); return true }}
         nodesDraggable={!readOnly} nodesConnectable={!readOnly}
         selectionOnDrag={tool === 'select'} panOnDrag={tool === 'hand' ? true : [1]} selectionMode={SelectionMode.Partial}
@@ -310,7 +334,7 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
           published={published} locked={locked} onLock={() => setLocked((l) => !l)}
           canEdit={!readOnly} onArrange={arrange}
           canUndo={!readOnly && canUndo(history)} canRedo={!readOnly && canRedo(history)} onUndo={undoStep} onRedo={redoStep}
-          onAdd={() => setPaletteOpen(true)} onHelp={() => setHelpOpen(true)}
+          onAdd={() => setPaletteOpen((o) => !o)} onHelp={() => setHelpOpen(true)}
         />
       )}
       <ShortcutsDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
@@ -321,102 +345,31 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
         <div className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center">
           <div className="max-w-xs text-center text-xs leading-relaxed text-muted">
             <p className="text-sm font-semibold text-text-2">Sơ đồ đang trống</p>
-            <p className="mt-1">{published ? 'Phiên bản này chưa có node nào.' : 'Kéo một loại node từ danh sách bên trái vào đây, rồi nối các node bằng chấm đầu ra và chấm đầu vào.'}</p>
+            <p className="mt-1">{published ? 'Phiên bản này chưa có node nào.' : 'Kéo một loại node từ danh sách bên trái vào đây, hoặc bấm đúp vào chỗ trống, hoặc nhấn Tab để tìm. Rồi nối các node bằng chấm đầu ra và chấm đầu vào.'}</p>
           </div>
         </div>
       )}
       {!focus && paletteOpen && (
-        <FloatingPanel side="left" width={220} title="Loại node" onClose={() => setPaletteOpen(false)}>
-          <div className="p-3">
-            <div className="mb-3 space-y-1 text-[11px] leading-snug text-muted">
-              {readOnly ? (
-                <p>Phiên bản đã Publish, chỉ xem. Muốn sửa, bấm "Tạo bản sửa" ở góc trên bên phải.</p>
-              ) : (
-                <>
-                  <p><b className="font-semibold text-text-2">Thêm node:</b> kéo một loại vào sơ đồ.</p>
-                  <p><b className="font-semibold text-text-2">Nối hai node:</b> kéo từ chấm đầu ra của node này sang chấm đầu vào của node kia.</p>
-                  <p><b className="font-semibold text-text-2">Sửa:</b> bấm vào node hoặc đường nối để xem thuộc tính.</p>
-                </>
-              )}
-            </div>
-            {Object.keys(ARCHETYPE_LABEL).map((arch) => (
-              <div key={arch} className="mb-3">
-                <div className="mb-1 text-[11px] font-semibold text-faint">{ARCHETYPE_LABEL[arch]}</div>
-                {typeList.filter((t) => t.archetype === arch).map((t) => (
-                  <div
-                    key={t.code} draggable={!readOnly}
-                    onDragStart={(e) => { e.dataTransfer.setData(DRAG_TYPE, t.code); e.dataTransfer.effectAllowed = 'move' }}
-                    className={`mb-1 rounded-lg border border-line-2 bg-panel-2 px-2.5 py-1.5 ${readOnly ? 'opacity-60' : 'cursor-grab hover:bg-raised'}`}
-                  >
-                    <div className="text-xs font-medium text-text">{t.name}</div>
-                    <div className="text-[10.5px] text-faint">{t.code}</div>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        </FloatingPanel>
-      )}
-      {!focus && !paletteOpen && (
-        <button className={`${btn} absolute left-3 top-3 z-10 bg-panel`} onClick={() => setPaletteOpen(true)}>Loại node</button>
+        <NodePalette
+          types={typeList} canEdit={!readOnly} published={published} onClose={() => setPaletteOpen(false)}
+          onAdd={(t) => addNode(t, viewCentre())}
+        />
       )}
 
       {!focus && (selNode || selEdge || selNodes.length + selEdges.length > 1) && (
-        <FloatingPanel side="right" width={320} title={selNode ? 'Thuộc tính node' : selEdge ? 'Thuộc tính đường nối (edge)' : 'Đã chọn nhiều mục'} onClose={deselectAll}>
-          <div className="rjsf p-3">
-            {selNode && (
-              <>
-                <div className="mb-3">
-                  <div className="text-[11px] text-muted">{types[selNode.data.nodeType]?.name} ({selNode.data.key})</div>
-                  <label htmlFor="node-name" className="mt-2 block text-[11px] text-muted">Tên hiển thị</label>
-                  <div className="mt-0.5 flex gap-2">
-                    <input id="node-name" className={`${input} w-full`} value={selNode.data.name} disabled={readOnly}
-                      onChange={(e) => setNodeData(selNode.id, { name: e.target.value })} />
-                    {!readOnly && <button className={`${btn} flex-none whitespace-nowrap`} onClick={deleteSelected} title="Xoá node này và các đường nối của nó (Delete)">Xoá node</button>}
-                  </div>
-                </div>
-                <UserForm
-                  key={selNode.id}
-                  schema={nodeSchema as RJSFSchema} formData={selNode.data.params}
-                  validator={validator} disabled={readOnly} uiSchema={nodeUi} formContext={nodeCtx}
-                  onChange={(e) => setNodeData(selNode.id, { params: (e.formData ?? {}) as Json })}
-                />
-                <details className="mt-3 text-[11px]">
-                  <summary className="cursor-pointer text-muted">Xem giá trị mặc định của loại node (JSON, số liệu giả định)</summary>
-                  <pre className="mt-1 overflow-x-auto rounded-lg bg-panel-2 p-2 text-text-2">{JSON.stringify(types[selNode.data.nodeType]?.default_params, null, 2)}</pre>
-                </details>
-              </>
-            )}
-            {selEdge && (
-              <>
-                <div className="mb-3 flex items-start justify-between gap-2">
-                  <p className="text-[11px] leading-snug text-muted">
-                    Hàng chảy từ <b className="font-semibold text-text-2">{nodeName(selEdge.source)}</b> sang <b className="font-semibold text-text-2">{nodeName(selEdge.target)}</b>.
-                  </p>
-                  {!readOnly && <button className={`${btn} flex-none whitespace-nowrap`} onClick={deleteSelected} title="Xoá đường nối này (Delete)">Xoá đường nối</button>}
-                </div>
-                <UserForm
-                  key={selEdge.id}
-                  schema={edgeSchema(materials, pools.map((p) => p.id), operators.map((p) => p.id), { mode: selEdge.data?.params.mode as string | undefined ?? 'NONE', names: nodeNames })}
-                  formData={edgeToForm(selEdge.data?.material ?? '', selEdge.data?.params ?? {})}
-                  validator={validator} disabled={readOnly} uiSchema={noSubmit}
-                  onChange={(e) => setEdgeForm(selEdge.id, e.formData as EdgeForm)}
-                />
-              </>
-            )}
-            {!selNode && !selEdge && (
-              <div className="space-y-2 text-xs text-text-2">
-                <p>{selNodes.length > 0 ? `Đã chọn ${selNodes.length} node.` : `Đã chọn ${selEdges.length} đường nối.`}</p>
-                {!readOnly && (
-                  <div className="flex gap-2">
-                    <button className={btn} onClick={duplicate}>Nhân đôi</button>
-                    <button className={btn} onClick={deleteSelected}>Xoá</button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </FloatingPanel>
+        <Inspector
+          node={selNode} edge={selEdge} selNodes={selNodes} selEdgeCount={selEdges.length}
+          nodes={nodes} types={types} materials={materials} canEdit={!readOnly}
+          onNodeData={setNodeData} onEdgeForm={setEdgeForm} onDelete={deleteSelected} onDuplicate={duplicate} onClose={deselectAll}
+        />
+      )}
+
+      {quick && (
+        <QuickAdd
+          x={quick.x} y={quick.y} bounds={{ w: wrap.current?.clientWidth ?? 900, h: wrap.current?.clientHeight ?? 600 }}
+          types={typeList} allow={quickAllow} hint={quick.from ? 'Node mới sẽ được nối vào dây vừa kéo.' : undefined}
+          onPick={pickQuick} onClose={() => setQuick(null)}
+        />
       )}
     </div>
   )

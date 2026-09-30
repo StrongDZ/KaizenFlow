@@ -1,13 +1,15 @@
 import { Minus, Plus, X } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
-export function FloatingPanel({ side, width = 236, top = 12, bottom = 12, title, onClose, children }: {
+export function FloatingPanel({ side, width = 236, top = 12, bottom = 12, fit = false, title, onClose, children }: {
   side: 'left' | 'right'; width?: number; top?: number; bottom?: number; title?: string; onClose?: () => void; children: ReactNode
+  /** Cao vừa nội dung (tối đa tới mép dưới) thay vì luôn kéo dài hết chiều cao. */
+  fit?: boolean
 }) {
   return (
     <aside
       className={`absolute z-10 flex flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-lg ${side === 'left' ? 'left-3' : 'right-3'}`}
-      style={{ width, top, bottom }}
+      style={fit ? { width, top, maxHeight: `calc(100% - ${top + bottom}px)` } : { width, top, bottom }}
     >
       {(title || onClose) && (
         <header className="flex flex-none items-center justify-between border-b border-line px-3 py-2 text-xs font-semibold text-text">

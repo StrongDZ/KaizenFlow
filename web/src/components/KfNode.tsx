@@ -2,6 +2,7 @@ import * as Popover from '@radix-ui/react-popover'
 import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react'
 import { useEffect, useRef } from 'react'
 import type { FlowNode } from '../lib/graph'
+import { NodeIcon } from './nodeIcons'
 import { pinClass } from './PinDot'
 
 export const ARCHETYPE_LABEL: Record<string, string> = {
@@ -34,7 +35,7 @@ export function KfNode({ id, data, selected }: NodeProps<FlowNode>) {
   return (
     <div className={`relative min-w-[132px] rounded-lg border bg-panel px-2.5 py-2 ${tone} ${pool ? 'border-dashed' : ''} ${selected ? 'ring-2 ring-text/60' : ''}`}>
       {!pool && data.archetype !== 'SOURCE' && <Handle type="target" position={inSide} />}
-      <div className="text-[10px] text-muted">{ARCHETYPE_LABEL[data.archetype] ?? data.archetype}</div>
+      <div className="flex items-center gap-1 text-[10px] text-muted"><NodeIcon name={data.icon} archetype={data.archetype} size={11} />{ARCHETYPE_LABEL[data.archetype] ?? data.archetype}</div>
       <div className="text-xs font-semibold leading-tight text-text">{data.name}</div>
       <div className="text-[10px] text-faint">{data.key}</div>
       {badge && badge.color !== 'NONE' && (

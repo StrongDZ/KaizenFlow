@@ -37,7 +37,7 @@ export function CanvasToolbar(p: {
     <div role="toolbar" aria-label="Công cụ sơ đồ" className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-line bg-panel p-1 shadow-lg">
       <button
         type="button" disabled={!p.canEdit} onClick={p.onAdd}
-        title={p.canEdit ? 'Thêm node (Tab hoặc /)' : arrangeHint || 'Không sửa được'}
+        title={p.canEdit ? 'Mở danh sách loại node. Nhấn Tab hoặc / để tìm nhanh.' : arrangeHint || 'Không sửa được'}
         className="inline-flex h-7 items-center gap-1 rounded-md bg-text px-2.5 text-[11px] font-semibold text-bg hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
       >
         <Plus size={13} />Thêm node
