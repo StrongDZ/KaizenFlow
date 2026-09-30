@@ -167,3 +167,72 @@ func TestDeleteModelRemovesItsLiveConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestNowcastRunAndDriftInsightLifecycle(t *testing.T) {
+	st := testfix.Seeded(t, "store_drift")
+	vid := seededVersion(t, st, "dr")
+	if r, err := st.LatestNowcastRun(ctx, "dr"); err != nil || r != nil {
+		t.Fatalf("no nowcast yet: %v %v", r, err)
+	}
+	usual, _ := st.CreateScenario(ctx, store.Scenario{ModelVersionID: vid, Name: "usual", HorizonS: 3600})
+	doneRun(t, st, usual)
+	if r, _ := st.LatestNowcastRun(ctx, "dr"); r != nil {
+		t.Fatalf("a USER scenario is not a nowcast: %+v", r)
+	}
+	now1, _ := st.CreateScenario(ctx, store.Scenario{ModelVersionID: vid, Name: "n1", HorizonS: 3600, Origin: "NOWCAST", StartState: "LIVE_SNAPSHOT"})
+	r1 := doneRun(t, st, now1)
+	now2, _ := st.CreateScenario(ctx, store.Scenario{ModelVersionID: vid, Name: "n2", HorizonS: 3600, Origin: "NOWCAST", StartState: "LIVE_SNAPSHOT"})
+	r2 := doneRun(t, st, now2)
+	got, err := st.LatestNowcastRun(ctx, "dr")
+	if err != nil || got == nil || got.ID != r2 || got.ScenarioOrigin != "NOWCAST" {
+		t.Fatalf("latest = %+v (want run %d, older %d) %v", got, r2, r1, err)
+	}
+
+	subj, sev := "KHO", 2
+	id, err := st.InsertInsight(ctx, store.Insight{SimRunID: &r2, Kind: "DRIFT", SubjectKey: &subj, Severity: &sev,
+		Payload: map[string]any{"metric": "level:RAW-01", "direction": "below"}})
+	if err != nil || id == 0 {
+		t.Fatalf("insert: %v", err)
+	}
+	if ok, _ := st.OpenInsightExists(ctx, r2, "DRIFT", "KHO", "level:RAW-01"); !ok {
+		t.Error("the open insight must be found")
+	}
+	if ok, _ := st.OpenInsightExists(ctx, r2, "DRIFT", "KHO", "level:RAW-02"); ok {
+		t.Error("another metric is a different insight")
+	}
+	if ok, _ := st.OpenInsightExists(ctx, r1, "DRIFT", "KHO", "level:RAW-01"); ok {
+		t.Error("another run is a different insight")
+	}
+	if err := st.SetInsightStatus(ctx, id, "ACK"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := st.OpenInsightExists(ctx, r2, "DRIFT", "KHO", "level:RAW-01"); ok {
+		t.Error("an acknowledged insight is no longer open, so a new one may be raised")
+	}
+	if err := st.SetInsightStatus(ctx, 99999, "ACK"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("unknown insight: %v", err)
+	}
+}
+
+func TestRecentLiveValuesReturnsTheLastNInChronologicalOrder(t *testing.T) {
+	st := testfix.Seeded(t, "store_recent")
+	t0 := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	var sigs []store.LiveSignal
+	for i := 0; i < 6; i++ {
+		sigs = append(sigs, store.LiveSignal{Time: t0.Add(time.Duration(i) * time.Minute), Model: "m", Subject: "E", Name: "trip_s", Value: float64(i)})
+	}
+	sigs = append(sigs, store.LiveSignal{Time: t0, Model: "m", Subject: "OTHER", Name: "trip_s", Value: 99})
+	if err := st.InsertLive(ctx, sigs, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.RecentLiveValues(ctx, "m", "E", "trip_s", 3)
+	if err != nil || len(got) != 3 || got[0] != 3 || got[1] != 4 || got[2] != 5 {
+		t.Fatalf("got %v err %v", got, err)
+	}
+	if all, _ := st.RecentLiveValues(ctx, "m", "E", "trip_s", 100); len(all) != 6 {
+		t.Errorf("all = %v", all)
+	}
+	if none, _ := st.RecentLiveValues(ctx, "m", "NOPE", "trip_s", 5); len(none) != 0 {
+		t.Errorf("none = %v", none)
+	}
+}

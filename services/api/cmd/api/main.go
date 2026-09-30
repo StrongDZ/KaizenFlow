@@ -51,6 +51,7 @@ func main() {
 		log.Fatalf("load bindings: %v", err)
 	}
 	go liveSvc.Run(ctx)
+	go livesvc.NewMonitor(st, liveSvc, hub).Run(ctx)
 	h := httpapi.New(httpapi.Deps{Store: st, Sim: sim, Hub: hub, Validator: validate.New(), Runs: svc,
 		Live: liveSvc, FeedURL: env("KF_FEED_URL", "http://localhost:8090")})
 	addr := env("KF_ADDR", ":8080")

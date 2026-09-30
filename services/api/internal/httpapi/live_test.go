@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -276,4 +277,67 @@ func TestLiveForecastRejectsBadHorizonAndUnpublishedModels(t *testing.T) {
 		a.call("POST", "/api/models/lm/live/forecast", map[string]any{"horizon_s": h}, 422)
 	}
 	a.call("POST", "/api/models/nope/live/forecast", map[string]any{"horizon_s": 3600}, 404)
+}
+
+func (a *liveAPI) bindTrip() {
+	a.call("PUT", "/api/models/lm/bindings", map[string]any{"bindings": []any{
+		map[string]any{"subject": "S>OUT", "signal": "trip_s", "source": "agv/trip/s-out", "json_path": "dur"}}}, 200)
+}
+
+func (a *liveAPI) trips(durs ...float64) {
+	msgs := make([]any, len(durs))
+	for i, d := range durs {
+		ts := time.Date(2026, 10, 1, 8, i, 0, 0, time.UTC).Format(time.RFC3339)
+		msgs[i] = map[string]any{"source": "agv/trip/s-out", "ts": ts, "payload": map[string]any{"dur": d}}
+	}
+	a.call("POST", "/api/ingest", map[string]any{"messages": msgs}, 200)
+	if err := a.svc.Flush(context.Background()); err != nil {
+		a.t.Fatal(err)
+	}
+}
+
+func TestCalibrationComparesMeasuredTripsWithTheModelAndAppliesThemAsScenarios(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	a.bindTrip()
+	a.trips(100, 110, 120) // chưa đủ chuyến
+	res := a.call("GET", "/api/models/lm/live/calibration", nil, 200)
+	if len(res["edges"].([]any)) != 0 || len(res["waiting"].([]any)) != 1 || res["min_trips"].(float64) != 8 {
+		t.Fatalf("with 3 trips the edge is still being measured: %v", res)
+	}
+	w := res["waiting"].([]any)[0].(map[string]any)
+	if w["edge"] != "S>OUT" || w["n"].(float64) != 3 {
+		t.Errorf("waiting = %v", w)
+	}
+	a.call("POST", "/api/models/lm/live/calibration/apply", map[string]any{"edges": []any{"S>OUT"}}, 422)
+
+	a.trips(100, 110, 120, 130, 140, 100, 110, 120, 130, 140)
+	res = a.call("GET", "/api/models/lm/live/calibration", nil, 200)
+	edges := res["edges"].([]any)
+	if len(edges) != 1 {
+		t.Fatalf("calibration = %v", res)
+	}
+	e := edges[0].(map[string]any)
+	if e["edge"] != "S>OUT" || e["n"].(float64) < 8 || e["suggested"].(map[string]any)["dist"] != "norm" || e["name"] == "" {
+		t.Errorf("edge = %v", e)
+	}
+	out := a.call("POST", "/api/models/lm/live/calibration/apply", map[string]any{"edges": []any{"S>OUT"}}, 202)
+	sc := a.call("GET", fmt.Sprintf("/api/scenarios/%d", int64(out["scenario_id"].(float64))), nil, 200)
+	ov := sc["overrides"].([]any)[0].(map[string]any)
+	if ov["target"] != "S>OUT" || ov["path"] != "/travel" || ov["value"].(map[string]any)["dist"] != "norm" || sc["origin"] != "USER" {
+		t.Errorf("calibrated scenario = %v", sc)
+	}
+	base := a.call("GET", fmt.Sprintf("/api/scenarios/%d", int64(out["baseline_scenario_id"].(float64))), nil, 200)
+	if len(base["overrides"].([]any)) != 0 || base["seed"] == nil || base["seed"] != sc["seed"] {
+		t.Errorf("baseline must have no overrides and the same seed as the calibrated one: %v vs %v", base, sc)
+	}
+	if out["run_id"].(float64) == out["baseline_run_id"].(float64) {
+		t.Errorf("two different runs expected: %v", out)
+	}
+	a.call("POST", "/api/models/lm/live/calibration/apply", map[string]any{"edges": []any{"NOPE"}}, 422)
+}
+
+func TestAckInsight(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.call("POST", "/api/insights/99999/ack", nil, 404)
 }

@@ -207,3 +207,61 @@ func deleteLiveConfig(ctx context.Context, tx pgx.Tx, model string) error {
 	}
 	return clearLiveTx(ctx, tx, model)
 }
+
+// LatestNowcastRun trả lần chạy dự báo từ trạng thái live đã xong gần nhất của một mô hình (nil nếu chưa có).
+func (s *Store) LatestNowcastRun(ctx context.Context, model string) (*RunRow, error) {
+	rows, err := s.ListRunRows(ctx, RunFilter{Model: model, Origin: "NOWCAST", Statuses: []string{"DONE"}, Limit: 1})
+	if err != nil || len(rows) == 0 {
+		return nil, err
+	}
+	return &rows[0], nil
+}
+
+// InsertInsight ghi một insight do Go sinh ra (không đi qua kết quả của sim), vd. cảnh báo lệch dự báo.
+func (s *Store) InsertInsight(ctx context.Context, in Insight) (int64, error) {
+	if in.Payload == nil {
+		in.Payload = map[string]any{}
+	}
+	var id int64
+	err := s.Pool.QueryRow(ctx, `INSERT INTO insight (sim_run_id, kind, subject_key, eta, probability, severity, payload)
+		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		in.SimRunID, in.Kind, in.SubjectKey, in.ETA, in.Probability, in.Severity, in.Payload).Scan(&id)
+	return id, err
+}
+
+// OpenInsightExists: đã có insight còn mở cùng loại, đối tượng và chỉ số (payload.metric) cho lần chạy này chưa.
+func (s *Store) OpenInsightExists(ctx context.Context, runID int64, kind, subject, metric string) (bool, error) {
+	var ok bool
+	err := s.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM insight WHERE sim_run_id = $1 AND kind = $2 AND subject_key = $3
+		AND status = 'OPEN' AND payload ->> 'metric' = $4)`, runID, kind, subject, metric).Scan(&ok)
+	return ok, err
+}
+
+// SetInsightStatus đổi trạng thái insight (OPEN → ACK | DONE).
+func (s *Store) SetInsightStatus(ctx context.Context, id int64, status string) error {
+	tag, err := s.Pool.Exec(ctx, `UPDATE insight SET status = $2 WHERE id = $1`, id, status)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// RecentLiveValues trả tối đa n giá trị gần nhất của một tín hiệu thật, theo thứ tự thời gian tăng dần.
+func (s *Store) RecentLiveValues(ctx context.Context, model, subject, name string, n int) ([]float64, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT coalesce(value, 0) FROM signal
+		WHERE run_id IS NULL AND model_key = $1 AND subject = $2 AND name = $3 ORDER BY time DESC LIMIT $4`, model, subject, name, n)
+	if err != nil {
+		return nil, err
+	}
+	out, err := pgx.CollectRows(rows, pgx.RowTo[float64])
+	if err != nil {
+		return nil, err
+	}
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out, nil
+}

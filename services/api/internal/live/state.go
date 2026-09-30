@@ -339,3 +339,15 @@ func (s *State) Now(model string) time.Time {
 	}
 	return time.Time{}
 }
+
+// Models liệt kê các mô hình đang có dữ liệu live.
+func (s *State) Models() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]string, 0, len(s.models))
+	for k := range s.models {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}

@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"sort"
 	"strconv"
 	"time"
 
@@ -506,4 +509,138 @@ func (h *handlers) liveForecast(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 202, map[string]any{"scenario_id": sid, "run_id": rid, "notes": snap.Notes, "at": now})
+}
+
+const calibrationSamples = 500
+
+type calibrationRow struct {
+	live.Calibration
+	Name     string `json:"name"`
+	Material string `json:"material"`
+}
+
+type tripWaiting struct {
+	Edge string `json:"edge"`
+	Name string `json:"name"`
+	N    int    `json:"n"`
+}
+
+// calibrations so thời gian chuyến đo được (trip_s) của mọi edge chạy bằng xe với `travel` của mô hình.
+func (h *handlers) calibrations(ctx context.Context, key string) (*store.Graph, []calibrationRow, []tripWaiting, error) {
+	g, types, err := h.modelGraph(ctx, key, true)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	subs, err := subjectsOf(g, types)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	names := map[string]subjectView{}
+	for _, s := range subs {
+		names[s.Subject] = s
+	}
+	rows := []calibrationRow{}
+	waiting := []tripWaiting{}
+	for _, e := range g.Edges {
+		if mode, _ := e.Params["mode"].(string); mode != "POOL" {
+			continue
+		}
+		vals, err := h.Store.RecentLiveValues(ctx, key, e.Key, "trip_s", calibrationSamples)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if len(vals) == 0 {
+			continue
+		}
+		c, ok := live.Calibrate(e.Key, vals, e.Params["travel"])
+		if !ok {
+			waiting = append(waiting, tripWaiting{Edge: e.Key, Name: names[e.Key].Name, N: len(vals)})
+			continue
+		}
+		rows = append(rows, calibrationRow{Calibration: c, Name: names[e.Key].Name, Material: e.Material})
+	}
+	sort.Slice(rows, func(i, j int) bool { return math.Abs(rows[i].DeltaPct) > math.Abs(rows[j].DeltaPct) })
+	return g, rows, waiting, nil
+}
+
+func (h *handlers) calibration(w http.ResponseWriter, r *http.Request) {
+	_, rows, waiting, err := h.calibrations(r.Context(), chi.URLParam(r, "key"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"min_trips": live.MinTrips, "edges": rows, "waiting": waiting})
+}
+
+// applyCalibration tạo hai scenario cùng seed để so được: nền (travel danh nghĩa) và bản có travel đã hiệu chỉnh, rồi chạy cả hai.
+// Không sửa version đã Publish: travel mới đi qua overrides của scenario.
+func (h *handlers) applyCalibration(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	key := chi.URLParam(r, "key")
+	var body struct {
+		Edges []string `json:"edges"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	g, rows, _, err := h.calibrations(ctx, key)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	want := map[string]bool{}
+	for _, e := range body.Edges {
+		want[e] = true
+	}
+	overrides := []map[string]any{}
+	for _, c := range rows {
+		if want[c.Edge] {
+			overrides = append(overrides, map[string]any{"target": c.Edge, "path": "/travel", "value": c.Suggested})
+			delete(want, c.Edge)
+		}
+	}
+	if len(overrides) == 0 {
+		writeJSON(w, 422, issues(validate.Issue{Key: "edges", Message: "Chưa có edge nào đủ chuyến đo (tối thiểu 8 chuyến) trong danh sách đã chọn."}))
+		return
+	}
+	seed := time.Now().Unix()
+	base := store.Scenario{ModelVersionID: g.VersionID, Origin: "USER", Name: "Nền: travel danh nghĩa (so với dữ liệu AGV)", HorizonS: 4 * 3600,
+		StartState: "WARMUP", Replications: forecastReps, Seed: &seed}
+	cal := base
+	cal.Name = fmt.Sprintf("Travel hiệu chỉnh từ dữ liệu AGV (%d edge)", len(overrides))
+	cal.Overrides = overrides
+	baseID, err := h.Store.CreateScenario(ctx, base)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	calID, err := h.Store.CreateScenario(ctx, cal)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	start := time.Now().Truncate(time.Minute)
+	baseRun, err := h.Runs.Start(ctx, baseID, start)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	calRun, err := h.Runs.Start(ctx, calID, start)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 202, map[string]any{"baseline_scenario_id": baseID, "scenario_id": calID, "baseline_run_id": baseRun, "run_id": calRun, "edges": len(overrides)})
+}
+
+func (h *handlers) ackInsight(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	if err := h.Store.SetInsightStatus(r.Context(), id, "ACK"); err != nil {
+		writeErr(w, err)
+		return
+	}
+	w.WriteHeader(204)
 }
