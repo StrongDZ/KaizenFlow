@@ -2,22 +2,23 @@ import type { MaterialUsage, RunStatus, VersionUse } from '../api/types'
 
 export type Rules = { canEdit: boolean; canDelete: boolean; banner: string | null }
 
-/** Spec §6.1: có sẵn thì luôn chỉ đọc; tự tạo thì khoá khi version không phải nháp đang dùng; xoá khi không ai dùng. */
-export function nodeTypeRules(t: { is_builtin: boolean }, versions: VersionUse[]): Rules {
-  if (t.is_builtin) {
-    return { canEdit: false, canDelete: false, banner: 'Loại node có sẵn của hệ thống nên chỉ đọc. Nhân bản để tạo bản tự sửa.' }
-  }
+/**
+ * Loại node nào cũng như nhau, kể cả các loại mẫu nạp sẵn lúc đầu: sửa tự do khi chưa có version đã khoá (không phải nháp) dùng,
+ * xoá khi không version nào dùng. Lý do khoá: lúc chạy, thông số mặc định của loại được nạp trực tiếp từ DB, nên sửa loại đang
+ * được version đã Publish dùng sẽ làm kết quả cũ của mô hình đó không còn khớp.
+ */
+export function nodeTypeRules(versions: VersionUse[]): Rules {
   const frozen = versions.filter((v) => v.status !== 'DRAFT')
   if (frozen.length > 0) {
     const names = frozen.slice(0, 3).map((v) => `${v.model_key} v${v.version}`).join(', ')
     return {
       canEdit: false,
       canDelete: false,
-      banner: `Đang dùng trong ${frozen.length} version đã Publish (${names}${frozen.length > 3 ? ', …' : ''}), nên không sửa hay xoá trực tiếp được. Nhân bản để sửa mà không làm đổi kết quả các lần chạy cũ.`,
+      banner: `Đang dùng trong ${frozen.length} phiên bản đã Publish (${names}${frozen.length > 3 ? ', …' : ''}), nên không sửa hay xoá trực tiếp được. Nhân bản để sửa mà không làm đổi kết quả các lần chạy cũ.`,
     }
   }
   if (versions.length > 0) {
-    return { canEdit: true, canDelete: false, banner: `Đang dùng trong ${versions.length} version nháp nên chưa xoá được.` }
+    return { canEdit: true, canDelete: false, banner: `Đang dùng trong ${versions.length} phiên bản nháp nên chưa xoá được.` }
   }
   return { canEdit: true, canDelete: true, banner: null }
 }

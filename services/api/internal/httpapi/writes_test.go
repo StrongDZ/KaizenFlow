@@ -108,9 +108,11 @@ func TestNodeTypeAndMaterialWritesOverHTTP(t *testing.T) {
 	a := newAPI(t)
 	a.publishedModel("denso-mini")
 
-	// có sẵn: khoá
-	a.call("PUT", "/api/node-types/STAMP_PRESS", map[string]any{"name": "X"}, 409)
-	a.call("DELETE", "/api/node-types/STAMP_PRESS", nil, 409)
+	// loại mẫu chưa ai dùng: sửa và xoá được; đang được version đã Publish dùng (SHIP_DOCK): khoá
+	a.call("PUT", "/api/node-types/STAMP_PRESS", map[string]any{"name": "X"}, 204)
+	a.call("DELETE", "/api/node-types/STAMP_PRESS", nil, 204)
+	a.call("PUT", "/api/node-types/SHIP_DOCK", map[string]any{"name": "X"}, 409)
+	a.call("DELETE", "/api/node-types/SHIP_DOCK", nil, 409)
 	a.call("PUT", "/api/node-types/NOPE", map[string]any{"name": "X"}, 404)
 
 	// tạo node type: default_params sai kiểu bị từ chối (R14), đúng thì tạo được

@@ -37,7 +37,7 @@ Contract Go ↔ sim: `contracts/run.schema.json`. Thiết kế: `docs/superpower
 
 - `DELETE /api/models/{key}`, `/api/versions/{id}`, `/api/scenarios/{id}`: nếu còn dữ liệu phụ thuộc thì trả `409` kèm `{"impact": {"scenarios": 3, "runs": 12}}`; gọi lại với `?cascade=true` để xoá dây chuyền (một transaction).
 - Có lần chạy `QUEUED`/`RUNNING` trong phạm vi thì luôn `409`, kể cả khi `cascade=true`.
-- Node type có sẵn luôn chỉ đọc; node type tự tạo bị khoá sửa khi có version đã Publish dùng. Vật tư: mã bất biến, đơn vị và xoá bị khoá khi đang dùng (kể cả tham chiếu bằng chuỗi mã trong tham số node).
+- Loại node nào cũng như nhau: 14 loại mẫu (Máy dập, Kho kệ...) chỉ được nạp một lần khi bảng còn trống rồi là dữ liệu của bạn (sửa, xoá, đổi icon tự do; API khởi động lại không nạp đè hay nạp lại). Loại node bị khoá sửa và xoá khi có phiên bản đã Publish dùng; đang được phiên bản nháp dùng thì sửa được nhưng chưa xoá được. Vật tư: mã bất biến, đơn vị và xoá bị khoá khi đang dùng (kể cả tham chiếu bằng chuỗi mã trong tham số node).
 - Scenario chỉ sửa được khi chưa có lần chạy; dùng `POST /api/scenarios/{id}/clone` để thử thông số khác.
 
 ## Kịch bản demo (3 phút)

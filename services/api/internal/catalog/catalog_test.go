@@ -76,6 +76,41 @@ func TestSeedIsIdempotent(t *testing.T) {
 	}
 }
 
+// Bộ mẫu chỉ được nạp lúc bảng còn trống. Sau đó là dữ liệu của người dùng: không bị nạp đè khi API khởi động lại,
+// và loại nào đã xoá thì không tự sống lại.
+func TestSeedNeverOverwritesOrRestoresUserData(t *testing.T) {
+	pool := testdb.New(t, "catalog_user_data")
+	ctx := context.Background()
+	if err := catalog.Seed(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE node_type SET name = 'Tên của tôi', default_params = '{"mine":true}' WHERE code = 'STAMP_PRESS'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM node_type WHERE code = 'SCRAP'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM material WHERE code = 'BOX'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.Seed(ctx, pool); err != nil { // API khởi động lại
+		t.Fatal(err)
+	}
+	var name, defaults string
+	if err := pool.QueryRow(ctx, `SELECT name, default_params::text FROM node_type WHERE code = 'STAMP_PRESS'`).Scan(&name, &defaults); err != nil {
+		t.Fatal(err)
+	}
+	if name != "Tên của tôi" || !strings.Contains(defaults, "mine") {
+		t.Fatalf("edit overwritten: name=%q defaults=%s", name, defaults)
+	}
+	var scrap, box int
+	_ = pool.QueryRow(ctx, `SELECT count(*) FROM node_type WHERE code = 'SCRAP'`).Scan(&scrap)
+	_ = pool.QueryRow(ctx, `SELECT count(*) FROM material WHERE code = 'BOX'`).Scan(&box)
+	if scrap != 0 || box != 0 {
+		t.Fatalf("deleted rows came back: node_type SCRAP=%d material BOX=%d", scrap, box)
+	}
+}
+
 func TestDistOptionsHaveTitlesForForms(t *testing.T) {
 	raw, _ := catalog.SchemaFor("PROCESS")
 	var s struct {

@@ -5,28 +5,23 @@ import { isValidMaterialCode, isValidModelKey, isValidNodeTypeCode, materialRule
 const use = (over: Partial<VersionUse>): VersionUse => ({ version_id: 1, model_key: 'denso-mini', version: 1, status: 'PUBLISHED', nodes: 1, ...over })
 
 describe('nodeTypeRules', () => {
-  it('built-in types are always read-only', () => {
-    const r = nodeTypeRules({ is_builtin: true }, [])
+  it('a type used by a published version is locked and explains why (starter types included: nothing is read-only by origin)', () => {
+    const r = nodeTypeRules([use({}), use({ version_id: 2, version: 2 })])
     expect(r).toMatchObject({ canEdit: false, canDelete: false })
-    expect(r.banner).toContain('có sẵn')
-  })
-  it('a custom type used by a published version is locked and explains why', () => {
-    const r = nodeTypeRules({ is_builtin: false }, [use({}), use({ version_id: 2, version: 2 })])
-    expect(r).toMatchObject({ canEdit: false, canDelete: false })
-    expect(r.banner).toContain('2 version đã Publish')
+    expect(r.banner).toContain('2 phiên bản đã Publish')
     expect(r.banner).toContain('denso-mini v1')
   })
-  it('a custom type used only by drafts is editable but not deletable', () => {
-    const r = nodeTypeRules({ is_builtin: false }, [use({ status: 'DRAFT' })])
+  it('a type used only by drafts is editable but not deletable', () => {
+    const r = nodeTypeRules([use({ status: 'DRAFT' })])
     expect(r).toMatchObject({ canEdit: true, canDelete: false })
     expect(r.banner).toContain('nháp')
   })
-  it('an unused custom type is free to edit and delete', () => {
-    expect(nodeTypeRules({ is_builtin: false }, [])).toEqual({ canEdit: true, canDelete: true, banner: null })
+  it('an unused type is free to edit and delete', () => {
+    expect(nodeTypeRules([])).toEqual({ canEdit: true, canDelete: true, banner: null })
   })
   it('truncates long lists of versions in the banner', () => {
     const many = [1, 2, 3, 4, 5].map((v) => use({ version_id: v, version: v }))
-    expect(nodeTypeRules({ is_builtin: false }, many).banner).toContain('…')
+    expect(nodeTypeRules(many).banner).toContain('…')
   })
 })
 

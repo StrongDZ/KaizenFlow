@@ -23,7 +23,7 @@ const COLUMNS: Column<NodeType>[] = [
   { key: 'code', header: 'Mã', cell: (t) => <span className="text-muted">{t.code}</span>, sort: (t) => t.code },
   { key: 'arch', header: 'Loại', cell: (t) => <Tag>{ARCHETYPE_LABEL[t.archetype]}</Tag>, sort: (t) => t.archetype },
   { key: 'used', header: 'Dùng trong', cell: (t) => usedIn(t.used_in_versions), sort: (t) => t.used_in_versions ?? 0 },
-  { key: 'src', header: 'Nguồn gốc', cell: (t) => (t.is_builtin ? 'Có sẵn' : 'Tự tạo'), sort: (t) => (t.is_builtin ? 0 : 1) },
+  { key: 'src', header: 'Nguồn gốc', cell: (t) => (t.is_builtin ? 'Mẫu ban đầu' : 'Tự tạo'), sort: (t) => (t.is_builtin ? 0 : 1) },
 ]
 
 export default function NodeTypesPage() {

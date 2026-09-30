@@ -16,7 +16,7 @@ export default function NodeTypeEditPage() {
   const types = useQuery({ queryKey: ['node-types'], queryFn: api.nodeTypes })
   if (t.error) return <PageBody><ErrorBox error={t.error} /></PageBody>
   if (!t.data || !types.data) return <Loading />
-  const rules = nodeTypeRules(t.data, t.data.usage.versions)
+  const rules = nodeTypeRules(t.data.usage.versions)
   if (!rules.canEdit) {
     return (
       <PageBody>

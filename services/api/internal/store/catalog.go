@@ -17,7 +17,7 @@ type NodeType struct {
 	Signals       json.RawMessage `json:"signals"`
 	FailureModes  json.RawMessage `json:"failure_modes"`
 	UI            json.RawMessage `json:"ui"`
-	IsBuiltin     bool            `json:"is_builtin"`
+	IsBuiltin     bool            `json:"is_builtin"` // nạp từ bộ mẫu ban đầu; chỉ là nhãn nguồn gốc, không khoá gì
 }
 
 type Material struct {
@@ -314,12 +314,8 @@ func jsonOrNil(r json.RawMessage) any {
 func (s *Store) UpdateNodeType(ctx context.Context, code string, u NodeTypeUpdate) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
 		var id int64
-		var builtin bool
-		if err := tx.QueryRow(ctx, `SELECT id, is_builtin FROM node_type WHERE code = $1 FOR UPDATE`, code).Scan(&id, &builtin); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT id FROM node_type WHERE code = $1 FOR UPDATE`, code).Scan(&id); err != nil {
 			return notFound(err)
-		}
-		if builtin {
-			return &LockedError{Msg: "node type có sẵn chỉ đọc, hãy nhân bản để sửa"}
 		}
 		var frozen int
 		if err := tx.QueryRow(ctx, `SELECT count(DISTINCT v.id) FROM node n JOIN model_version v ON v.id = n.model_version_id
@@ -343,12 +339,8 @@ func (s *Store) UpdateNodeType(ctx context.Context, code string, u NodeTypeUpdat
 func (s *Store) DeleteNodeType(ctx context.Context, code string) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
 		var id int64
-		var builtin bool
-		if err := tx.QueryRow(ctx, `SELECT id, is_builtin FROM node_type WHERE code = $1 FOR UPDATE`, code).Scan(&id, &builtin); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT id FROM node_type WHERE code = $1 FOR UPDATE`, code).Scan(&id); err != nil {
 			return notFound(err)
-		}
-		if builtin {
-			return &LockedError{Msg: "node type có sẵn chỉ đọc nên không xoá được"}
 		}
 		usage, err := nodeTypeUsage(ctx, tx, code)
 		if err != nil {

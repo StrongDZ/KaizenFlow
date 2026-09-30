@@ -13,12 +13,18 @@ import (
 func TestNodeTypeWriteRules(t *testing.T) {
 	st := testfix.Seeded(t, "store_nt_write")
 	var lk *store.LockedError
-	// có sẵn: luôn chỉ đọc
-	if err := st.UpdateNodeType(ctx, "STAMP_PRESS", store.NodeTypeUpdate{Name: "X"}); !errors.As(err, &lk) {
-		t.Fatalf("builtin update: %v", err)
+	// mẫu ban đầu chỉ là dữ liệu nạp sẵn: chưa ai dùng thì sửa và xoá tự do như mọi loại khác
+	if err := st.UpdateNodeType(ctx, "STAMP_PRESS", store.NodeTypeUpdate{Name: "Máy dập của tôi"}); err != nil {
+		t.Fatalf("seeded update: %v", err)
 	}
-	if err := st.DeleteNodeType(ctx, "STAMP_PRESS"); !errors.As(err, &lk) {
-		t.Fatalf("builtin delete: %v", err)
+	if d, _ := st.GetNodeTypeDetail(ctx, "STAMP_PRESS"); d.Name != "Máy dập của tôi" {
+		t.Fatalf("seeded update lost: %q", d.Name)
+	}
+	if err := st.DeleteNodeType(ctx, "STAMP_PRESS"); err != nil {
+		t.Fatalf("seeded delete: %v", err)
+	}
+	if _, err := st.GetNodeTypeDetail(ctx, "STAMP_PRESS"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("seeded delete did not delete: %v", err)
 	}
 	if err := st.UpdateNodeType(ctx, "NOPE", store.NodeTypeUpdate{Name: "X"}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("unknown update: %v", err)
@@ -72,6 +78,26 @@ func TestNodeTypeWriteRules(t *testing.T) {
 	}
 	if _, err := st.GetNodeTypeDetail(ctx, "CUST_SINK"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("after delete: %v", err)
+	}
+}
+
+// Loại mẫu vẫn bị khoá đúng như loại tự tạo khi một phiên bản đã Publish đang dùng nó: lúc chạy, thông số mặc định của loại
+// được nạp trực tiếp từ DB, nên sửa loại sẽ làm kết quả cũ của mô hình đã Publish không còn khớp.
+func TestSeededTypeUsedByAPublishedVersionIsLocked(t *testing.T) {
+	st := testfix.Seeded(t, "store_nt_seeded_lock")
+	var lk *store.LockedError
+	vid := newModel(t, st, "use-seeded")
+	if err := st.ReplaceGraph(ctx, vid, []store.GraphNode{{Key: "K", NodeType: "SCRAP", Params: map[string]any{}}}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Publish(ctx, vid); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateNodeType(ctx, "SCRAP", store.NodeTypeUpdate{Name: "X"}); !errors.As(err, &lk) {
+		t.Fatalf("seeded type used by published version: update %v", err)
+	}
+	if err := st.DeleteNodeType(ctx, "SCRAP"); !errors.As(err, &lk) {
+		t.Fatalf("seeded type used by published version: delete %v", err)
 	}
 }
 

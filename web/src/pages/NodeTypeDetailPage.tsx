@@ -29,7 +29,7 @@ export default function NodeTypeDetailPage() {
   if (t.error) return <PageBody><Link className="text-xs text-muted hover:text-text" to="/library/node-types">Danh sách loại node</Link><ErrorBox error={t.error} /></PageBody>
   if (!t.data) return <Loading />
   const d = t.data
-  const rules = nodeTypeRules(d, d.usage.versions)
+  const rules = nodeTypeRules(d.usage.versions)
   return (
     <PageBody>
       <Link className="text-xs text-muted hover:text-text" to="/library/node-types">‹ Danh sách loại node</Link>
