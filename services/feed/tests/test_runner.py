@@ -84,6 +84,8 @@ def test_sink_failures_are_counted_not_fatal(runner, blueprint):
     n = len(runner.sink.batches)
     assert wait_for(lambda: len(runner.sink.batches) > n)
     assert runner.status()["state"] == "running"
+    assert runner.status()["last_error"] is None, "hết lỗi thì không được hiện lỗi cũ"
+    assert runner.status()["send_errors"] >= 2
 
 
 def test_incidents_go_through_the_runner_and_stop_resets(runner, blueprint):

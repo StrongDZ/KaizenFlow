@@ -125,6 +125,7 @@ class Runner:
         try:
             self.sink(msgs)
             self.sent += len(msgs)
+            self.last_error = None  # send_errors là số lần lỗi từ đầu; last_error chỉ hiện khi lần gửi gần nhất còn lỗi
         except Exception as exc:  # feed không được chết vì API tạm mất
             self.send_errors += 1
             self.last_error = f"{type(exc).__name__}: {exc}"

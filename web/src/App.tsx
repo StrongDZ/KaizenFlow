@@ -4,9 +4,11 @@ import { useLiveRuns } from './api/live'
 import { Shell } from './components/shell/Shell'
 import { shouldRetry } from './lib/retry'
 import ComparePage from './pages/ComparePage'
+import ConnectPage from './pages/ConnectPage'
 import ControlRoomPage from './pages/ControlRoomPage'
 import EditorPage from './pages/EditorPage'
 import LibraryLayout from './pages/LibraryLayout'
+import LivePage from './pages/LivePage'
 import MaterialDetailPage from './pages/MaterialDetailPage'
 import MaterialsPage from './pages/MaterialsPage'
 import ModelsPage from './pages/ModelsPage'
@@ -42,6 +44,8 @@ export default function App() {
             <Route path="/" element={<OverviewPage />} />
             <Route path="/models" element={<ModelsPage />} />
             <Route path="/models/:key/versions" element={<VersionsPage />} />
+            <Route path="/models/:key/connect" element={<ConnectPage />} />
+            <Route path="/models/:key/live" element={<LivePage />} />
             <Route path="/versions/:id" element={<EditorPage />} />
             <Route path="/versions/:id/scenarios" element={<ScenariosPage />} />
             <Route path="/versions/:id/scenarios/new" element={<ScenarioNewPage />} />

@@ -7,7 +7,7 @@ export function useNavCtx(path: string): NavCtx {
   const versionParam = path.match(/^\/versions\/(\d+)/)?.[1]
   const scenarioParam = path.match(/^\/scenarios\/(\d+)/)?.[1]
   const runParam = path.match(/^\/runs\/(\d+)/)?.[1]
-  const keyParam = path.match(/^\/models\/([^/]+)\/versions/)?.[1]
+  const keyParam = path.match(/^\/models\/([^/]+)\/(?:versions|live|connect|map)/)?.[1]
 
   const runId = runParam ? Number(runParam) : undefined
   const run = useQuery({ queryKey: ['run', runId], queryFn: () => api.run(runId!), enabled: runId !== undefined })

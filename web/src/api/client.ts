@@ -1,4 +1,5 @@
 import type {
+  AgvMap, Binding, BindingInput, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
   BandRow, EventRow, Graph, GraphEdge, GraphNode, InsightRow, Issue, Json, Material, MaterialDetail, MaterialUpdate, ModelSummary,
   NewMaterial, NewNodeType, NewScenario, NodeType, NodeTypeDetail, NodeTypeUpdate, Run, RunDetail, RunRow, Scenario, ScenarioBody, ScenarioRow,
   SignalRow, VersionInfo,
@@ -30,7 +31,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const text = await res.text()
   const body = text ? JSON.parse(text) : undefined
   if (!res.ok) {
-    throw new ApiError(res.status, body?.issues ?? [], body?.error ?? res.statusText, {
+    throw new ApiError(res.status, body?.issues ?? [], body?.error ?? (typeof body?.detail === 'string' ? body.detail : undefined) ?? res.statusText, {
       impact: body?.impact, locked: body?.locked === true,
     })
   }
@@ -91,4 +92,29 @@ export const api = {
   updateMaterial: (code: string, body: MaterialUpdate) => put<void>(`/api/materials/${encodeURIComponent(code)}`, body),
   deleteMaterial: (code: string) => del(`/api/materials/${encodeURIComponent(code)}`),
   exportUrl: (id: number) => `${API_BASE}/api/runs/${id}/export.csv`,
+
+  // --- live twin ---
+  live: (key: string) => req<LiveSnapshot>(`/api/models/${encodeURIComponent(key)}/live`),
+  clearLive: (key: string) => del(`/api/models/${encodeURIComponent(key)}/live`),
+  liveSubjects: (key: string) => req<Subjects>(`/api/models/${encodeURIComponent(key)}/live/subjects`),
+  liveSignals: (key: string, q: { subject?: string; name?: string; since?: string; limit?: number } = {}) =>
+    req<SignalRow[]>(`/api/models/${encodeURIComponent(key)}/live/signals${qs({ subject: q.subject, name: q.name, since: q.since, limit: q.limit?.toString() })}`),
+  bindings: (key: string) => req<Binding[]>(`/api/models/${encodeURIComponent(key)}/bindings`),
+  saveBindings: (key: string, bindings: BindingInput[]) =>
+    put<{ bindings: Binding[] }>(`/api/models/${encodeURIComponent(key)}/bindings`, { bindings }),
+  deleteBinding: (key: string, id: number) => del(`/api/models/${encodeURIComponent(key)}/bindings/${id}`),
+  deleteAllBindings: (key: string) => del(`/api/models/${encodeURIComponent(key)}/bindings`),
+  agvMap: (key: string) => req<AgvMap>(`/api/models/${encodeURIComponent(key)}/agv-map`),
+  saveAgvMap: (key: string, map: AgvMap) => put<void>(`/api/models/${encodeURIComponent(key)}/agv-map`, map),
+  feed: {
+    status: () => req<FeedStatus>('/api/feed/status'),
+    start: (model: string, speed: number) => post<FeedStatus>('/api/feed/start', { model, speed }),
+    pause: () => post<FeedStatus>('/api/feed/pause'),
+    resume: () => post<FeedStatus>('/api/feed/resume'),
+    speed: (speed: number) => post<FeedStatus>('/api/feed/speed', { speed }),
+    stop: () => post<FeedStatus>('/api/feed/stop'),
+    reset: (model: string) => post<FeedStatus>('/api/feed/reset', { model }),
+    addIncident: (body: IncidentInput) => post<Incident>('/api/feed/incidents', body),
+    clearIncident: (id: number) => del(`/api/feed/incidents/${id}`),
+  },
 }

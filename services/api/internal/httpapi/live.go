@@ -102,6 +102,8 @@ type subjectView struct {
 	Archetype string           `json:"archetype,omitempty"`
 	Material  string           `json:"material,omitempty"`
 	Mode      string           `json:"mode,omitempty"`
+	Src       string           `json:"src,omitempty"`
+	Dst       string           `json:"dst,omitempty"`
 	Signals   []live.SignalDef `json:"signals"`
 }
 
@@ -122,6 +124,7 @@ func (h *handlers) liveSubjects(w http.ResponseWriter, r *http.Request) {
 
 func subjectsOf(g *store.Graph, types map[string]store.NodeType) ([]subjectView, error) {
 	subs := make([]subjectView, 0, len(g.Nodes)+len(g.Edges))
+	names := map[string]string{}
 	for _, n := range g.Nodes {
 		t, ok := types[n.NodeType]
 		if !ok {
@@ -135,6 +138,7 @@ func subjectsOf(g *store.Graph, types map[string]store.NodeType) ([]subjectView,
 		if name == "" {
 			name = t.Name
 		}
+		names[n.Key] = name
 		defs := live.SignalsFor(t.Archetype, params)
 		if defs == nil {
 			defs = []live.SignalDef{}
@@ -143,8 +147,14 @@ func subjectsOf(g *store.Graph, types map[string]store.NodeType) ([]subjectView,
 	}
 	for _, e := range g.Edges {
 		mode, _ := e.Params["mode"].(string)
-		subs = append(subs, subjectView{Subject: e.Key, Kind: "edge", Name: e.Src + " → " + e.Dst, Material: e.Material, Mode: mode,
-			Signals: live.EdgeSignals(mode)})
+		label := func(key string) string {
+			if n, ok := names[key]; ok {
+				return n
+			}
+			return key
+		}
+		subs = append(subs, subjectView{Subject: e.Key, Kind: "edge", Name: label(e.Src) + " → " + label(e.Dst), Material: e.Material,
+			Mode: mode, Src: e.Src, Dst: e.Dst, Signals: live.EdgeSignals(mode)})
 	}
 	return subs, nil
 }

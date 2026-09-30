@@ -17,7 +17,7 @@ export function sectionOf(path: string): Section {
   return 'overview'
 }
 
-const inModelWorkspace = (path: string) => /^\/(versions|scenarios)\//.test(path) || /^\/models\/[^/]+\/versions/.test(path)
+const inModelWorkspace = (path: string) => /^\/(versions|scenarios)\//.test(path) || /^\/models\/[^/]+\/(versions|live|connect|map)/.test(path)
 
 export function tabsFor(path: string, ctx: NavCtx): Tab[] {
   const run = path.match(/^\/runs\/(\d+)/)
@@ -40,7 +40,15 @@ export function tabsFor(path: string, ctx: NavCtx): Tab[] {
       { label: 'Lần chạy', to: `/versions/${vid}/runs` },
     )
   }
-  if (ctx.modelKey) tabs.push({ label: 'Phiên bản', to: `/models/${encodeURIComponent(ctx.modelKey)}/versions` })
+  if (ctx.modelKey) {
+    const base = `/models/${encodeURIComponent(ctx.modelKey)}`
+    tabs.push(
+      { label: 'Phiên bản', to: `${base}/versions` },
+      { label: 'Trực tiếp', to: `${base}/live` },
+      { label: 'Kết nối dữ liệu', to: `${base}/connect` },
+      { label: 'Bản đồ AGV', to: `${base}/map` },
+    )
+  }
   return tabs
 }
 
@@ -59,6 +67,11 @@ export function crumbsFor(path: string, ctx: NavCtx): Crumb[] {
   if (path === '/models') return [{ label: 'Mô hình' }]
   if (/^\/models\/[^/]+\/versions/.test(path)) {
     return [{ label: 'Mô hình', to: '/models' }, { label: model ?? '…' }, { label: 'Phiên bản' }]
+  }
+  const live = path.match(/^\/models\/[^/]+\/(live|connect|map)/)
+  if (live) {
+    const label = { live: 'Trực tiếp', connect: 'Kết nối dữ liệu', map: 'Bản đồ AGV' }[live[1] as 'live' | 'connect' | 'map']
+    return [{ label: 'Mô hình', to: '/models' }, { label: model ?? '…', to: modelTo }, { label }]
   }
   if (/^\/(versions|scenarios)\//.test(path)) {
     const out: Crumb[] = [{ label: 'Mô hình', to: '/models' }, { label: model ?? '…', to: modelTo }]

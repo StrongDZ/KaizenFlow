@@ -1,7 +1,7 @@
 import * as Popover from '@radix-ui/react-popover'
 import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react'
-import { useEffect, useRef } from 'react'
-import type { FlowNode } from '../lib/graph'
+import { createContext, useContext, useEffect, useRef } from 'react'
+import type { Badge, FlowNode } from '../lib/graph'
 import { NodeIcon } from './nodeIcons'
 import { pinClass } from './PinDot'
 
@@ -17,7 +17,14 @@ const NODE_TONE: Record<string, string> = {
   RED: 'border-bad bg-bad-bg', YELLOW: 'border-warn/60', GREEN: 'border-line-2', INFO: 'border-line-2', NONE: 'border-line-2',
 }
 
+/**
+ * Nhãn do trang cấp qua context thay vì node.data. Màn Trực tiếp đổi nhãn mỗi 0,4 giây: nếu tạo lại object node mỗi lần
+ * thì React Flow mất kích thước đã đo và node không bao giờ hiện.
+ */
+export const LiveBadgeContext = createContext<Map<string, Badge | undefined> | null>(null)
+
 export function KfNode({ id, data, selected }: NodeProps<FlowNode>) {
+  const live = useContext(LiveBadgeContext)
   const dir = data.dir ?? 'LR'
   const updateInternals = useUpdateNodeInternals()
   // React Flow đo vị trí cổng một lần; đổi hướng thì phải đo lại (lúc mount thì không, để khỏi làm rối fitView ban đầu).
@@ -30,7 +37,7 @@ export function KfNode({ id, data, selected }: NodeProps<FlowNode>) {
   const inSide = dir === 'TB' ? Position.Top : Position.Left
   const outSide = dir === 'TB' ? Position.Bottom : Position.Right
   const pool = data.archetype === 'RESOURCE_POOL'
-  const badge = data.badge
+  const badge = live ? live.get(id) : data.badge
   const tone = data.issue ? 'border-bad' : NODE_TONE[badge?.color ?? 'NONE']
   return (
     <div className={`relative min-w-[132px] rounded-lg border bg-panel px-2.5 py-2 ${tone} ${pool ? 'border-dashed' : ''} ${selected ? 'ring-2 ring-text/60' : ''}`}>
