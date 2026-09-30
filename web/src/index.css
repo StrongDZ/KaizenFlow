@@ -22,6 +22,12 @@
   --color-lock-line: #7a6021;
   --color-lock-bg: #221d10;
   --color-lock-text: #e9d9a6;
+  /* Nút: accent xanh dương cho hành động chính, ok xanh lá cho đưa vào dùng, warn cho thao tác gây rối cố ý của demo. */
+  --color-accent: #5aa2ff;
+  --color-on-accent: #0b1220;
+  --color-ok-solid: #3dbe7a;
+  --color-on-ok: #0b1a12;
+  --color-on-warn: #1a2233;
 }
 
 [data-theme='light'] {
@@ -38,11 +44,16 @@
   --color-ok: #1f9d5b;
   --color-warn: #e0a100;
   --color-bad: #d33a2c;
-  --color-bad-text: #d33a2c;
+  --color-bad-text: #bf2e20;
   --color-bad-bg: #fbe9e7;
   --color-lock-line: #c9a227;
   --color-lock-bg: #fff6da;
   --color-lock-text: #6b5310;
+  --color-accent: #1d5fd1;
+  --color-on-accent: #ffffff;
+  --color-ok-solid: #167a45;
+  --color-on-ok: #ffffff;
+  --color-on-warn: #1a2233;
 }
 
 /* Bản in luôn ra giấy trắng, kể cả khi đang ở trang tối. */
@@ -63,6 +74,11 @@
     --color-bad: #d33a2c;
     --color-bad-text: #d33a2c;
     --color-bad-bg: #fbe9e7;
+    --color-accent: #1d5fd1;
+    --color-on-accent: #ffffff;
+    --color-ok-solid: #167a45;
+    --color-on-ok: #ffffff;
+    --color-on-warn: #1a2233;
     color-scheme: light;
   }
 }

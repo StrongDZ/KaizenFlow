@@ -5,5 +5,5 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  test: { environment: 'node' },
+  test: { environment: 'node', css: { include: [/index\.css/] } },
 })
