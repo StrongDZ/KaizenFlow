@@ -3,20 +3,20 @@ package validate
 
 import (
 	"encoding/json"
-	"fmt"
-	"sort"
 	"strings"
 	"sync"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	"github.com/kaizenflow/api/internal/resolve"
 	"github.com/kaizenflow/api/internal/store"
 )
 
+// Issue là một phát hiện khi kiểm tra. Severity rỗng nghĩa là lỗi (các nơi tạo Issue thủ công không cần điền).
 type Issue struct {
-	Key     string `json:"key"`
-	Message string `json:"message"`
+	Key      string `json:"key"`
+	Message  string `json:"message"`
+	Severity string `json:"severity,omitempty"`
+	Code     string `json:"code,omitempty"`
 }
 
 type Validator struct {
@@ -108,90 +108,14 @@ func firstLine(err error) string {
 	return lines[0]
 }
 
+// Graph trả các lỗi (mức error) của đồ thị; dùng khi Publish. Cảnh báo và thông số nội suy nằm ở Check.
 func (v *Validator) Graph(g *store.Graph, types map[string]store.NodeType) []Issue {
 	var out []Issue
-	add := func(key, format string, a ...any) { out = append(out, Issue{key, fmt.Sprintf(format, a...)}) }
-	arche := map[string]string{}
-	merged := map[string]map[string]any{}
-	sources, sinks := 0, 0
-	for _, n := range g.Nodes {
-		t, ok := types[n.NodeType]
-		if !ok {
-			add(n.Key, "unknown node type '%s'", n.NodeType)
-			continue
-		}
-		arche[n.Key] = t.Archetype
-		p, err := resolve.MergeNodeParams(t, n)
-		if err != nil {
-			add(n.Key, "params: %v", err)
-			continue
-		}
-		merged[n.Key] = p
-		if s, err := v.schema(t); err != nil {
-			add(n.Key, "schema: %v", err)
-		} else if err := s.Validate(p); err != nil {
-			add(n.Key, "params: %s", firstLine(err))
-		}
-		switch t.Archetype {
-		case "SOURCE":
-			sources++
-		case "SINK":
-			sinks++
+	for _, i := range v.Check(CheckInput{Graph: g, Types: types}).Issues {
+		if i.Severity == SevError {
+			out = append(out, i)
 		}
 	}
-	if sources == 0 {
-		add("model", "needs at least one SOURCE")
-	}
-	if sinks == 0 {
-		add("model", "needs at least one SINK")
-	}
-	supplied := map[string]bool{}
-	adj := map[string][]string{}
-	for _, e := range g.Edges {
-		if arche[e.Src] == "RESOURCE_POOL" || arche[e.Dst] == "RESOURCE_POOL" {
-			add(e.Key, "edges cannot connect a RESOURCE_POOL")
-			continue
-		}
-		if e.Material == "" {
-			add(e.Key, "edge needs a material")
-		}
-		supplied[e.Dst+"|"+e.Material] = true
-		if mode, _ := e.Params["mode"].(string); mode == "POOL" {
-			if pk, _ := e.Params["pool"].(string); arche[pk] != "RESOURCE_POOL" {
-				add(e.Key, "pool '%v' is not a RESOURCE_POOL node", e.Params["pool"])
-			}
-		}
-		if hk, ok := e.Params["hook_pool"].(string); ok && hk != "" {
-			if arche[hk] != "RESOURCE_POOL" || merged[hk]["kind"] != "OPERATOR" {
-				add(e.Key, "hook_pool '%s' must be an OPERATOR pool", hk)
-			}
-		}
-		if arche[e.Src] != "STORAGE" && arche[e.Dst] != "STORAGE" {
-			adj[e.Src] = append(adj[e.Src], e.Dst)
-		}
-	}
-	for _, n := range g.Nodes {
-		if arche[n.Key] != "PROCESS" {
-			continue
-		}
-		recipes, _ := merged[n.Key]["recipes"].([]any)
-		if len(recipes) == 0 {
-			continue
-		}
-		r0, _ := recipes[0].(map[string]any)
-		inputs, _ := r0["inputs"].([]any)
-		for _, raw := range inputs {
-			in, _ := raw.(map[string]any)
-			m, _ := in["material"].(string)
-			if !supplied[n.Key+"|"+m] {
-				add(n.Key, "input '%s' has no supplying edge", m)
-			}
-		}
-	}
-	if k := findCycle(g.Nodes, adj); k != "" {
-		add(k, "cycle without a STORAGE node")
-	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out
 }
 
