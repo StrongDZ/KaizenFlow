@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { crumbsFor, isTabActive, sectionOf, switchVersionPath, tabsFor } from './nav'
+import { crumbsFor, groupTabs, isTabActive, sectionOf, switchVersionPath, tabsFor } from './nav'
 
 describe('sectionOf', () => {
   it('maps paths to rail sections', () => {
@@ -20,11 +20,19 @@ describe('sectionOf', () => {
 describe('tabsFor', () => {
   it('gives the model workspace tabs', () => {
     const tabs = tabsFor('/versions/7', { modelKey: 'm', versionId: 7 })
-    expect(tabs.map((t) => t.label)).toEqual(['Sơ đồ', 'Scenario', 'Lần chạy', 'Phiên bản', 'Trực tiếp', 'Nguồn dữ liệu', 'Kết nối dữ liệu', 'Bản đồ AGV'])
+    expect(tabs.map((t) => t.label)).toEqual(['Sơ đồ', 'Phiên bản', 'Scenario', 'Lần chạy', 'Trực tiếp', 'Nguồn dữ liệu', 'Kết nối dữ liệu', 'Bản đồ AGV'])
     expect(tabs.map((t) => t.to)).toEqual([
-      '/versions/7', '/versions/7/scenarios', '/versions/7/runs', '/models/m/versions',
+      '/versions/7', '/models/m/versions', '/versions/7/scenarios', '/versions/7/runs',
       '/models/m/live', '/models/m/sources', '/models/m/connect', '/models/m/map',
     ])
+  })
+
+  it('gom tab thành ba nhóm liền nhau: Thiết kế, Mô phỏng, Vận hành thật', () => {
+    const tabs = tabsFor('/versions/7', { modelKey: 'm', versionId: 7 })
+    expect(tabs.map((t) => t.group)).toEqual(['Thiết kế', 'Thiết kế', 'Mô phỏng', 'Mô phỏng', 'Vận hành thật', 'Vận hành thật', 'Vận hành thật', 'Vận hành thật'])
+    expect(groupTabs(tabs).map((g) => [g.title, g.tabs.length])).toEqual([['Thiết kế', 2], ['Mô phỏng', 2], ['Vận hành thật', 4]])
+    // tab của lần chạy không có nhóm: một nhóm không tên
+    expect(groupTabs(tabsFor('/runs/12', {})).map((g) => g.title)).toEqual([undefined])
   })
 
   it('opens the latest version from the versions page', () => {
@@ -53,7 +61,7 @@ describe('tabsFor', () => {
   })
 
   it('encodes model keys in the versions link', () => {
-    expect(tabsFor('/versions/1', { modelKey: 'a b', versionId: 1 })[3].to).toBe('/models/a%20b/versions')
+    expect(tabsFor('/versions/1', { modelKey: 'a b', versionId: 1 })[1].to).toBe('/models/a%20b/versions')
     expect(tabsFor('/versions/1', { modelKey: 'a b', versionId: 1 })[4].to).toBe('/models/a%20b/live')
   })
 })
@@ -63,9 +71,9 @@ describe('isTabActive', () => {
   it('keeps the diagram tab exact and scenario tab broad', () => {
     expect(isTabActive(tabs[0], '/versions/7')).toBe(true)
     expect(isTabActive(tabs[0], '/versions/7/scenarios')).toBe(false)
-    expect(isTabActive(tabs[1], '/versions/7/scenarios/new')).toBe(true)
-    expect(isTabActive(tabs[1], '/scenarios/5')).toBe(true)
-    expect(isTabActive(tabs[1], '/versions/7')).toBe(false)
+    expect(isTabActive(tabs[2], '/versions/7/scenarios/new')).toBe(true)
+    expect(isTabActive(tabs[2], '/scenarios/5')).toBe(true)
+    expect(isTabActive(tabs[2], '/versions/7')).toBe(false)
   })
 })
 

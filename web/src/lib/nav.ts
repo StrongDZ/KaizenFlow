@@ -1,6 +1,6 @@
 export type Section = 'overview' | 'models' | 'runs' | 'alerts' | 'library'
 export type Crumb = { label: string; to?: string; picker?: boolean }
-export type Tab = { label: string; to: string; end?: boolean; also?: string[] }
+export type Tab = { label: string; to: string; end?: boolean; also?: string[]; group?: string }
 export type NavCtx = {
   modelKey?: string
   version?: number
@@ -32,26 +32,40 @@ export function tabsFor(path: string, ctx: NavCtx): Tab[] {
     ]
   }
   if (!inModelWorkspace(path)) return []
-  const tabs: Tab[] = []
+  // Ba nhóm theo việc người dùng đang làm: dựng mô hình, chạy thử trên mô phỏng, vận hành với dữ liệu thật.
+  const design: Tab[] = []
+  const simulate: Tab[] = []
+  const operate: Tab[] = []
   const vid = ctx.versionId ?? ctx.latestVersionId
+  const base = ctx.modelKey ? `/models/${encodeURIComponent(ctx.modelKey)}` : undefined
+  if (vid !== undefined) design.push({ label: 'Sơ đồ', to: `/versions/${vid}`, end: true, group: 'Thiết kế' })
+  if (base) design.push({ label: 'Phiên bản', to: `${base}/versions`, group: 'Thiết kế' })
   if (vid !== undefined) {
-    tabs.push(
-      { label: 'Sơ đồ', to: `/versions/${vid}`, end: true },
-      { label: 'Scenario', to: `/versions/${vid}/scenarios`, also: ['/scenarios/'] },
-      { label: 'Lần chạy', to: `/versions/${vid}/runs` },
+    simulate.push(
+      { label: 'Scenario', to: `/versions/${vid}/scenarios`, also: ['/scenarios/'], group: 'Mô phỏng' },
+      { label: 'Lần chạy', to: `/versions/${vid}/runs`, group: 'Mô phỏng' },
     )
   }
-  if (ctx.modelKey) {
-    const base = `/models/${encodeURIComponent(ctx.modelKey)}`
-    tabs.push(
-      { label: 'Phiên bản', to: `${base}/versions` },
-      { label: 'Trực tiếp', to: `${base}/live` },
-      { label: 'Nguồn dữ liệu', to: `${base}/sources` },
-      { label: 'Kết nối dữ liệu', to: `${base}/connect` },
-      { label: 'Bản đồ AGV', to: `${base}/map` },
+  if (base) {
+    operate.push(
+      { label: 'Trực tiếp', to: `${base}/live`, group: 'Vận hành thật' },
+      { label: 'Nguồn dữ liệu', to: `${base}/sources`, group: 'Vận hành thật' },
+      { label: 'Kết nối dữ liệu', to: `${base}/connect`, group: 'Vận hành thật' },
+      { label: 'Bản đồ AGV', to: `${base}/map`, group: 'Vận hành thật' },
     )
   }
-  return tabs
+  return [...design, ...simulate, ...operate]
+}
+
+/** Tab liền nhau cùng nhóm thì gộp lại (để vẽ chung một khung và một nhãn nhóm). Tab không có nhóm thành một nhóm không tên. */
+export function groupTabs(tabs: Tab[]): { title: string | undefined; tabs: Tab[] }[] {
+  const out: { title: string | undefined; tabs: Tab[] }[] = []
+  for (const t of tabs) {
+    const last = out[out.length - 1]
+    if (last && last.title === t.group) last.tabs.push(t)
+    else out.push({ title: t.group, tabs: [t] })
+  }
+  return out
 }
 
 export function isTabActive(tab: Tab, path: string): boolean {

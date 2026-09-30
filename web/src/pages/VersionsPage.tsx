@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { VersionInfo } from '../api/types'
 import { DeleteAction } from '../components/DeleteAction'
+import { SetupChecklist } from '../components/SetupChecklist'
 import { DataTable, type Column } from '../components/table/DataTable'
 import { EmptyState, ErrorBox, Loading, PageBody, PageHeader, Tag, btn, btnOkOutline } from '../components/ui'
 import { fmtDateTime, versionStatusLabel } from '../lib/format'
@@ -43,6 +44,7 @@ export default function VersionsPage() {
   return (
     <PageBody>
       <PageHeader title="Phiên bản" subtitle={key} />
+      <SetupChecklist model={key} versions={versions.data ?? []} />
       <ErrorBox error={versions.error ?? clone.error ?? publish.error} />
       <DataTable
         rows={rows}

@@ -5,7 +5,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { useNavCtx } from '../../hooks/useNavCtx'
 import { useTheme } from '../../hooks/useTheme'
 import { versionStatusLabel } from '../../lib/format'
-import { crumbsFor, isTabActive, switchVersionPath, tabsFor, type NavCtx } from '../../lib/nav'
+import { crumbsFor, groupTabs, isTabActive, switchVersionPath, tabsFor, type NavCtx } from '../../lib/nav'
 
 function VersionPicker({ label, ctx, path }: { label: string; ctx: NavCtx; path: string }) {
   const versions = ctx.versions ?? []
@@ -74,16 +74,24 @@ export function Header({ actionsRef }: { actionsRef: (el: HTMLDivElement | null)
           ))}
         </nav>
       </div>
-      <nav aria-label="Tab của object" className="flex gap-0.5 rounded-lg bg-panel p-[3px]">
-        {tabs.map((t) => (
-          <Link
-            key={t.to}
-            to={t.to}
-            aria-current={isTabActive(t, pathname) ? 'page' : undefined}
-            className={`rounded-md px-3 py-1 text-xs font-medium ${isTabActive(t, pathname) ? 'bg-text text-bg' : 'text-muted hover:text-text'}`}
-          >
-            {t.label}
-          </Link>
+      <nav aria-label="Tab của object" className="flex items-center gap-2">
+        {groupTabs(tabs).map((g, gi) => (
+          <div key={g.title ?? gi} role="group" aria-label={g.title} className="flex items-center gap-1.5">
+            {g.title && <span className="hidden text-[10px] text-faint 2xl:inline">{g.title}</span>}
+            <div className="flex gap-0.5 rounded-lg bg-panel p-[3px]">
+              {g.tabs.map((t) => (
+                <Link
+                  key={t.to}
+                  to={t.to}
+                  title={g.title ? `${g.title}: ${t.label}` : undefined}
+                  aria-current={isTabActive(t, pathname) ? 'page' : undefined}
+                  className={`rounded-md px-3 py-1 text-xs font-medium ${isTabActive(t, pathname) ? 'bg-text text-bg' : 'text-muted hover:text-text'}`}
+                >
+                  {t.label}
+                </Link>
+              ))}
+            </div>
+          </div>
         ))}
       </nav>
       <div className="flex items-center justify-end gap-2">
