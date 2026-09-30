@@ -1,5 +1,6 @@
 import * as Popover from '@radix-ui/react-popover'
-import { Handle, Position, type NodeProps } from '@xyflow/react'
+import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react'
+import { useEffect, useRef } from 'react'
 import type { FlowNode } from '../lib/graph'
 import { pinClass } from './PinDot'
 
@@ -15,13 +16,24 @@ const NODE_TONE: Record<string, string> = {
   RED: 'border-bad bg-bad-bg', YELLOW: 'border-warn/60', GREEN: 'border-line-2', INFO: 'border-line-2', NONE: 'border-line-2',
 }
 
-export function KfNode({ data, selected }: NodeProps<FlowNode>) {
+export function KfNode({ id, data, selected }: NodeProps<FlowNode>) {
+  const dir = data.dir ?? 'LR'
+  const updateInternals = useUpdateNodeInternals()
+  // React Flow đo vị trí cổng một lần; đổi hướng thì phải đo lại (lúc mount thì không, để khỏi làm rối fitView ban đầu).
+  const shown = useRef(dir)
+  useEffect(() => {
+    if (shown.current === dir) return
+    shown.current = dir
+    updateInternals(id)
+  }, [id, dir, updateInternals])
+  const inSide = dir === 'TB' ? Position.Top : Position.Left
+  const outSide = dir === 'TB' ? Position.Bottom : Position.Right
   const pool = data.archetype === 'RESOURCE_POOL'
   const badge = data.badge
   const tone = data.issue ? 'border-bad' : NODE_TONE[badge?.color ?? 'NONE']
   return (
     <div className={`relative min-w-[132px] rounded-lg border bg-panel px-2.5 py-2 ${tone} ${pool ? 'border-dashed' : ''} ${selected ? 'ring-2 ring-text/60' : ''}`}>
-      {!pool && data.archetype !== 'SOURCE' && <Handle type="target" position={Position.Left} />}
+      {!pool && data.archetype !== 'SOURCE' && <Handle type="target" position={inSide} />}
       <div className="text-[10px] text-muted">{ARCHETYPE_LABEL[data.archetype] ?? data.archetype}</div>
       <div className="text-xs font-semibold leading-tight text-text">{data.name}</div>
       <div className="text-[10px] text-faint">{data.key}</div>
@@ -29,7 +41,7 @@ export function KfNode({ data, selected }: NodeProps<FlowNode>) {
         <div className={`mt-1 text-[11px] font-semibold ${BADGE_TEXT[badge.color]}`}>{badge.text}</div>
       )}
       {data.issue && <div className="mt-1 max-w-[200px] text-[11px] text-bad-text">{data.issue}</div>}
-      {!pool && data.archetype !== 'SINK' && <Handle type="source" position={Position.Right} />}
+      {!pool && data.archetype !== 'SINK' && <Handle type="source" position={outSide} />}
       {data.pins && data.pins.length > 0 && (
         <div className="absolute -top-2.5 right-1 flex gap-1">
           {data.pins.map((p) => (

@@ -29,6 +29,19 @@ describe('graph conversion', () => {
     expect(back.edges[0]).toEqual(graph.edges[0])
   })
 
+  it('tells every node which way the diagram runs, from where the nodes sit', () => {
+    const vertical: Graph = {
+      ...graph,
+      nodes: [
+        { ...graph.nodes[0], canvas_pos: { x: 0, y: 0 } },
+        { ...graph.nodes[1], canvas_pos: { x: 5, y: 200 } },
+      ],
+    }
+    expect(toFlow(vertical, types).nodes.map((n) => n.data.dir)).toEqual(['TB', 'TB'])
+    const horizontal: Graph = { ...vertical, nodes: [vertical.nodes[0], { ...vertical.nodes[1], canvas_pos: { x: 300, y: 5 } }] }
+    expect(toFlow(horizontal, types).nodes.map((n) => n.data.dir)).toEqual(['LR', 'LR'])
+  })
+
   it('makes unique keys', () => {
     expect(newNodeKey(['STAMP_PRESS_1'], 'STAMP_PRESS')).toBe('STAMP_PRESS_2')
     expect(newNodeKey([], 'AOI')).toBe('AOI_1')

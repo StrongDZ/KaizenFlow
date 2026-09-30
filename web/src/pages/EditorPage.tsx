@@ -7,6 +7,7 @@ import {
   type Connection, type EdgeChange, type NodeChange,
 } from '@xyflow/react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type DragEvent } from 'react'
+import { MoveHorizontal, MoveVertical, Undo2 } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Graph, Issue, Json, NodeType } from '../api/types'
@@ -19,11 +20,14 @@ import { ErrorBox, Loading, btn, btnPrimary, input, issuesOf } from '../componen
 import { edgeSchema, edgeToForm, formToEdge, type EdgeForm } from '../lib/edgeForm'
 import { versionStatusLabel } from '../lib/format'
 import { defaultMaterial, edgeKey, edgeLabel, fromFlow, isEdit, newNodeKey, toFlow, type FlowEdge, type FlowNode } from '../lib/graph'
+import { autoLayout, type Dir, type Pos } from '../lib/layout'
 import { byCode, poolKind } from '../lib/model'
 import { isTypingTarget } from '../lib/playback'
 
 const DRAG_TYPE = 'application/kf-node-type'
 const noSubmit = { 'ui:submitButtonOptions': { norender: true } }
+/** Chừa chỗ cho panel trái, thanh sắp xếp ở trên và cụm nút thu phóng ở giữa dưới (cao ~100px). */
+const FIT_PADDING = { top: '56px', right: '24px', bottom: '112px', left: '252px' } as const
 
 /**
  * @rjsf gọi onChange ngay trong componentDidMount để điền giá trị mặc định, trước mọi thao tác của người dùng
@@ -58,11 +62,13 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
   const [selected, setSelected] = useState<{ kind: 'node' | 'edge'; id: string } | null>(null)
   const [issues, setIssues] = useState<Issue[]>([])
   const [dirty, setDirty] = useState(false)
+  const [dir, setDir] = useState<Dir>(initial.nodes[0]?.data.dir ?? 'LR')
+  const [undo, setUndo] = useState<{ pos: Record<string, Pos>; dir: Dir } | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(true)
   const readOnly = graph.status !== 'DRAFT'
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const { screenToFlowPosition } = useReactFlow()
+  const { screenToFlowPosition, fitView } = useReactFlow()
   const { focus, setFocus } = useShell()
   const { theme } = useTheme()
 
@@ -110,12 +116,34 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
 
   const decorated = useMemo(() => nodes.map((n) => {
     const issue = issues.find((i) => i.key === n.id)?.message
-    return issue === n.data.issue ? n : { ...n, data: { ...n.data, issue } }
-  }), [nodes, issues])
+    return issue === n.data.issue && dir === n.data.dir ? n : { ...n, data: { ...n.data, issue, dir } }
+  }), [nodes, issues, dir])
   const decoratedEdges = useMemo(() => edges.map((e) => {
     const bad = issues.some((i) => i.key === e.id)
     return { ...e, style: bad ? { stroke: 'var(--color-bad)', strokeWidth: 2 } : undefined }
   }), [edges, issues])
+
+  const refit = () => requestAnimationFrame(() => void fitView({ padding: FIT_PADDING, duration: 300 }))
+  const arrange = (d: Dir) => {
+    if (readOnly || nodes.length === 0) return
+    const pos = autoLayout(
+      nodes.map((n) => ({ id: n.id, w: n.measured?.width ?? 160, h: n.measured?.height ?? 72, pool: n.data.archetype === 'RESOURCE_POOL' })),
+      edges.map((e) => ({ source: e.source, target: e.target })),
+      d,
+    )
+    setUndo({ pos: Object.fromEntries(nodes.map((n) => [n.id, n.position])), dir })
+    setNodes((ns) => ns.map((n) => ({ ...n, position: pos[n.id] ?? n.position })))
+    setDir(d)
+    setDirty(true)
+    refit()
+  }
+  const undoArrange = () => {
+    if (!undo) return
+    setNodes((ns) => ns.map((n) => ({ ...n, position: undo.pos[n.id] ?? n.position })))
+    setDir(undo.dir)
+    setUndo(null)
+    refit()
+  }
 
   const body = () => fromFlow(nodes, edges)
   const done = () => {
@@ -187,13 +215,31 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
         onNodeClick={(_, n) => setSelected({ kind: 'node', id: n.id })}
         onEdgeClick={(_, e) => setSelected({ kind: 'edge', id: e.id })}
         onPaneClick={() => setSelected(null)}
-        fitView fitViewOptions={{ padding: { top: '24px', right: '24px', bottom: '64px', left: '252px' } }}
+        fitView fitViewOptions={{ padding: FIT_PADDING }}
       >
         <Background gap={18} size={1} color="var(--color-line)" />
         <Controls position="bottom-center" />
       </ReactFlow>
 
-      {error && <div className="absolute left-1/2 top-3 z-20 w-[420px] -translate-x-1/2"><ErrorBox error={error} /></div>}
+      {!focus && (
+        <div role="toolbar" aria-label="Sắp xếp sơ đồ" className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 gap-1 rounded-lg border border-line bg-panel p-1 shadow-lg">
+          <button className={`${btn} inline-flex items-center gap-1`} disabled={readOnly} onClick={() => arrange('LR')}
+            title={readOnly ? 'Phiên bản đã Publish: tạo bản sửa để sắp xếp' : 'Xếp các node từ trái sang phải'}>
+            <MoveHorizontal size={13} />Xếp ngang
+          </button>
+          <button className={`${btn} inline-flex items-center gap-1`} disabled={readOnly} onClick={() => arrange('TB')}
+            title={readOnly ? 'Phiên bản đã Publish: tạo bản sửa để sắp xếp' : 'Xếp các node từ trên xuống dưới'}>
+            <MoveVertical size={13} />Xếp dọc
+          </button>
+          {undo && (
+            <button className={`${btn} inline-flex items-center gap-1`} onClick={undoArrange} title="Trả các node về vị trí trước khi sắp xếp">
+              <Undo2 size={13} />Hoàn tác
+            </button>
+          )}
+        </div>
+      )}
+
+      {error && <div className="absolute left-1/2 top-14 z-20 w-[420px] -translate-x-1/2"><ErrorBox error={error} /></div>}
 
       {!focus && paletteOpen && (
         <FloatingPanel side="left" width={220} title="Loại node" onClose={() => setPaletteOpen(false)}>

@@ -1,6 +1,7 @@
 import type { Edge, EdgeChange, Node, NodeChange } from '@xyflow/react'
 import type { ReactNode } from 'react'
 import type { Graph, GraphEdge, GraphNode, Json, NodeType } from '../api/types'
+import { inferDir, type Dir } from './layout'
 import type { PinTone } from './pins'
 
 export type Color = 'GREEN' | 'YELLOW' | 'RED' | 'NONE'
@@ -18,6 +19,8 @@ export type FlowData = {
   badge?: Badge
   pins?: PinView[]
   pinState?: { open: number | null; setOpen: (n: number | null) => void }
+  /** Hướng sơ đồ: quyết định cổng nối nằm hai bên (LR) hay trên/dưới (TB). */
+  dir?: Dir
 }
 export type EdgeData = { material: string; params: Json }
 export type FlowNode = Node<FlowData, 'kf'>
@@ -43,6 +46,8 @@ export function toFlow(g: Graph, types: Record<string, NodeType>): { nodes: Flow
       },
     }
   })
+  const dir = inferDir(Object.fromEntries(nodes.map((n) => [n.id, n.position])), g.edges.map((e) => ({ source: e.src, target: e.dst })))
+  for (const n of nodes) n.data.dir = dir
   const edges: FlowEdge[] = g.edges.map((e) => ({
     id: e.key,
     source: e.src,
