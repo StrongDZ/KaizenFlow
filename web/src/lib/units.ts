@@ -11,9 +11,22 @@ export const COMMON_UNITS: Option[] = [
   { value: 'box', label: 'box', hint: 'thùng' },
 ]
 
-/** Danh sách chọn đơn vị: đơn vị hay gặp trước, rồi những đơn vị khác đang được dùng trong Thư viện. */
-export function unitOptions(used: string[]): Option[] {
-  const known = new Set(COMMON_UNITS.map((u) => u.value))
+/** Đơn vị hay gặp của cảm biến máy. */
+export const SENSOR_UNITS: Option[] = [
+  { value: 'mm/s', label: 'mm/s', hint: 'độ rung' },
+  { value: '°C', label: '°C', hint: 'nhiệt độ' },
+  { value: 'bar', label: 'bar', hint: 'áp suất' },
+  { value: 'A', label: 'A', hint: 'dòng điện' },
+  { value: 'V', label: 'V', hint: 'điện áp' },
+  { value: 'rpm', label: 'rpm', hint: 'vòng mỗi phút' },
+  { value: 'Hz', label: 'Hz', hint: 'tần số' },
+  { value: '%', label: '%', hint: 'phần trăm' },
+  { value: 'kW', label: 'kW', hint: 'công suất' },
+]
+
+/** Danh sách chọn đơn vị: đơn vị hay gặp trước (mặc định là đơn vị vật tư), rồi những đơn vị khác đang được dùng. */
+export function unitOptions(used: string[], presets: Option[] = COMMON_UNITS): Option[] {
+  const known = new Set(presets.map((u) => u.value))
   const extra = [...new Set(used.map((u) => u.trim()).filter((u) => u !== '' && !known.has(u)))].sort()
-  return [...COMMON_UNITS, ...extra.map((u) => ({ value: u, label: u, hint: 'đang dùng' }))]
+  return [...presets, ...extra.map((u) => ({ value: u, label: u, hint: 'đang dùng' }))]
 }

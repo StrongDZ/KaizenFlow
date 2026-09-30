@@ -4,11 +4,14 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Archetype, Json, NodeType, NodeTypeDetail } from '../api/types'
 import { ARCHETYPE_LABEL } from '../components/KfNode'
+import { FailureModesEditor } from '../components/library/FailureModesEditor'
 import { IconPicker } from '../components/library/IconPicker'
 import { ParamForm } from '../components/library/ParamForm'
-import { Card, ErrorBox, Loading, PageBody, PageHeader, btn, btnPrimary, input } from '../components/ui'
+import { SignalsEditor } from '../components/library/SignalsEditor'
+import { Card, ErrorBox, Loading, Notice, PageBody, PageHeader, btn, btnPrimary, input } from '../components/ui'
 import { withIcon } from '../lib/iconChoices'
 import { isValidNodeTypeCode } from '../lib/rules'
+import { failureProblems, signalProblems } from '../lib/sensorsEdit'
 
 export default function NodeTypeNewPage() {
   const from = useSearchParams()[0].get('from')
@@ -29,11 +32,15 @@ function NodeTypeForm({ types, source }: { types: NodeType[]; source?: NodeTypeD
   const [archetype, setArchetype] = useState<Archetype>(source?.archetype ?? 'PROCESS')
   const [params, setParams] = useState<Json>(source?.default_params ?? {})
   const [icon, setIcon] = useState<string | undefined>(typeof source?.ui?.icon === 'string' ? source.ui.icon : undefined)
+  const [signals, setSignals] = useState<Json[]>((source?.signals ?? []) as Json[])
+  const [modes, setModes] = useState<Json[]>((source?.failure_modes ?? []) as Json[])
+  const sensorNames = signals.map((s) => String(s.name ?? '').trim()).filter((n) => n !== '')
+  const problems = archetype === 'PROCESS' ? [...signalProblems(signals), ...failureProblems(modes, sensorNames)] : []
 
   const create = useMutation({
     mutationFn: () => api.createNodeType({
       code, name: name.trim(), archetype, default_params: params,
-      signals: source?.signals, failure_modes: source?.failure_modes, ui: withIcon(source?.ui, icon),
+      signals: archetype === 'PROCESS' ? signals : [], failure_modes: archetype === 'PROCESS' ? modes : [], ui: withIcon(source?.ui, icon),
     }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['node-types'] })
@@ -72,9 +79,21 @@ function NodeTypeForm({ types, source }: { types: NodeType[]; source?: NodeTypeD
           )}
         </div>
       </Card>
+      {archetype === 'PROCESS' && (
+        <>
+          <Card title={`Cảm biến (${signals.length})`}><SignalsEditor value={signals} onChange={setSignals} /></Card>
+          <Card title={`Chế độ hỏng (${modes.length})`}><FailureModesEditor value={modes} onChange={setModes} sensors={sensorNames} /></Card>
+        </>
+      )}
+      {problems.length > 0 && (
+        <Notice tone="lock">
+          <div className="font-medium">Sửa các chỗ sau trước khi tạo:</div>
+          <ul className="mt-1 list-disc pl-5">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
+        </Notice>
+      )}
       <ErrorBox error={create.error} />
       <div className="flex gap-2">
-        <button className={btnPrimary} disabled={create.isPending || !name.trim() || !codeOk} onClick={() => create.mutate()}>
+        <button className={btnPrimary} disabled={create.isPending || !name.trim() || !codeOk || problems.length > 0} onClick={() => create.mutate()}>
           {from ? 'Tạo bản sao' : 'Tạo loại node'}
         </button>
         <Link className={btn} to="/library/node-types">Huỷ</Link>
