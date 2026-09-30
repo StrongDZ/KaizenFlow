@@ -15,7 +15,10 @@ export type FlowData = {
   archetype: string
   name: string
   params: Json
+  /** Tóm tắt phát hiện của bước Kiểm tra trên thẻ node ("1 lỗi, 1 cảnh báo"), kèm mức và thông điệp đầu tiên. */
   issue?: string
+  issueTone?: 'error' | 'warning'
+  issueTitle?: string
   badge?: Badge
   pins?: PinView[]
   pinState?: { open: number | null; setOpen: (n: number | null) => void }

@@ -95,7 +95,11 @@ export type RunDetail = Run & { insights: Insight[] }
 export type BandRow = { subject: string; metric: string; t: string; p10: number; p50: number; p90: number }
 export type EventRow = { t: string; rep: number; subject: string; type: string; payload: Json }
 export type SignalRow = { t: string; rep: number; subject: string; name: string; value: number }
-export type Issue = { key: string; message: string }
+export type Issue = { key: string; message: string; severity?: 'error' | 'warning'; code?: string }
+export type CheckIssue = Issue
+/** Thông số không đặt ở node nhưng có giá trị thay thế (mặc định loại node, mặc định ngầm của sim, hoặc gợi ý từ bản đồ AGV). */
+export type CheckInferred = { key: string; param: string; value: string; source: 'node_type_default' | 'sim_default' | 'agv_map'; message: string }
+export type CheckReport = { ok: boolean; issues: CheckIssue[]; inferred: CheckInferred[] }
 
 export type ScenarioRow = Scenario & { runs: number; last_run_status: RunStatus | null }
 

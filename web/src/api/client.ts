@@ -1,6 +1,6 @@
 import type {
   AgvMap, Binding, BindingInput, CalibrationApplied, CalibrationResp, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
-  BandRow, EventRow, Graph, GraphEdge, GraphNode, InsightRow, Issue, Json, Material, MaterialDetail, MaterialUpdate, ModelSummary,
+  BandRow, CheckReport, EventRow, Graph, GraphEdge, GraphNode, InsightRow, Issue, Json, Material, MaterialDetail, MaterialUpdate, ModelSummary,
   NewMaterial, NewNodeType, NewScenario, NodeType, NodeTypeDetail, NodeTypeUpdate, Run, RunDetail, RunRow, Scenario, ScenarioBody, ScenarioRow,
   SignalRow, VersionInfo,
 } from './types'
@@ -56,6 +56,9 @@ export const api = {
   createModel: (model_key: string, settings?: Json) => post<{ version_id: number }>('/api/models', { model_key, settings }),
   versions: (key: string) => req<VersionInfo[]>(`/api/models/${encodeURIComponent(key)}/versions`),
   graph: (id: number) => req<Graph>(`/api/versions/${id}`),
+  /** Kiểm tra sơ đồ: không thân thì kiểm bản đã lưu, có thân thì kiểm bản đang sửa; deep còn hỏi sim. */
+  checkGraph: (id: number, body?: { nodes: GraphNode[]; edges: GraphEdge[] }, deep = false) =>
+    req<CheckReport>(`/api/versions/${id}/check${deep ? '?deep=1' : ''}`, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
   saveGraph: (id: number, body: { nodes: GraphNode[]; edges: GraphEdge[]; settings?: Json }) =>
     req<void>(`/api/versions/${id}/graph`, { method: 'PUT', body: JSON.stringify(body) }),
   publish: (id: number) => post<{ status: string }>(`/api/versions/${id}/publish`),

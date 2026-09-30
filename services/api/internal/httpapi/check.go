@@ -89,15 +89,24 @@ func (h *handlers) checkGraph(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(strings.TrimSpace(string(raw))) > 0 {
 		var body struct {
-			Nodes    []store.GraphNode `json:"nodes"`
-			Edges    []store.GraphEdge `json:"edges"`
-			Settings map[string]any    `json:"settings"`
+			Nodes    *[]store.GraphNode `json:"nodes"`
+			Edges    *[]store.GraphEdge `json:"edges"`
+			Settings map[string]any     `json:"settings"`
 		}
 		if err := json.Unmarshal(raw, &body); err != nil {
 			writeJSON(w, 400, map[string]string{"error": "bad json: " + err.Error()})
 			return
 		}
-		g.Nodes, g.Edges = body.Nodes, body.Edges
+		// Thân {} (hay không có nodes/edges) nghĩa là kiểm bản đã lưu, không phải sơ đồ trống.
+		if body.Nodes != nil || body.Edges != nil {
+			g.Nodes, g.Edges = nil, nil
+			if body.Nodes != nil {
+				g.Nodes = *body.Nodes
+			}
+			if body.Edges != nil {
+				g.Edges = *body.Edges
+			}
+		}
 		if body.Settings != nil {
 			g.Settings = body.Settings
 		}

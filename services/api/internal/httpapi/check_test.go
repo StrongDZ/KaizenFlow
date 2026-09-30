@@ -39,6 +39,15 @@ func TestCheckSavedGraph(t *testing.T) {
 	}
 }
 
+func TestCheckEmptyJSONObjectMeansSavedGraph(t *testing.T) {
+	a := newAPI(t)
+	vid := draftModel(a, "chk-empty-body")
+	rep := a.call("POST", fmt.Sprintf("/api/versions/%d/check", vid), map[string]any{}, 200)
+	if rep["ok"] != true {
+		t.Fatalf("thân {} phải kiểm bản đã lưu, không phải sơ đồ trống: %v", rep)
+	}
+}
+
 func TestCheckDraftBodyDoesNotTouchSavedGraph(t *testing.T) {
 	a := newAPI(t)
 	vid := draftModel(a, "chk-draft")

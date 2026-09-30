@@ -13,9 +13,12 @@ import { DRAG_TYPE, NodePalette } from '../components/editor/NodePalette'
 import { QuickAdd } from '../components/editor/QuickAdd'
 import { ShortcutsDialog } from '../components/editor/ShortcutsDialog'
 import { kfNodeTypes } from '../components/KfNode'
+import { CheckControl } from '../components/editor/CheckControl'
 import { HeaderActions, useShell } from '../components/shell/ShellContext'
+import { useGraphCheck } from '../hooks/useGraphCheck'
 import { useTheme } from '../hooks/useTheme'
 import { ErrorBox, Loading, btnOk, btnPrimary, issuesOf } from '../components/ui'
+import { mergeServerIssues, nodeSummary, toneOf } from '../lib/checkView'
 import { formToEdge, type EdgeForm } from '../lib/edgeForm'
 import { versionStatusLabel } from '../lib/format'
 import { clipboard, copyOf, pasteOf } from '../lib/clipboard'
@@ -184,14 +187,37 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
   const paste = () => { if (clipboard.clip) pasteClip(clipboard.clip, 40 * ++clipboard.pastes) }
   const duplicate = () => { const c = copyOf(nodes, edges); if (c) pasteClip(c, 40) }
 
+  // Kiểm tra trên server sau mỗi lần sửa (vị trí node không tính, để kéo thả không gọi lại).
+  const checkBody = useMemo(() => {
+    const b = fromFlow(nodes, edges)
+    return { nodes: b.nodes.map(({ canvas_pos: _pos, ...n }) => n), edges: b.edges }
+  }, [nodes, edges])
+  const check = useGraphCheck(graph.version_id, checkBody)
+  // Lỗi server trả khi Lưu/Publish thất bại hiện cùng báo cáo; báo cáo mới thì thay chúng.
+  useEffect(() => { setIssues([]) }, [check.report])
+  const view = useMemo(() => mergeServerIssues(check.report, issues), [check.report, issues])
+
   const decorated = useMemo(() => nodes.map((n) => {
-    const issue = issues.find((i) => i.key === n.id)?.message
-    return issue === n.data.issue && dir === n.data.dir ? n : { ...n, data: { ...n.data, issue, dir } }
-  }), [nodes, issues, dir])
+    const issue = nodeSummary(n.id, view)
+    const issueTone = toneOf(n.id, view)
+    const issueTitle = view?.issues.find((i) => i.key === n.id)?.message
+    return issue === n.data.issue && issueTone === n.data.issueTone && dir === n.data.dir ? n : { ...n, data: { ...n.data, issue, issueTone, issueTitle, dir } }
+  }), [nodes, view, dir])
   const decoratedEdges = useMemo(() => edges.map((e) => {
-    const bad = issues.some((i) => i.key === e.id)
-    return { ...e, style: bad ? { stroke: 'var(--color-bad)', strokeWidth: 2 } : undefined }
-  }), [edges, issues])
+    const tone = toneOf(e.id, view)
+    return { ...e, style: tone ? { stroke: tone === 'error' ? 'var(--color-bad)' : 'var(--color-warn)', strokeWidth: 2 } : undefined }
+  }), [edges, view])
+
+  /** Chọn một node hoặc đường nối theo khoá và đưa vào giữa khung nhìn (bấm một dòng trong panel Kiểm tra). */
+  const focusKey = (key: string) => {
+    const isNode = nodes.some((n) => n.id === key)
+    const edge = edges.find((e) => e.id === key)
+    if (!isNode && !edge) return
+    setNodes((ns) => ns.map((n) => ({ ...n, selected: n.id === key })))
+    setEdges((es) => es.map((e) => ({ ...e, selected: e.id === key })))
+    const ids = isNode ? [key] : [edge!.source, edge!.target]
+    requestAnimationFrame(() => void fitView({ nodes: ids.map((id) => ({ id })), padding: padding(), duration: 300, maxZoom: 1.2 }))
+  }
 
   const arrange = (d: Dir) => {
     if (readOnly || nodes.length === 0) return
@@ -296,6 +322,7 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
     >
       <HeaderActions>
         <span className="text-[11px] text-muted">{versionStatusLabel(graph.status)}{dirty ? ', chưa lưu' : ''}</span>
+        <CheckControl report={view} checking={check.checking} onRun={() => void check.run(true).catch(() => undefined)} onSelect={focusKey} />
         {published ? (
           <button className={btnPrimary} disabled={clone.isPending} onClick={() => clone.mutate()} title="Bản đã Publish không sửa được. Tạo bản sửa để có một bản nháp mới sao từ bản này.">Tạo bản sửa (v{graph.version + 1})</button>
         ) : (
