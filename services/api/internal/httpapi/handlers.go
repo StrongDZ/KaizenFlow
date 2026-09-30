@@ -40,7 +40,7 @@ func writeErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		writeJSON(w, 404, map[string]string{"error": "not found"})
-	case errors.Is(err, store.ErrNotDraft), errors.Is(err, runs.ErrNotPublished),
+	case errors.Is(err, store.ErrNotDraft), errors.Is(err, runs.ErrNotPublished), errors.Is(err, errNoPublished),
 		errors.Is(err, store.ErrBusy), errors.Is(err, store.ErrChanged):
 		writeJSON(w, 409, map[string]string{"error": err.Error()})
 	case errors.As(err, &le):

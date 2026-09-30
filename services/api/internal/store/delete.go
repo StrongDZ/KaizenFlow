@@ -178,6 +178,9 @@ func (s *Store) DeleteModel(ctx context.Context, key string, cascade bool) error
 		if len(ids) == 0 {
 			return ErrNotFound
 		}
-		return deleteVersions(ctx, tx, ids, cascade, true)
+		if err := deleteVersions(ctx, tx, ids, cascade, true); err != nil {
+			return err
+		}
+		return deleteLiveConfig(ctx, tx, key)
 	})
 }

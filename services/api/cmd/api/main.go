@@ -11,6 +11,7 @@ import (
 	"github.com/kaizenflow/api/internal/catalog"
 	"github.com/kaizenflow/api/internal/db"
 	"github.com/kaizenflow/api/internal/httpapi"
+	"github.com/kaizenflow/api/internal/livesvc"
 	"github.com/kaizenflow/api/internal/runs"
 	"github.com/kaizenflow/api/internal/simclient"
 	"github.com/kaizenflow/api/internal/store"
@@ -45,7 +46,13 @@ func main() {
 	if err := svc.Recover(ctx); err != nil {
 		log.Printf("recover runs: %v", err)
 	}
-	h := httpapi.New(httpapi.Deps{Store: st, Sim: sim, Hub: hub, Validator: validate.New(), Runs: svc})
+	liveSvc := livesvc.New(st, hub)
+	if err := liveSvc.ReloadBindings(ctx); err != nil {
+		log.Fatalf("load bindings: %v", err)
+	}
+	go liveSvc.Run(ctx)
+	h := httpapi.New(httpapi.Deps{Store: st, Sim: sim, Hub: hub, Validator: validate.New(), Runs: svc,
+		Live: liveSvc, FeedURL: env("KF_FEED_URL", "http://localhost:8090")})
 	addr := env("KF_ADDR", ":8080")
 	log.Printf("KaizenFlow API listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, h))

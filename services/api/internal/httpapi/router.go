@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/kaizenflow/api/internal/livesvc"
 	"github.com/kaizenflow/api/internal/runs"
 	"github.com/kaizenflow/api/internal/simclient"
 	"github.com/kaizenflow/api/internal/store"
@@ -19,6 +20,9 @@ type Deps struct {
 	Runs      *runs.Service
 	Hub       *ws.Hub
 	Validator *validate.Validator
+	Live      *livesvc.Service
+	// FeedURL là địa chỉ feed service (bộ sinh dữ liệu giả lập); rỗng thì /api/feed/* trả 503.
+	FeedURL string
 }
 
 func cors(next http.Handler) http.Handler {
@@ -75,6 +79,19 @@ func New(d Deps) http.Handler {
 	r.Get("/api/runs/{id}/export.csv", h.exportCSV)
 	r.Post("/api/insights/{id}/apply", h.apply)
 	r.Get("/api/insights", h.listInsights)
+	r.Post("/api/ingest", h.ingest)
+	r.Get("/api/models/{key}/live", h.liveState)
+	r.Delete("/api/models/{key}/live", h.clearLive)
+	r.Get("/api/models/{key}/live/subjects", h.liveSubjects)
+	r.Get("/api/models/{key}/live/signals", h.liveSignals)
+	r.Get("/api/models/{key}/live/blueprint", h.blueprint)
+	r.Get("/api/models/{key}/bindings", h.listBindings)
+	r.Put("/api/models/{key}/bindings", h.putBindings)
+	r.Delete("/api/models/{key}/bindings", h.deleteAllBindings)
+	r.Delete("/api/models/{key}/bindings/{id}", h.deleteBinding)
+	r.Get("/api/models/{key}/agv-map", h.getAgvMap)
+	r.Put("/api/models/{key}/agv-map", h.putAgvMap)
+	r.Handle("/api/feed/*", h.feedProxy())
 	r.Handle("/ws", d.Hub)
 	return r
 }
