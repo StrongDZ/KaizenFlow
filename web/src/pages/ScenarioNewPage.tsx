@@ -6,6 +6,7 @@ import type { ScenarioBody } from '../api/types'
 import { ScenarioFormView } from '../components/scenario/ScenarioFormView'
 import { Loading, PageBody, PageHeader } from '../components/ui'
 import { byCode } from '../lib/model'
+import { nextName } from '../lib/naming'
 import { EMPTY_FORM } from '../lib/scenarioForm'
 
 export default function ScenarioNewPage() {
@@ -14,6 +15,7 @@ export default function ScenarioNewPage() {
   const navigate = useNavigate()
   const graph = useQuery({ queryKey: ['graph', vid], queryFn: () => api.graph(vid) })
   const types = useQuery({ queryKey: ['node-types'], queryFn: api.nodeTypes })
+  const existing = useQuery({ queryKey: ['scenarios', vid], queryFn: () => api.scenarios(vid) })
   const typeMap = useMemo(() => byCode(types.data ?? []), [types.data])
   const create = useMutation({
     mutationFn: (b: ScenarioBody) => api.createScenario({ model_version_id: vid, ...b }),
@@ -22,12 +24,12 @@ export default function ScenarioNewPage() {
       navigate(`/scenarios/${r.id}`)
     },
   })
-  if (!graph.data || !types.data) return <Loading />
+  if (!graph.data || !types.data || !existing.data) return <Loading />
   return (
     <PageBody>
       <PageHeader title="Tạo scenario" subtitle={`${graph.data.model_key} v${graph.data.version}`} />
       <ScenarioFormView
-        graph={graph.data} types={typeMap} initial={EMPTY_FORM} submitLabel="Tạo scenario"
+        graph={graph.data} types={typeMap} initial={{ ...EMPTY_FORM, name: nextName('Kịch bản', existing.data.map((s) => s.name)) }} submitLabel="Tạo scenario"
         pending={create.isPending} error={create.error} cancelTo={`/versions/${vid}/scenarios`}
         onSubmit={(b) => create.mutate(b)}
       />

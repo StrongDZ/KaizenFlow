@@ -53,7 +53,8 @@ export const api = {
   nodeTypes: () => req<NodeType[]>('/api/node-types'),
   materials: () => req<Material[]>('/api/materials'),
   models: () => req<ModelSummary[]>('/api/models'),
-  createModel: (model_key: string, settings?: Json) => post<{ version_id: number }>('/api/models', { model_key, settings }),
+  /** copy_from: khoá một mô hình có sẵn; mô hình mới bắt đầu từ bản sao sơ đồ mới nhất của nó. */
+  createModel: (model_key: string, opts: { settings?: Json; copy_from?: string } = {}) => post<{ version_id: number }>('/api/models', { model_key, ...opts }),
   versions: (key: string) => req<VersionInfo[]>(`/api/models/${encodeURIComponent(key)}/versions`),
   graph: (id: number) => req<Graph>(`/api/versions/${id}`),
   /** Kiểm tra sơ đồ: không thân thì kiểm bản đã lưu, có thân thì kiểm bản đang sửa; deep còn hỏi sim. */

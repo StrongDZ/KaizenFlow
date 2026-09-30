@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../../api/client'
+import { slugCode } from '../../lib/naming'
 import { isValidMaterialCode } from '../../lib/rules'
 import { Field, FormDialog } from '../FormDialog'
 import { UnitSelect } from '../UnitSelect'
@@ -13,9 +14,12 @@ import { input } from '../ui'
 export function MaterialCreateDialog({ initialCode = '', onClose, onCreated }: { initialCode?: string; onClose: () => void; onCreated: (code: string) => void }) {
   const qc = useQueryClient()
   const mats = useQuery({ queryKey: ['materials'], queryFn: api.materials })
-  const [code, setCode] = useState(initialCode.trim())
   const [name, setName] = useState('')
+  // Mã tự sinh từ tên cho đến khi người dùng tự sửa mã (hoặc mã đã được truyền sẵn từ ô chọn vật tư).
+  const [typed, setTyped] = useState(initialCode.trim())
+  const [codeTouched, setCodeTouched] = useState(initialCode.trim() !== '')
   const [unit, setUnit] = useState('pcs')
+  const code = codeTouched ? typed : slugCode(name)
   const exists = (mats.data ?? []).some((m) => m.code === code)
   const invalid = code !== '' && !isValidMaterialCode(code)
   const create = useMutation({
@@ -29,14 +33,15 @@ export function MaterialCreateDialog({ initialCode = '', onClose, onCreated }: {
       submitLabel="Tạo vật tư" pending={create.isPending} error={create.error}
       canSubmit={isValidMaterialCode(code) && !exists} onSubmit={() => create.mutate()} onClose={onClose}
     >
+      <Field label="Tên hiển thị" hint="Tên người dùng đọc được, vd. Thép tấm 1,2 mm. Mã bên dưới tự sinh từ tên.">
+        <input autoFocus className={`${input} w-full`} value={name} placeholder="Thép tấm 1,2 mm" onChange={(e) => setName(e.target.value)} />
+      </Field>
       <Field
-        label="Mã vật tư" hint="Không đổi được sau khi tạo. Chữ, số, gạch nối, gạch dưới. Ví dụ RAW-01, SUB_OK."
+        label="Mã vật tư" hint={codeTouched ? 'Không đổi được sau khi tạo. Chữ, số, gạch nối, gạch dưới. Ví dụ RAW-01, SUB_OK.' : 'Tự sinh từ tên; sửa nếu muốn mã khác. Không đổi được sau khi tạo.'}
         problem={invalid ? 'Mã chỉ gồm chữ, số, gạch dưới, gạch nối và phải bắt đầu bằng chữ hoặc số.' : exists ? 'Mã này đã có trong Thư viện.' : null}
       >
-        <input autoFocus className={`${input} w-full`} value={code} onChange={(e) => setCode(e.target.value)} aria-invalid={invalid || exists} />
-      </Field>
-      <Field label="Tên hiển thị" hint="Bỏ trống thì dùng mã.">
-        <input className={`${input} w-full`} value={name} placeholder={code} onChange={(e) => setName(e.target.value)} />
+        <input className={`${input} w-full font-mono`} value={code} placeholder="THEP-TAM-1-2-MM" aria-invalid={invalid || exists}
+          onChange={(e) => { setTyped(e.target.value); setCodeTouched(e.target.value !== '') }} />
       </Field>
       <div className="space-y-1">
         <span className="block text-text-2">Đơn vị</span>

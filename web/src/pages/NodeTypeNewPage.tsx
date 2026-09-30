@@ -3,13 +3,14 @@ import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Archetype, Json, NodeType, NodeTypeDetail } from '../api/types'
-import { ARCHETYPE_LABEL } from '../components/KfNode'
+import { ArchetypePicker } from '../components/library/ArchetypePicker'
 import { FailureModesEditor } from '../components/library/FailureModesEditor'
 import { IconPicker } from '../components/library/IconPicker'
 import { ParamForm } from '../components/library/ParamForm'
 import { SignalsEditor } from '../components/library/SignalsEditor'
 import { Card, ErrorBox, Loading, Notice, PageBody, PageHeader, btn, btnPrimary, input } from '../components/ui'
 import { withIcon } from '../lib/iconChoices'
+import { slugCode } from '../lib/naming'
 import { isValidNodeTypeCode } from '../lib/rules'
 import { failureProblems, signalProblems } from '../lib/sensorsEdit'
 
@@ -28,7 +29,10 @@ function NodeTypeForm({ types, source }: { types: NodeType[]; source?: NodeTypeD
   const navigate = useNavigate()
   const from = source?.code
   const [name, setName] = useState(source ? `${source.name} (bản sao)` : '')
-  const [code, setCode] = useState(source ? `${source.code}_COPY` : '')
+  // Mã tự sinh từ tên cho đến khi người dùng tự sửa mã.
+  const [typedCode, setTypedCode] = useState(source ? `${source.code}_COPY` : '')
+  const [codeTouched, setCodeTouched] = useState(!!source)
+  const code = codeTouched ? typedCode : slugCode(name, '_', { startWithLetter: true })
   const [archetype, setArchetype] = useState<Archetype>(source?.archetype ?? 'PROCESS')
   const [params, setParams] = useState<Json>(source?.default_params ?? {})
   const [icon, setIcon] = useState<string | undefined>(typeof source?.ui?.icon === 'string' ? source.ui.icon : undefined)
@@ -54,19 +58,20 @@ function NodeTypeForm({ types, source }: { types: NodeType[]; source?: NodeTypeD
     <PageBody>
       <PageHeader title={from ? 'Nhân bản loại node' : 'Tạo loại node'} />
       <Card title="Thông tin chung">
-        <div className="grid grid-cols-3 gap-3">
-          <label className={label}>Tên<input className={input} value={name} onChange={(e) => setName(e.target.value)} /></label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className={label}>Tên<input className={input} value={name} placeholder="Máy dập 200 tấn" onChange={(e) => setName(e.target.value)} autoFocus />
+            <span className="text-faint">Tên hiển thị trên sơ đồ và trong danh sách loại node.</span></label>
           <label className={label}>
             Mã (chữ hoa, số, gạch dưới)
-            <input className={input} value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} aria-invalid={code !== '' && !codeOk} />
-            {code !== '' && !codeOk && <span className="text-bad-text">Mã phải bắt đầu bằng chữ cái và chỉ gồm A–Z, 0–9, gạch dưới.</span>}
+            <input className={`${input} font-mono`} value={code} placeholder="MAY_DAP_200_TAN" onChange={(e) => { setTypedCode(e.target.value.toUpperCase()); setCodeTouched(e.target.value !== '') }} aria-invalid={code !== '' && !codeOk} />
+            {code !== '' && !codeOk
+              ? <span className="text-bad-text">Mã phải bắt đầu bằng chữ cái và chỉ gồm A–Z, 0–9, gạch dưới.</span>
+              : <span className="text-faint">{codeTouched ? 'Không đổi được sau khi tạo.' : 'Tự sinh từ tên; sửa nếu muốn mã khác. Không đổi được sau khi tạo.'}</span>}
           </label>
-          <label className={label}>
-            Loại
-            <select className={input} value={archetype} disabled={!!from} onChange={(e) => { setArchetype(e.target.value as Archetype); setParams({}) }}>
-              {(Object.keys(ARCHETYPE_LABEL) as Archetype[]).map((a) => <option key={a} value={a}>{ARCHETYPE_LABEL[a]}</option>)}
-            </select>
-          </label>
+        </div>
+        <div className="mt-4 space-y-1.5">
+          <span className="block text-xs text-muted">Vai trò trong sơ đồ{from ? ' (không đổi khi nhân bản)' : ''}</span>
+          <ArchetypePicker value={archetype} disabled={!!from} onChange={(a) => { setArchetype(a); setParams({}); setSignals([]); setModes([]) }} />
         </div>
         <div className="mt-4"><IconPicker value={icon} archetype={archetype} onChange={setIcon} /></div>
       </Card>

@@ -134,3 +134,28 @@ func TestSaveRejectsUnknownEdgeMaterialInVietnamese(t *testing.T) {
 		t.Fatalf("thông điệp lưu phải bằng tiếng Việt: %q", msg)
 	}
 }
+
+func TestCreateModelCanCopyTheLatestGraphOfAnotherModel(t *testing.T) {
+	a := newAPI(t)
+	src := draftModel(a, "goc")
+	vid := int64(a.call("POST", "/api/models", map[string]any{"model_key": "ban-sao", "copy_from": "goc"}, 201)["version_id"].(float64))
+	g := a.call("GET", fmt.Sprintf("/api/versions/%d", vid), nil, 200)
+	if len(g["nodes"].([]any)) != 4 || len(g["edges"].([]any)) != 2 || g["status"] != "DRAFT" || g["version"].(float64) != 1 {
+		t.Fatalf("bản sao = nodes %v edges %v status %v", len(g["nodes"].([]any)), len(g["edges"].([]any)), g["status"])
+	}
+	orig := a.call("GET", fmt.Sprintf("/api/versions/%d", src), nil, 200)
+	if len(orig["nodes"].([]any)) != 4 {
+		t.Fatalf("mô hình gốc không được đổi: %v", orig["nodes"])
+	}
+	// nguồn không tồn tại: báo rõ và không để lại mô hình rỗng
+	res := a.call("POST", "/api/models", map[string]any{"model_key": "ma-mo-coi", "copy_from": "khong-co"}, 422)
+	if msg := res["issues"].([]any)[0].(map[string]any)["message"].(string); !strings.Contains(msg, "khong-co") {
+		t.Fatalf("message = %q", msg)
+	}
+	models := a.call("GET", "/api/models", nil, 200)["items"]
+	for _, m := range models.([]any) {
+		if m.(map[string]any)["model_key"] == "ma-mo-coi" {
+			t.Fatal("không được để lại mô hình rỗng khi sao chép lỗi")
+		}
+	}
+}
