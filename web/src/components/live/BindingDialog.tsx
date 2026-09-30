@@ -2,13 +2,16 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { api } from '../../api/client'
-import type { Binding, SourceSnap, SubjectView, Transform } from '../../api/types'
+import type { Binding, DataSourceRow, SubjectView, Transform } from '../../api/types'
 import { previewBinding } from '../../lib/bindingPreview'
 import { leafPaths, matchSource } from '../../lib/livePath'
 import { stateLabel } from '../../lib/liveFrame'
 import { STATE_ENUM } from '../../lib/suggestMapping'
+import { ARCHETYPE_LABEL } from '../KfNode'
 import { Field, FormDialog } from '../FormDialog'
-import { btn, btnDangerOutline, input } from '../ui'
+import { SearchSelect } from '../SearchSelect'
+import { btn, btnDangerOutline, btnLinkAccent, input } from '../ui'
+import { FieldPicker } from './FieldPicker'
 
 export type BindingDraft = { subject?: string; signal?: string; source?: string; json_path?: string; transform?: Transform }
 
@@ -19,7 +22,7 @@ export function BindingDialog({ open, model, subjects, sources, draft, existing,
   open: boolean
   model: string
   subjects: SubjectView[]
-  sources: SourceSnap[]
+  sources: DataSourceRow[]
   draft: BindingDraft
   existing?: Binding
   onClose: () => void
@@ -38,7 +41,14 @@ export function BindingDialog({ open, model, subjects, sources, draft, existing,
   const def = subj?.signals.find((s) => s.name === signal)
   const kind = def?.kind ?? 'number'
   const live = useMemo(() => sources.find((s) => s.source === source) ?? sources.find((s) => matchSource(source, s.source)), [sources, source])
-  const paths = useMemo(() => (live ? leafPaths(live.last) : []), [live])
+  const sample = live?.sample ?? undefined
+  // Mẫu nhiều nguồn (+, #) hoặc nguồn chưa đăng ký: nhập tay trong mục nâng cao; còn lại luôn chọn từ danh sách.
+  const [advanced, setAdvanced] = useState(() => draft.source !== undefined && draft.source !== '' && (/[+#]/.test(draft.source) || !sources.some((s) => s.source === draft.source)))
+  const sourceOptions = useMemo(() => sources.map((s) => ({ value: s.source, label: s.source, hint: s.desc })), [sources])
+  const subjectOptions = useMemo(
+    () => subjects.map((s) => ({ value: s.subject, label: s.name, hint: s.kind === 'node' ? ARCHETYPE_LABEL[s.archetype ?? ''] ?? 'Node' : `đường nối · ${s.material ?? ''}` })),
+    [subjects],
+  )
 
   const transform: Transform = useMemo(() => {
     const t: Transform = {}
@@ -55,7 +65,7 @@ export function BindingDialog({ open, model, subjects, sources, draft, existing,
     return t
   }, [kind, scale, offset, enumRows, fields])
 
-  const preview = live ? previewBinding(live.last, path, kind, transform) : undefined
+  const preview = live ? previewBinding(sample, path, kind, transform) : undefined
   const save = useMutation({
     mutationFn: () => api.saveBindings(model, [{ subject, signal, source: source.trim(), json_path: kind === 'fleet' ? '' : path.trim(), transform, enabled: true }]),
     onSuccess: () => {
@@ -74,7 +84,7 @@ export function BindingDialog({ open, model, subjects, sources, draft, existing,
   })
 
   const canSubmit = subject !== '' && signal !== '' && source.trim() !== '' && (kind === 'fleet' || path.trim() !== '')
-  const observed = live && kind === 'text' ? (() => { const v = previewRaw(live.last, path); return v })() : undefined
+  const observed = live && kind === 'text' ? previewRaw(sample, path) : undefined
 
   return (
     <FormDialog
@@ -88,42 +98,56 @@ export function BindingDialog({ open, model, subjects, sources, draft, existing,
       onSubmit={() => save.mutate()}
       onClose={onClose}
     >
-      <Field label="Đối tượng trong sơ đồ">
-        <select className={`${input} w-full`} value={subject} disabled={!!existing} onChange={(e) => { setSubject(e.target.value); setSignal('') }}>
-          <option value="">Chọn node hoặc edge…</option>
-          <optgroup label="Node">
-            {subjects.filter((s) => s.kind === 'node').map((s) => <option key={s.subject} value={s.subject}>{s.name} ({s.subject})</option>)}
-          </optgroup>
-          <optgroup label="Edge">
-            {subjects.filter((s) => s.kind === 'edge').map((s) => <option key={s.subject} value={s.subject}>{s.name} · {s.material} ({s.subject})</option>)}
-          </optgroup>
-        </select>
+      <Field label="Đối tượng trong sơ đồ" hint="Node hoặc đường nối của sơ đồ mà tín hiệu này thuộc về. Gõ tên để lọc.">
+        <SearchSelect
+          value={subject} options={subjectOptions} disabled={!!existing} label="Đối tượng trong sơ đồ" placeholder="Chọn node hoặc đường nối"
+          onChange={(v) => { setSubject(v); setSignal('') }}
+        />
       </Field>
-      <Field label="Tín hiệu">
+      <Field label="Tín hiệu" hint={subj && subj.signals.length === 0 ? undefined : 'Giá trị chuẩn mà node hay đường nối này nhận.'}>
         <select className={`${input} w-full`} value={signal} disabled={!subj || !!existing} onChange={(e) => setSignal(e.target.value)}>
           <option value="">{subj ? 'Chọn tín hiệu…' : 'Chọn đối tượng trước'}</option>
           {subj?.signals.map((s) => <option key={s.name} value={s.name}>{s.label} ({s.name})</option>)}
         </select>
+        {subj && subj.signals.length === 0 && (
+          <span role="note" className="block text-lock-text">
+            {subj.archetype === 'STORAGE'
+              ? 'Kho này chưa khai báo vật tư nào nên chưa có tín hiệu Tồn để ghép. Khai báo vật tư trong thuộc tính của kho ở tab Sơ đồ.'
+              : 'Đối tượng này chưa có tín hiệu nào để ghép.'}
+          </span>
+        )}
       </Field>
-      <Field label="Nguồn dữ liệu" hint={<>Chọn từ nguồn đang phát, hoặc gõ mẫu có <code>+</code> cho một cấp (vd. <code>agv/tug-a/+/pos</code>).</>}>
-        <input className={`${input} w-full font-mono`} list="kf-sources" value={source} onChange={(e) => setSource(e.target.value)} placeholder="plc/prs-02/status" />
-        <datalist id="kf-sources">{sources.map((s) => <option key={s.source} value={s.source}>{s.desc}</option>)}</datalist>
+      <Field
+        label="Nguồn dữ liệu"
+        hint={advanced
+          ? <>Mẫu nhiều nguồn: <code>+</code> thay một cấp (vd. <code>agv/tug-a/+/pos</code>), <code>#</code> thay phần còn lại ở cuối.</>
+          : 'Thiết bị hoặc topic gửi bản tin. Không thấy nguồn cần tìm? Thêm nó ở tab Nguồn dữ liệu.'}
+      >
+        {advanced ? (
+          <input className={`${input} w-full font-mono`} value={source} onChange={(e) => setSource(e.target.value)} placeholder="agv/tug-a/+/pos" aria-label="Mẫu nguồn dữ liệu" />
+        ) : (
+          <SearchSelect value={source} options={sourceOptions} onChange={setSource} label="Nguồn dữ liệu" placeholder="Chọn nguồn dữ liệu" emptyText="Chưa có nguồn nào. Thêm ở tab Nguồn dữ liệu." />
+        )}
+        <button type="button" className={btnLinkAccent} onClick={() => setAdvanced((a) => !a)}>
+          {advanced ? 'Chọn từ danh sách nguồn' : 'Nâng cao: một mẫu cho nhiều nguồn (+ hoặc #)'}
+        </button>
       </Field>
       {kind !== 'fleet' ? (
-        <Field label="Trường trong bản tin" hint={<>Đường dẫn tới giá trị, vd. <code>cnt.ok</code> hoặc <code>items[sku=RAW-01].qty</code>. Gõ để lọc theo trường có sẵn.</>}>
-          <input className={`${input} w-full font-mono`} list="kf-paths" value={path} onChange={(e) => setPath(e.target.value)} placeholder="st" />
-          <datalist id="kf-paths">{paths.map((l) => <option key={l.path} value={l.path}>{String(l.value)}</option>)}</datalist>
+        <Field label="Trường trong bản tin" hint="Giá trị nào trong bản tin. Danh sách lấy từ bản tin mẫu của nguồn, kèm giá trị hiện có.">
+          <FieldPicker sample={sample} value={path} onChange={setPath} />
         </Field>
       ) : (
         <details className="rounded-lg border border-line p-2">
           <summary className="cursor-pointer text-text-2">Tên trường của bản tin vị trí xe (mặc định đúng nếu bản tin có id, x, y, st, seg, load)</summary>
           <div className="mt-2 grid grid-cols-3 gap-2">
             {(['id', 'x', 'y', 'state', 'lane', 'load'] as const).map((f) => (
-              <label key={f} className="space-y-0.5">
+              <div key={f} className="space-y-0.5">
                 <span className="block text-faint">{{ id: 'Mã xe', x: 'Toạ độ x', y: 'Toạ độ y', state: 'Trạng thái', lane: 'Làn', load: 'Tải' }[f]}</span>
-                <input className={`${input} w-full font-mono`} value={fields[f] ?? ''} placeholder={{ id: 'id', x: 'x', y: 'y', state: 'st', lane: 'seg', load: 'load' }[f]}
-                  onChange={(e) => setFields({ ...fields, [f]: e.target.value })} />
-              </label>
+                <FieldPicker
+                  sample={sample} value={fields[f] ?? ''} onChange={(v) => setFields({ ...fields, [f]: v })}
+                  placeholder={`mặc định: ${{ id: 'id', x: 'x', y: 'y', state: 'st', lane: 'seg', load: 'load' }[f]}`}
+                />
+              </div>
             ))}
           </div>
         </details>

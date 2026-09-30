@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Sparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Binding, SubjectSnap, SubjectView } from '../api/types'
 import { ConfirmDialog } from '../components/ConfirmDialog'
@@ -30,6 +30,8 @@ export default function ConnectPage() {
   const { snapshot } = useLive(model)
   const subjects = useQuery({ queryKey: ['live-subjects', model], queryFn: () => api.liveSubjects(model), retry: false })
   const bindings = useQuery({ queryKey: ['bindings', model], queryFn: () => api.bindings(model) })
+  // Nguồn lấy từ danh sách đã đăng ký (còn nguyên khi feed tắt), không phải từ ảnh chụp tạm của live.
+  const registry = useQuery({ queryKey: ['sources', model], queryFn: () => api.sources(model), refetchInterval: 4000 })
   const [q, setQ] = useState('')
   const [onlyMissing, setOnlyMissing] = useState(false)
   const [draft, setDraft] = useState<{ d: BindingDraft; existing?: Binding } | null>(null)
@@ -44,12 +46,16 @@ export default function ConnectPage() {
 
   const list: SubjectView[] = subjects.data?.subjects ?? []
   const bound = useMemo(() => new Map((bindings.data ?? []).map((b) => [`${b.subject}|${b.signal}`, b])), [bindings.data])
-  const sources = snapshot?.sources ?? []
+  const sources = useMemo(() => registry.data ?? [], [registry.data])
+  const liveSources = sources.filter((s) => s.live).length
   const totalSignals = list.reduce((n, s) => n + s.signals.length, 0)
   const boundSignals = list.reduce((n, s) => n + s.signals.filter((x) => bound.has(`${s.subject}|${x.name}`)).length, 0)
   const known = new Set(list.map((s) => s.subject))
   const orphans = (bindings.data ?? []).filter((b) => !known.has(b.subject))
-  const suggestion = useMemo(() => suggestMapping(sources, list, bindings.data ?? []), [sources, list, bindings.data])
+  const suggestion = useMemo(
+    () => suggestMapping(sources.map((s) => ({ source: s.source, desc: s.desc, last: s.sample })), list, bindings.data ?? []),
+    [sources, list, bindings.data],
+  )
 
   const rows = useMemo(() => {
     const byText = filterRows(list, q, (s) => [s.name, s.subject])
@@ -87,7 +93,7 @@ export default function ConnectPage() {
       </Notice>
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
         <Tag>Đã ghép {boundSignals}/{totalSignals} tín hiệu</Tag>
-        <Tag>{sources.length} nguồn đang phát, {sources.filter((s) => s.bound).length} đã dùng</Tag>
+        <Tag>{sources.length} nguồn, {liveSources} đang phát, {sources.filter((s) => s.bindings.length === 0).length} chưa ghép</Tag>
         {snapshot && snapshot.now > '0002' && <Tag>Giờ nhà máy {fmtFactoryTime(snapshot.now)}</Tag>}
       </div>
       {(snapshot?.errors.length ?? 0) > 0 && (
@@ -152,15 +158,18 @@ export default function ConnectPage() {
           )}
         </Card>
 
-        <Card title={`Nguồn đang phát (${sources.length})`} actions={<SearchBox value={srcQ} onChange={setSrcQ} placeholder="Tìm nguồn" />}>
+        <Card
+          title={`Nguồn dữ liệu (${sources.length})`}
+          actions={<div className="flex items-center gap-2"><Link className="text-[11px] text-accent underline decoration-dotted" to={`/models/${encodeURIComponent(model)}/sources`}>Quản lý nguồn</Link><SearchBox value={srcQ} onChange={setSrcQ} placeholder="Tìm nguồn" /></div>}
+        >
           {sources.length === 0 ? (
-            <EmptyState title="Chưa nguồn nào đang phát">Bật feed ở thanh phía trên để thấy các thiết bị gửi bản tin.</EmptyState>
+            <EmptyState title="Chưa có nguồn dữ liệu nào">Bật feed ở thanh phía trên để các thiết bị gửi bản tin, hoặc khai báo nguồn ở tab Nguồn dữ liệu.</EmptyState>
           ) : (
             <ul className="max-h-[560px] divide-y divide-line overflow-y-auto">
               {shownSources.map((s) => (
                 <li key={s.source} className="py-1.5">
                   <button className="flex w-full items-start gap-2 text-left" onClick={() => setOpenSource(openSource === s.source ? null : s.source)} aria-expanded={openSource === s.source}>
-                    <i className={`mt-1 h-1.5 w-1.5 flex-none rounded-full ${s.bound ? 'bg-ok' : 'bg-faint'}`} title={s.bound ? 'Đã có ghép nối dùng nguồn này' : 'Chưa ghép'} />
+                    <i className={`mt-1 h-1.5 w-1.5 flex-none rounded-full ${s.live ? 'bg-ok' : 'bg-faint'}`} title={`${s.live ? 'Đang phát' : 'Im lặng'}, ${s.bindings.length > 0 ? `${s.bindings.length} tín hiệu đã ghép` : 'chưa ghép'}`} />
                     <span className="min-w-0">
                       <span className="block truncate font-mono text-[11px] text-text">{s.source}</span>
                       <span className="block truncate text-[10.5px] text-muted">{s.desc || 'không có mô tả'}</span>
@@ -168,7 +177,7 @@ export default function ConnectPage() {
                   </button>
                   {openSource === s.source && (
                     <ul className="mt-1 space-y-0.5 pl-3.5 text-[11px]">
-                      {leafPaths(s.last).map((l) => (
+                      {leafPaths(s.sample).map((l) => (
                         <li key={l.path} className="flex items-center gap-2">
                           <span className="min-w-0 flex-1 truncate font-mono text-text-2">{l.path || '(giá trị)'}</span>
                           <b className="tabular-nums text-text">{String(l.value)}</b>
