@@ -438,6 +438,11 @@ func (h *handlers) putBindings(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 422, issues(list...))
 		return
 	}
+	// ?check=1: chỉ kiểm tra (mọi luật như khi lưu) mà không lưu, để hộp thoại báo hợp lệ hay chưa trước khi bấm Lưu.
+	if r.URL.Query().Get("check") == "1" {
+		writeJSON(w, 200, map[string]bool{"ok": true})
+		return
+	}
 	if err := h.Store.SaveBindings(ctx, key, bs); err != nil {
 		writeErr(w, err)
 		return

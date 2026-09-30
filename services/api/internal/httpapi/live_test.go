@@ -604,3 +604,24 @@ func TestLiveCheckReportsCoverageReadinessAndSuggestions(t *testing.T) {
 		t.Fatalf("trường không có trong mẫu phải báo hỏng: %v", rep["summary"])
 	}
 }
+
+func TestPutBindingsCheckModeValidatesWithoutSaving(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	bindSource(a, "lm", "SRC", "arrived", "dock/src/count", "n")
+	good := derivedSum("SRC>S", "moved", term("SRC", "arrived", 1))
+	res := a.call("PUT", "/api/models/lm/bindings?check=1", map[string]any{"bindings": []any{good}}, 200)
+	if res["ok"] != true {
+		t.Fatalf("res = %v", res)
+	}
+	for _, raw := range a.call("GET", "/api/models/lm/bindings", nil, 200)["items"].([]any) {
+		if raw.(map[string]any)["subject"] == "SRC>S" {
+			t.Fatal("chế độ kiểm tra không được lưu gì")
+		}
+	}
+	bad := derivedSum("SRC>S", "moved", term("S", "level:RAW-01", 1)) // đầu vào chưa ghép
+	res = a.call("PUT", "/api/models/lm/bindings?check=1", map[string]any{"bindings": []any{bad}}, 422)
+	if msg := res["issues"].([]any)[0].(map[string]any)["message"].(string); !strings.Contains(msg, "chưa có nguồn") {
+		t.Fatalf("message = %q", msg)
+	}
+}

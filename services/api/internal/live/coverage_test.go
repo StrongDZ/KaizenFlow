@@ -281,3 +281,38 @@ func TestCoverageAttachesSuggestionsToMissingSignals(t *testing.T) {
 		t.Fatalf("vibration = %+v", got)
 	}
 }
+
+// Nguồn S có hai đường ra cùng vật tư: moved của một đường = tổng của nguồn trừ moved đường kia (suy ngược).
+func twoOutSubjects() []Subject {
+	subs := testSubjects(false)
+	subs = append(subs,
+		Subject{Subject: "SRC>KHO2", Kind: "edge", Name: "SRC → Kho B", Material: "RAW-01", Src: "SRC", Dst: "KHO2", Signals: EdgeSignals("")},
+		Subject{Subject: "KHO2", Kind: "node", Name: "Kho B", Archetype: "STORAGE", Signals: SignalsFor("STORAGE", map[string]any{"stock": []any{map[string]any{"material": "RAW-01"}}})})
+	return subs
+}
+
+func TestSuggestMovedOfOneOfSeveralOutgoingEdgesSubtractsTheOthers(t *testing.T) {
+	subs := twoOutSubjects()
+	bound := []Binding{src("SRC", "arrived"), src("SRC>KHO2", "moved")}
+	d := find(SuggestDerive(subs, bound, Ref{"SRC>KHO", "moved"}), 0)
+	if len(d.Terms) != 2 || d.Terms[0].Subject != "SRC" || d.Terms[0].Signal != "arrived" || d.Terms[0].Sign != 1 || d.Terms[1].Subject != "SRC>KHO2" || d.Terms[1].Sign != -1 {
+		t.Fatalf("derive = %+v, muốn arrived − moved của đường còn lại", d)
+	}
+	if got := SuggestDerive(subs, []Binding{src("SRC", "arrived")}, Ref{"SRC>KHO", "moved"}); len(got) != 0 {
+		t.Fatalf("đường còn lại chưa có moved thì không suy được: %+v", got)
+	}
+	// in_transit chỉ gợi ý khi đường ra là duy nhất: bộ đếm của nguồn lẫn hai đường
+	if got := SuggestDerive(subs, append(bound, src("SRC>KHO", "moved")), Ref{"SRC>KHO", "in_transit"}); len(got) != 0 {
+		t.Fatalf("in_transit với nhiều đường ra không gợi ý: %+v", got)
+	}
+}
+
+func TestSuggestMovedIntoAProcessFedByTwoEdgesSubtractsTheOther(t *testing.T) {
+	subs := testSubjects(false)
+	subs = append(subs, Subject{Subject: "KHO2>P", Kind: "edge", Name: "Kho B → Máy dập", Material: "RAW-01", Src: "KHO2", Dst: "P", Signals: EdgeSignals("")},
+		Subject{Subject: "KHO2", Kind: "node", Name: "Kho B", Archetype: "STORAGE", Signals: SignalsFor("STORAGE", nil)})
+	d := find(SuggestDerive(subs, []Binding{src("P", "count_in"), src("KHO>P", "moved")}, Ref{"KHO2>P", "moved"}), 0)
+	if len(d.Terms) != 2 || d.Terms[0].Signal != "count_in" || d.Terms[0].Factor != 2 || d.Terms[1].Subject != "KHO>P" || d.Terms[1].Sign != -1 {
+		t.Fatalf("derive = %+v", d)
+	}
+}

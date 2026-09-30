@@ -367,55 +367,116 @@ func (g *suggester) suggest(t Ref) []Suggestion {
 	return nil
 }
 
-// producer: bộ đếm của node phát ra hàng trên edge này, khi edge đó là đường ra duy nhất của vật tư (nếu không thì bộ đếm lẫn nhiều edge).
-func (g *suggester) producer(e Subject) (Term, string, bool) {
-	src := g.subj[e.Src]
-	if len(withMaterial(g.outEdges[e.Src], e.Material)) != 1 {
-		return Term{}, "", false
+// siblings trả các edge khác cùng vật tư, cùng đầu (đầu ra của src hoặc đầu vào của dst) với edge e.
+func siblings(list []Subject, e Subject) []Subject {
+	var out []Subject
+	for _, o := range list {
+		if o.Subject != e.Subject && o.Material == e.Material {
+			out = append(out, o)
+		}
 	}
+	return out
+}
+
+// minusMoved: trừ số đã chuyển của các edge anh em; ok=false nếu có edge chưa có moved (không suy được).
+func (g *suggester) minusMoved(others []Subject) ([]Term, bool) {
+	out := make([]Term, 0, len(others))
+	for _, o := range others {
+		if !g.has(o.Subject, "moved") {
+			return nil, false
+		}
+		out = append(out, Term{Subject: o.Subject, Signal: "moved", Sign: -1})
+	}
+	return out, true
+}
+
+// producer: phần bộ đếm của node phát ra hàng dành riêng cho edge này. Bộ đếm của nguồn hoặc trạm gộp mọi edge ra cùng vật tư,
+// nên nếu có edge anh em thì trừ số đã chuyển trên chúng (cần các edge đó đã có moved).
+func (g *suggester) producer(e Subject) ([]Term, string, bool) {
+	src := g.subj[e.Src]
+	others, ok := g.minusMoved(siblings(g.outEdges[e.Src], e))
+	if !ok {
+		return nil, "", false
+	}
+	var base Term
+	var what string
 	switch src.Archetype {
 	case "PROCESS":
-		if q := src.OutQty[e.Material]; q > 0 && g.has(src.Subject, "count_ok") {
-			return Term{Subject: src.Subject, Signal: "count_ok", Sign: 1, Factor: fac(q)},
-				fmt.Sprintf("số lượt %s làm ra sản phẩm đạt (count_ok) × %s %s mỗi lượt", src.Name, qtyText(q), e.Material), true
+		q := src.OutQty[e.Material]
+		if q <= 0 || !g.has(src.Subject, "count_ok") {
+			return nil, "", false
 		}
+		base = Term{Subject: src.Subject, Signal: "count_ok", Sign: 1, Factor: fac(q)}
+		what = fmt.Sprintf("số lượt %s làm ra sản phẩm đạt (count_ok) × %s %s mỗi lượt", src.Name, qtyText(q), e.Material)
 	case "SOURCE":
-		if g.has(src.Subject, "arrived") {
-			return Term{Subject: src.Subject, Signal: "arrived", Sign: 1}, fmt.Sprintf("số đã nhập về của %s (arrived)", src.Name), true
+		if !g.has(src.Subject, "arrived") {
+			return nil, "", false
 		}
+		base = Term{Subject: src.Subject, Signal: "arrived", Sign: 1}
+		what = fmt.Sprintf("số đã nhập về của %s (arrived)", src.Name)
+	default:
+		return nil, "", false
 	}
-	return Term{}, "", false
+	if len(others) > 0 {
+		what += fmt.Sprintf(" trừ số đã chuyển trên %d đường nối còn lại cùng vật tư", len(others))
+	}
+	return append([]Term{base}, others...), what, true
+}
+
+// consumer: phần bộ đếm của node nhận hàng dành riêng cho edge này (trạm: số lượt × đơn vị mỗi lượt; đích: số đã giao),
+// trừ số đã chuyển trên các edge vào khác cùng vật tư.
+func (g *suggester) consumer(e Subject) ([]Term, string, bool) {
+	dst := g.subj[e.Dst]
+	others, ok := g.minusMoved(siblings(g.inEdges[e.Dst], e))
+	if !ok {
+		return nil, "", false
+	}
+	var base Term
+	var what string
+	switch dst.Archetype {
+	case "PROCESS":
+		q := dst.InQty[e.Material]
+		if q <= 0 || !g.has(dst.Subject, "count_in") {
+			return nil, "", false
+		}
+		base = Term{Subject: dst.Subject, Signal: "count_in", Sign: 1, Factor: fac(q)}
+		what = fmt.Sprintf("số lượt %s đã nhận (count_in) × %s %s mỗi lượt", dst.Name, qtyText(q), e.Material)
+	case "SINK":
+		if !g.has(dst.Subject, "fulfilled") {
+			return nil, "", false
+		}
+		base = Term{Subject: dst.Subject, Signal: "fulfilled", Sign: 1}
+		what = fmt.Sprintf("số đã giao của %s (fulfilled)", dst.Name)
+	default:
+		return nil, "", false
+	}
+	if len(others) > 0 {
+		what += fmt.Sprintf(" trừ số đã chuyển trên %d đường nối còn lại cùng vật tư", len(others))
+	}
+	return append([]Term{base}, others...), what, true
 }
 
 func (g *suggester) edgeMoved(e Subject) []Suggestion {
 	var out []Suggestion
-	dst, src := g.subj[e.Dst], g.subj[e.Src]
-	if dst.Archetype == "PROCESS" && len(withMaterial(g.inEdges[e.Dst], e.Material)) == 1 {
-		if q := dst.InQty[e.Material]; q > 0 && g.has(dst.Subject, "count_in") {
-			out = append(out, sumOf(fmt.Sprintf("Bằng số lượt %s đã nhận (count_in) × %s %s mỗi lượt.", dst.Name, qtyText(q), e.Material), 0,
-				Term{Subject: dst.Subject, Signal: "count_in", Sign: 1, Factor: fac(q)})...)
-		}
+	if terms, what, ok := g.consumer(e); ok {
+		out = append(out, sumOf("Bằng "+what+".", 0, terms...)...)
 	}
-	if src.Archetype == "PROCESS" || src.Archetype == "SOURCE" {
-		if tm, what, ok := g.producer(e); ok {
-			out = append(out, sumOf(fmt.Sprintf("Bằng %s.", what), 0, tm)...)
-		}
-	}
-	if dst.Archetype == "SINK" && len(withMaterial(g.inEdges[e.Dst], e.Material)) == 1 && g.has(dst.Subject, "fulfilled") {
-		out = append(out, sumOf(fmt.Sprintf("Bằng số đã giao của %s (fulfilled).", dst.Name), 0, Term{Subject: dst.Subject, Signal: "fulfilled", Sign: 1})...)
+	if terms, what, ok := g.producer(e); ok {
+		out = append(out, sumOf("Bằng "+what+".", 0, terms...)...)
 	}
 	return out
 }
 
 func (g *suggester) edgeInTransit(e Subject) []Suggestion {
-	if !g.has(e.Subject, "moved") {
+	// Chỉ khi edge là đường ra duy nhất của vật tư: nếu không, bộ đếm của node phát ra lẫn nhiều edge và không tách được phần đang đi trên đường này.
+	if !g.has(e.Subject, "moved") || len(siblings(g.outEdges[e.Src], e)) > 0 {
 		return nil
 	}
-	tm, what, ok := g.producer(e)
+	terms, what, ok := g.producer(e)
 	if !ok {
 		return nil
 	}
-	return sumOf(fmt.Sprintf("Số đã làm ra (%s) trừ số đã chuyển tới nơi (moved).", what), 0, tm, Term{Subject: e.Subject, Signal: "moved", Sign: -1})
+	return sumOf(fmt.Sprintf("Số đã làm ra (%s) trừ số đã chuyển tới nơi (moved).", what), 0, append(terms, Term{Subject: e.Subject, Signal: "moved", Sign: -1})...)
 }
 
 func (g *suggester) storageLevel(s Subject, mat string) []Suggestion {

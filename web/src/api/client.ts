@@ -111,6 +111,9 @@ export const api = {
   bindings: (key: string) => req<Binding[]>(`/api/models/${encodeURIComponent(key)}/bindings`),
   saveBindings: (key: string, bindings: BindingInput[]) =>
     put<{ bindings: Binding[] }>(`/api/models/${encodeURIComponent(key)}/bindings`, { bindings }),
+  /** Kiểm tra các ghép nối với mọi luật như khi lưu nhưng không lưu (hộp Ghép nối dùng để báo hợp lệ trước khi bấm Lưu). */
+  checkBindings: (key: string, bindings: BindingInput[]) =>
+    put<{ ok: boolean }>(`/api/models/${encodeURIComponent(key)}/bindings?check=1`, { bindings }),
   deleteBinding: (key: string, id: number) => del(`/api/models/${encodeURIComponent(key)}/bindings/${id}`),
   deleteAllBindings: (key: string) => del(`/api/models/${encodeURIComponent(key)}/bindings`),
   liveCheck: (key: string) => req<CoverageReport>(`/api/models/${encodeURIComponent(key)}/live/check`),

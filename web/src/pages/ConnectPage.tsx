@@ -86,7 +86,7 @@ export default function ConnectPage() {
   }
 
   const open = (d: BindingDraft) => setDraft({ d, existing: d.subject && d.signal ? bound.get(`${d.subject}|${d.signal}`) : undefined })
-  const editBinding = (b: Binding) => setDraft({ d: { subject: b.subject, signal: b.signal, source: b.source, json_path: b.json_path, transform: b.transform }, existing: b })
+  const editBinding = (b: Binding) => setDraft({ d: { subject: b.subject, signal: b.signal, source: b.source, json_path: b.json_path, transform: b.transform, mode: b.mode, derive: b.derive ?? undefined }, existing: b })
 
   /** Chọn một chức năng còn thiếu: lọc theo nó và chuyển sang tab (Node hoặc Đường nối) có những tín hiệu đó. */
   const pickFeature = (f: string | null) => {
@@ -262,7 +262,7 @@ export default function ConnectPage() {
       {draft && (
         <BindingDialog
           key={`${draft.existing?.id ?? 'new'}-${draft.d.subject ?? ''}-${draft.d.signal ?? ''}-${draft.d.source ?? ''}-${draft.d.json_path ?? ''}`}
-          open model={model} subjects={list} sources={sources} draft={draft.d} existing={draft.existing} onClose={() => setDraft(null)}
+          open model={model} subjects={list} sources={sources} coverage={idx} live={snapshot} draft={draft.d} existing={draft.existing} onClose={() => setDraft(null)}
         />
       )}
       {suggestOpen && (

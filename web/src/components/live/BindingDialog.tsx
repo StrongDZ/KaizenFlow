@@ -1,9 +1,12 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Plus, Sparkles, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { api } from '../../api/client'
-import type { Binding, DataSourceRow, SubjectView, Transform } from '../../api/types'
+import { ApiError } from '../../api/client'
+import type { Binding, DataSourceRow, Derive, LiveSnapshot, SignalCoverage, SubjectView, Transform } from '../../api/types'
 import { previewBinding } from '../../lib/bindingPreview'
+import { statusKey } from '../../lib/connectView'
+import { describeDerive, emptyDerive, isComplete, previewDerive, toInput } from '../../lib/derive'
 import { leafPaths, matchSource } from '../../lib/livePath'
 import { stateLabel } from '../../lib/liveFrame'
 import { STATE_ENUM } from '../../lib/suggestMapping'
@@ -11,18 +14,25 @@ import { ARCHETYPE_LABEL } from '../KfNode'
 import { Field, FormDialog } from '../FormDialog'
 import { SearchSelect } from '../SearchSelect'
 import { btn, btnDangerOutline, btnLinkAccent, input } from '../ui'
+import { DeriveEditor } from './DeriveEditor'
 import { FieldPicker } from './FieldPicker'
 
-export type BindingDraft = { subject?: string; signal?: string; source?: string; json_path?: string; transform?: Transform }
+export type BindingDraft = { subject?: string; signal?: string; source?: string; json_path?: string; transform?: Transform; mode?: 'source' | 'derived'; derive?: Derive }
 
 const STANDARD_STATES = ['RUNNING', 'IDLE', 'STARVED', 'BLOCKED', 'DOWN']
 
-/** Ghép một tín hiệu chuẩn của node/edge với một trường của một nguồn dữ liệu, kèm xem trước giá trị ngay trong hộp. */
-export function BindingDialog({ open, model, subjects, sources, draft, existing, onClose }: {
+/**
+ * Thiết lập cách một tín hiệu chuẩn của node/edge lấy giá trị: từ một trường của nguồn dữ liệu (kèm xem trước giá trị), hoặc tự tính từ
+ * các tín hiệu khác trong sơ đồ (công thức chọn bằng ô chọn, kèm gợi ý một bấm và kiểm tra hợp lệ trước khi lưu).
+ */
+export function BindingDialog({ open, model, subjects, sources, coverage, live: liveSnap, draft, existing, onClose }: {
   open: boolean
   model: string
   subjects: SubjectView[]
   sources: DataSourceRow[]
+  /** Độ phủ của từng tín hiệu (để biết tín hiệu nào đã ghép và có gợi ý tự tính nào). */
+  coverage: Map<string, SignalCoverage>
+  live?: LiveSnapshot
   draft: BindingDraft
   existing?: Binding
   onClose: () => void
@@ -36,10 +46,25 @@ export function BindingDialog({ open, model, subjects, sources, draft, existing,
   const [offset, setOffset] = useState(draft.transform?.offset?.toString() ?? '')
   const [enumRows, setEnumRows] = useState<[string, string][]>(Object.entries(draft.transform?.enum ?? {}))
   const [fields, setFields] = useState<Record<string, string>>(draft.transform?.fields ?? {})
+  const [mode, setMode] = useState<'source' | 'derived'>(draft.mode ?? existing?.mode ?? 'source')
+  const [derive, setDerive] = useState<Derive | undefined>(draft.derive ?? existing?.derive ?? undefined)
+  const [verdict, setVerdict] = useState<{ state: 'idle' | 'checking' | 'ok' | 'error'; message?: string }>({ state: 'idle' })
 
   const subj = subjects.find((s) => s.subject === subject)
   const def = subj?.signals.find((s) => s.name === signal)
   const kind = def?.kind ?? 'number'
+  const cov = coverage.get(statusKey(subject, signal))
+  const suggestions = cov?.suggestions ?? []
+  const canDerive = kind !== 'fleet' && subject !== '' && signal !== ''
+  const deriveKind: Derive['kind'] = kind === 'text' ? 'activity' : 'sum'
+  const cur: Derive = derive?.kind === deriveKind ? derive : emptyDerive(deriveKind)
+  const bound = useMemo(() => (s: string, g: string) => { const st = coverage.get(statusKey(s, g))?.status; return st === 'source' || st === 'derived' }, [coverage])
+  const nameOf = (id: string) => subjects.find((s) => s.subject === id)?.name ?? id
+  const labelOf = (id: string, g: string) => {
+    const l = subjects.find((s) => s.subject === id)?.signals.find((x) => x.name === g)?.label ?? g
+    return l.charAt(0).toLowerCase() + l.slice(1)
+  }
+  const readLive = (id: string, g: string): number | undefined => liveSnap?.subjects[id]?.signals[g]?.v
   const live = useMemo(() => sources.find((s) => s.source === source) ?? sources.find((s) => matchSource(source, s.source)), [sources, source])
   const sample = live?.sample ?? undefined
   // Mẫu nhiều nguồn (+, #) hoặc nguồn chưa đăng ký: nhập tay trong mục nâng cao; còn lại luôn chọn từ danh sách.
@@ -67,7 +92,11 @@ export function BindingDialog({ open, model, subjects, sources, draft, existing,
 
   const preview = live ? previewBinding(sample, path, kind, transform) : undefined
   const save = useMutation({
-    mutationFn: () => api.saveBindings(model, [{ subject, signal, source: source.trim(), json_path: kind === 'fleet' ? '' : path.trim(), transform, enabled: true }]),
+    mutationFn: () => api.saveBindings(model, [
+      mode === 'derived'
+        ? { subject, signal, mode: 'derived', derive: toInput(cur), enabled: true }
+        : { subject, signal, mode: 'source', source: source.trim(), json_path: kind === 'fleet' ? '' : path.trim(), transform, enabled: true },
+    ]),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['bindings', model] })
       void qc.invalidateQueries({ queryKey: ['live', model] })
@@ -85,14 +114,34 @@ export function BindingDialog({ open, model, subjects, sources, draft, existing,
     },
   })
 
-  const canSubmit = subject !== '' && signal !== '' && source.trim() !== '' && (kind === 'fleet' || path.trim() !== '')
+  // Công thức tự tính được kiểm trên server (đầu vào đã ghép, không vòng, đúng kiểu) mỗi khi đổi, trước khi cho lưu.
+  const deriveKey = JSON.stringify(toInput(cur))
+  const derivedReady = mode === 'derived' && canDerive && isComplete(cur)
+  useEffect(() => {
+    if (!derivedReady) { setVerdict({ state: 'idle' }); return }
+    setVerdict({ state: 'checking' })
+    let live = true
+    const t = setTimeout(() => {
+      api.checkBindings(model, [{ subject, signal, mode: 'derived', derive: JSON.parse(deriveKey) as Derive, enabled: true }])
+        .then(() => live && setVerdict({ state: 'ok' }))
+        .catch((e: unknown) => live && setVerdict({ state: 'error', message: e instanceof ApiError && e.issues.length > 0 ? e.issues[0].message : e instanceof Error ? e.message : 'Không kiểm tra được' }))
+    }, 350)
+    return () => { live = false; clearTimeout(t) }
+  }, [derivedReady, deriveKey, model, subject, signal])
+
+  const canSubmit = mode === 'derived'
+    ? derivedReady && verdict.state === 'ok'
+    : subject !== '' && signal !== '' && source.trim() !== '' && (kind === 'fleet' || path.trim() !== '')
   const observed = live && kind === 'text' ? previewRaw(sample, path) : undefined
 
   return (
     <FormDialog
       open={open}
       title={existing ? 'Sửa ghép nối' : 'Ghép dữ liệu vào sơ đồ'}
-      description="Chọn tín hiệu của node hoặc edge, nguồn dữ liệu và trường trong bản tin. Giá trị xem trước lấy từ bản tin mới nhất đang phát."
+      description={mode === 'derived'
+        ? 'Tín hiệu này không có thiết bị gửi trực tiếp, nên được tính từ các tín hiệu khác trong sơ đồ. Giá trị sẽ chạy cùng dữ liệu thật.'
+        : 'Chọn tín hiệu của node hoặc edge, nguồn dữ liệu và trường trong bản tin. Giá trị xem trước lấy từ bản tin mới nhất đang phát.'}
+      width={mode === 'derived' ? 540 : 460}
       submitLabel="Lưu ghép nối"
       pending={save.isPending}
       error={save.error ?? remove.error}
@@ -119,6 +168,27 @@ export function BindingDialog({ open, model, subjects, sources, draft, existing,
           </span>
         )}
       </Field>
+      {canDerive && (
+        <div role="radiogroup" aria-label="Giá trị lấy từ đâu" className="flex gap-1 rounded-lg border border-line bg-panel-2 p-0.5">
+          {([['source', 'Từ thiết bị (nguồn dữ liệu)'], ['derived', 'Tự tính từ tín hiệu khác']] as const).map(([m, label]) => (
+            <button key={m} type="button" role="radio" aria-checked={mode === m} onClick={() => setMode(m)}
+              className={`flex-1 rounded-md px-2 py-1 text-[11.5px] ${mode === m ? 'bg-raised font-semibold text-text shadow-sm' : 'text-muted hover:text-text'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {mode === 'source' && canDerive && suggestions.length > 0 && !existing && (
+        <div className="flex items-start gap-2 rounded-lg border border-accent/40 bg-panel-2 px-3 py-2">
+          <Sparkles size={13} className="mt-0.5 flex-none text-accent" aria-hidden />
+          <div className="min-w-0 flex-1 text-text-2">
+            Chưa có thiết bị cho tín hiệu này? Có thể tự tính: {suggestions[0].note}
+          </div>
+          <button type="button" className={btn} onClick={() => { setDerive(suggestions[0].derive); setMode('derived') }}>Dùng gợi ý</button>
+        </div>
+      )}
+      {(mode === 'source' || !canDerive) && (
+        <>
       <Field
         label="Nguồn dữ liệu"
         hint={advanced
@@ -187,12 +257,40 @@ export function BindingDialog({ open, model, subjects, sources, draft, existing,
           ? preview.ok ? <>Xem trước: <b className="text-text">{preview.text}</b></> : preview.reason
           : source.trim() === '' ? 'Chọn nguồn để xem trước giá trị.' : 'Nguồn này chưa phát bản tin nào để xem trước. Vẫn lưu được.'}
       </div>
+        </>
+      )}
+      {mode === 'derived' && canDerive && (
+        <>
+          {suggestions.length > 0 && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5 text-text-2"><Sparkles size={12} className="text-accent" aria-hidden />Gợi ý theo cấu trúc sơ đồ</div>
+              {suggestions.map((g, i) => (
+                <button key={i} type="button" onClick={() => setDerive(g.derive)}
+                  className="block w-full rounded-lg border border-line px-3 py-1.5 text-left text-text-2 hover:bg-panel">{g.note}</button>
+              ))}
+            </div>
+          )}
+          <DeriveEditor kind={kind === 'text' ? 'text' : 'number'} value={cur} onChange={setDerive} subjects={subjects} bound={bound} self={{ subject, signal }} />
+          <div className={`rounded-lg border px-3 py-2 ${verdict.state === 'error' ? 'border-bad/50 bg-bad-bg text-bad-text' : verdict.state === 'ok' ? 'border-ok/40 bg-panel-2' : 'border-line bg-panel-2 text-faint'}`}>
+            <div className="text-text-2">{capitalize(describeDerive(cur, nameOf, labelOf))}</div>
+            {verdict.state === 'ok' && (() => {
+              const v = previewDerive(cur, readLive)
+              return <div className="mt-0.5">Hợp lệ{v !== undefined ? <>. Xem trước theo giá trị hiện tại: <b className="text-text">{String(Number(v.toFixed(2))).replace('.', ',')}</b></> : '.'}</div>
+            })()}
+            {verdict.state === 'error' && <div className="mt-0.5">{verdict.message}</div>}
+            {verdict.state === 'checking' && <div className="mt-0.5">Đang kiểm tra…</div>}
+            {verdict.state === 'idle' && <div className="mt-0.5">Chọn đủ tín hiệu để kiểm tra.</div>}
+          </div>
+        </>
+      )}
       {existing && (
         <button type="button" className={btnDangerOutline} disabled={remove.isPending} onClick={() => remove.mutate()}>Xoá ghép nối này</button>
       )}
     </FormDialog>
   )
 }
+
+const capitalize = (t: string) => (t.startsWith('−') ? t : t.charAt(0).toUpperCase() + t.slice(1))
 
 function previewRaw(last: unknown, path: string): string | undefined {
   const l = leafPaths(last).find((x) => x.path === path)
