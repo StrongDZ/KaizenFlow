@@ -1,11 +1,13 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { api } from '../../api/client'
 import type { MaterialDetail } from '../../api/types'
 import { Card, ErrorBox, btnPrimary, input } from '../ui'
+import { UnitSelect } from '../UnitSelect'
 
 export function MaterialInfoForm({ d, canEditUnit }: { d: MaterialDetail; canEditUnit: boolean }) {
   const qc = useQueryClient()
+  const all = useQuery({ queryKey: ['materials'], queryFn: api.materials })
   const [name, setName] = useState(d.name)
   const [unit, setUnit] = useState(d.unit)
   const save = useMutation({
@@ -22,10 +24,10 @@ export function MaterialInfoForm({ d, canEditUnit }: { d: MaterialDetail; canEdi
       <div className="grid grid-cols-3 gap-4">
         <label className={label}>Tên<input className={input} value={name} onChange={(e) => setName(e.target.value)} /></label>
         <label className={label}>Mã (không đổi được)<input className={`${input} opacity-60`} value={d.code} disabled /></label>
-        <label className={label}>
-          Đơn vị
-          <input className={`${input} ${canEditUnit ? '' : 'opacity-60'}`} value={unit} disabled={!canEditUnit} onChange={(e) => setUnit(e.target.value)} />
-        </label>
+        <div className={label}>
+          <span>Đơn vị</span>
+          <UnitSelect value={unit} used={(all.data ?? []).map((m) => m.unit)} onChange={setUnit} disabled={!canEditUnit} />
+        </div>
       </div>
       <div className="mt-2"><ErrorBox error={save.error} /></div>
     </Card>

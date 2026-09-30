@@ -195,3 +195,6 @@ input::placeholder, textarea::placeholder { color: var(--color-faint); }
 /* Ô "cố định hoặc ngẫu nhiên": kiểu ở trên, các tham số của kiểu đó bên dưới. */
 .rjsf .kf-dist-params { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 6px; margin-top: 6px; }
 .rjsf .kf-dist-params label { font-size: 10.5px; }
+
+/* Ô chọn có tìm kiếm nằm trong form rjsf: giữ kích thước như các ô nhập khác (đè luật `.rjsf button` chung). */
+.rjsf .kf-select { padding: 6px 10px; font-size: 12px; background: var(--color-panel-2); border: 1px solid var(--color-line-2); border-radius: 8px; }

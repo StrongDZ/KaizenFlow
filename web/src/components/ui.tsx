@@ -27,6 +27,8 @@ export const btnAccentOutline = `${base} border border-accent/60 font-medium tex
 export const btnOkOutline = `${base} border border-ok-solid/60 font-medium text-ok-solid hover:bg-panel`
 /** Nút biểu tượng không viền (đóng panel, đổi giao diện). */
 export const btnGhost = 'inline-flex items-center justify-center rounded-md p-1.5 text-muted hover:bg-panel hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
+/** Liên kết chữ xanh nhỏ trong form ("Tạo vật tư RAW01 trong Thư viện"). */
+export const btnLinkAccent = 'mt-1 block text-[11px] text-accent underline decoration-dotted hover:opacity-80'
 /** Chữ đỏ nhỏ trong form, cho thao tác bỏ một dòng (không phải xoá dữ liệu). */
 export const btnLinkDanger = 'text-xs text-bad-text underline decoration-dotted hover:opacity-80 disabled:opacity-50'
 export const input =

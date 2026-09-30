@@ -1,13 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Material } from '../api/types'
-import { Field, FormDialog } from '../components/FormDialog'
+import { MaterialCreateDialog } from '../components/library/MaterialCreateDialog'
 import { DataTable, type Column } from '../components/table/DataTable'
-import { EmptyState, ErrorBox, Loading, PageBody, PageHeader, SearchBox, btnPrimary, input } from '../components/ui'
+import { EmptyState, ErrorBox, Loading, PageBody, PageHeader, SearchBox, btnPrimary } from '../components/ui'
 import { usedIn } from '../lib/format'
-import { isValidMaterialCode } from '../lib/rules'
 import { filterRows } from '../lib/table'
 
 const COLUMNS: Column<Material>[] = [
@@ -20,20 +19,8 @@ const COLUMNS: Column<Material>[] = [
 export default function MaterialsPage() {
   const navigate = useNavigate()
   const mats = useQuery({ queryKey: ['materials'], queryFn: api.materials })
-  const qc = useQueryClient()
   const [q, setQ] = useState('')
   const [creating, setCreating] = useState(false)
-  const [code, setCode] = useState('')
-  const [name, setName] = useState('')
-  const [unit, setUnit] = useState('pcs')
-  const close = () => { setCreating(false); setCode(''); setName(''); setUnit('pcs'); create.reset() }
-  const create = useMutation({
-    mutationFn: () => api.createMaterial({ code, name: name.trim(), unit: unit.trim() || 'pcs' }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['materials'] })
-      navigate(`/library/materials/${encodeURIComponent(code)}`)
-    },
-  })
   if (mats.isLoading) return <Loading />
   const rows = filterRows(mats.data ?? [], q, (m) => [m.name, m.code])
   return (
@@ -48,23 +35,12 @@ export default function MaterialsPage() {
           </>
         }
       />
-      <FormDialog
-        open={creating} title="Tạo vật tư"
-        description="Vật tư là loại hàng chạy qua sơ đồ: nguyên liệu, bán thành phẩm, thành phẩm."
-        submitLabel="Tạo vật tư" pending={create.isPending} error={create.error}
-        canSubmit={isValidMaterialCode(code)} onSubmit={() => create.mutate()} onClose={close}
-      >
-        <Field label="Mã vật tư" hint="Không đổi được sau khi tạo. Ví dụ RAW-01, SUB_OK."
-          problem={code !== '' && !isValidMaterialCode(code) ? 'Mã chỉ gồm chữ, số, gạch dưới, gạch nối và phải bắt đầu bằng chữ hoặc số.' : null}>
-          <input autoFocus className={`${input} w-full`} value={code} onChange={(e) => setCode(e.target.value)} aria-invalid={code !== '' && !isValidMaterialCode(code)} />
-        </Field>
-        <Field label="Tên hiển thị" hint="Bỏ trống thì dùng mã.">
-          <input className={`${input} w-full`} value={name} onChange={(e) => setName(e.target.value)} />
-        </Field>
-        <Field label="Đơn vị" hint="Ví dụ pcs (cái), kg.">
-          <input className={`${input} w-full`} value={unit} onChange={(e) => setUnit(e.target.value)} />
-        </Field>
-      </FormDialog>
+      {creating && (
+        <MaterialCreateDialog
+          onClose={() => setCreating(false)}
+          onCreated={(code) => navigate(`/library/materials/${encodeURIComponent(code)}`)}
+        />
+      )}
       <ErrorBox error={mats.error} />
       <DataTable
         rows={rows}
