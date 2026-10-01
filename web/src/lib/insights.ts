@@ -1,7 +1,35 @@
 import type { Insight, Json } from '../api/types'
 
-export type Action = { type: string; target: string; cost: number; at_s?: number; duration_s?: number; delta?: number; rop?: number }
-export type Candidate = { rank: number; action: Action; delta_kpi: { red_minutes: number; throughput: number }; score: number }
+export type Action = {
+  type: string
+  target: string
+  cost: number
+  at_s?: number
+  duration_s?: number
+  delta?: number
+  rop?: number
+  from_rate?: number
+  to_rate?: number
+  from_slots?: number
+  to_slots?: number
+}
+type NumericMetrics = Record<string, number | null | undefined>
+export type Candidate = {
+  rank: number
+  action: Action
+  delta_kpi: { red_minutes: number; throughput: number }
+  score: number
+  score_v2?: number
+  reason?: string | null
+  evidence?: NumericMetrics | null
+  expected_impact?: {
+    baseline?: NumericMetrics
+    candidate?: NumericMetrics
+    delta?: NumericMetrics
+  } | null
+}
+
+export type DetailRow = { label: string; value: string }
 
 export function candidatesOf(ins: Insight): Candidate[] {
   const c = ins.payload?.candidates
@@ -20,9 +48,45 @@ export function describeAction(a: Action): string {
       return `Thêm 1 xe cho ${a.target}`
     case 'REPLENISH':
       return `Nâng điểm đặt hàng của ${a.target} lên ${a.rop ?? '?'}`
+    case 'INCREASE_PROCESS_CAPACITY':
+      return `Tăng năng lực ${a.target} thêm ${a.delta ?? 1} slot`
+    case 'REDUCE_MACHINE_RATE':
+      return !isFiniteNumber(a.to_rate)
+        ? `Giảm nhịp máy ${a.target}`
+        : `Giảm nhịp ${a.target} xuống ${formatNumber(a.to_rate)} u/h`
+    case 'STOP_MACHINE':
+      return `Tạm dừng ${a.target} ở phút ${minutes(a.at_s)}, trong ${minutes(a.duration_s)} phút`
     default:
       return `${a.type} ${a.target}`
   }
+}
+
+const formatNumber = (value: number, digits = 1): string => value.toLocaleString('vi-VN', { maximumFractionDigits: digits })
+const signed = (value: number, suffix = ''): string => `${value > 0 ? '+' : ''}${formatNumber(value)}${suffix}`
+const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+
+export function evidenceRows(evidence?: NumericMetrics | null): DetailRow[] {
+  if (!evidence) return []
+  const rows: DetailRow[] = []
+  if (isFiniteNumber(evidence.utilization)) rows.push({ label: 'Mức sử dụng', value: `${formatNumber(evidence.utilization * 100)}%` })
+  if (isFiniteNumber(evidence.nominal_rate)) rows.push({ label: 'Năng lực danh nghĩa', value: `${formatNumber(evidence.nominal_rate)} u/h` })
+  if (isFiniteNumber(evidence.effective_throughput)) rows.push({ label: 'Lưu lượng thực tế', value: `${formatNumber(evidence.effective_throughput)} u/h` })
+  if (isFiniteNumber(evidence.capacity_gap)) rows.push({ label: 'Chênh lệch năng lực', value: signed(evidence.capacity_gap, ' u/h') })
+  if (isFiniteNumber(evidence.upstream_wip_growth)) rows.push({ label: 'WIP thượng nguồn', value: signed(evidence.upstream_wip_growth) })
+  if (isFiniteNumber(evidence.downtime_s)) rows.push({ label: 'Thời gian dừng', value: `${formatNumber(evidence.downtime_s / 60)} phút` })
+  return rows
+}
+
+export function expectedImpactRows(candidate: Candidate): DetailRow[] {
+  const delta = candidate.expected_impact?.delta
+  if (!delta) return []
+  const rows: DetailRow[] = []
+  if (isFiniteNumber(delta.throughput)) rows.push({ label: 'Sản lượng', value: signed(delta.throughput) })
+  if (isFiniteNumber(delta.backorder)) rows.push({ label: 'Đơn thiếu', value: signed(delta.backorder) })
+  if (isFiniteNumber(delta.blocked_s)) rows.push({ label: 'Thời gian blocked', value: signed(delta.blocked_s / 60, ' phút') })
+  if (isFiniteNumber(delta.starved_s)) rows.push({ label: 'Thời gian starved', value: signed(delta.starved_s / 60, ' phút') })
+  if (isFiniteNumber(delta.wip_peak)) rows.push({ label: 'Đỉnh WIP', value: signed(delta.wip_peak) })
+  return rows
 }
 
 function fmtEta(eta: string | null): string {
@@ -79,9 +143,14 @@ export function insightDetail(ins: Insight): string {
     case 'FAULT_RISK':
       return `${p}% số lần lặp`
     case 'BOTTLENECK': {
+      const evidence = ins.payload?.evidence as NumericMetrics | null | undefined
+      const parts: string[] = []
       const meanS = ins.payload?.mean_s
-      if (typeof meanS === 'number') return `chờ trung bình ${Math.round(meanS / 60)} phút`
-      return `là điểm nghẽn ${p}% thời gian`
+      parts.push(typeof meanS === 'number' ? `chờ trung bình ${Math.round(meanS / 60)} phút` : `là điểm nghẽn ${p}% thời gian`)
+      if (isFiniteNumber(evidence?.utilization)) parts.push(`sử dụng ${Math.round(evidence.utilization * 100)}%`)
+      if (isFiniteNumber(evidence?.capacity_gap) && evidence.capacity_gap > 0) parts.push(`thiếu ${formatNumber(evidence.capacity_gap)} u/h`)
+      if (isFiniteNumber(evidence?.upstream_wip_growth) && evidence.upstream_wip_growth > 0) parts.push('WIP đang tăng')
+      return parts.join(' · ')
     }
     default:
       return ''
