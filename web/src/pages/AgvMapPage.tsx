@@ -100,16 +100,17 @@ export default function AgvMapPage() {
     <SidePeek
       title="Chi tiết điểm" heading={selPoint.id} onClose={() => setSelected(null)}
       subtitle={<Tag>{selPoint.kind === 'station' ? 'Trạm' : selPoint.kind === 'charger' ? 'Chỗ sạc' : 'Ngã tư'}</Tag>}
+      summary={selPoint.kind === 'station' ? <p>Gắn với node {selPoint.node_key ? names[selPoint.node_key] ?? selPoint.node_key : '(chưa gắn)'}.</p> : undefined}
       menu={editing ? [{ key: 'delete', label: 'Xoá điểm và các làn nối vào nó', icon: Trash2, danger: true, onSelect: () => { apply((m) => removePoint(m, selPoint.id)); setSelected(null) } }] : undefined}
     >
-      {editing ? <PointEditor point={selPoint} nodes={nodeOptions.map((n) => ({ key: n.key, name: names[n.key] ?? n.key }))}
-        onChange={(p) => apply((m) => ({ ...m, points: m.points.map((q) => (q.id === p.id ? p : q)) }))} />
-        : <p className="text-xs text-text-2">{selPoint.kind === 'station' ? `Trạm gắn với node ${selPoint.node_key ? names[selPoint.node_key] ?? selPoint.node_key : '(chưa gắn)'}.` : selPoint.kind === 'charger' ? 'Chỗ sạc.' : 'Ngã tư.'}</p>}
+      {editing && <PointEditor point={selPoint} nodes={nodeOptions.map((n) => ({ key: n.key, name: names[n.key] ?? n.key }))}
+        onChange={(p) => apply((m) => ({ ...m, points: m.points.map((q) => (q.id === p.id ? p : q)) }))} />}
     </SidePeek>
   ) : selLane ? (
     <SidePeek
       title="Chi tiết làn" heading={selLane.id} onClose={() => setSelected(null)}
       subtitle={<Tag>{selLane.from} → {selLane.to}</Tag>}
+      summary={<p>Dài {Math.round(laneLengthM(map!, selLane))} m, chứa tối đa {selLane.capacity} xe.</p>}
       menu={editing
         ? [{ key: 'delete', label: 'Xoá làn', icon: Trash2, danger: true, onSelect: () => { apply((m) => removeLane(m, selLane.id)); setSelected(null) } }]
         : laneBlocks.has(selLane.id)
@@ -117,7 +118,6 @@ export default function AgvMapPage() {
           : [{ key: 'block', label: 'Chặn làn này 30 phút', icon: Ban, disabled: !running || block.isPending, hint: 'Bật feed để bơm sự cố chặn làn.', onSelect: () => block.mutate(selLane.id) }]}
     >
       <div className="space-y-2 text-xs text-text-2">
-        <p>Dài {Math.round(laneLengthM(map!, selLane))} m, chứa tối đa {selLane.capacity} xe.</p>
         {!editing && occ.get(selLane.id) && (
           <p>Đang có <b className="text-text">{occ.get(selLane.id)!.holding}</b> xe, <b className="text-text">{occ.get(selLane.id)!.waiting}</b> chờ vào làn kế: {TONE_LABEL[laneTone(occ.get(selLane.id)!)]}.</p>
         )}

@@ -41,8 +41,8 @@ export function NodeTypeDetail({ code, variant, onClose }: { code: string; varia
       fullPageTo={`/library/node-types/${encodeURIComponent(d.code)}`}
       subtitle={<span className="flex items-center gap-2"><NodeIcon name={typeof d.ui?.icon === 'string' ? d.ui.icon : undefined} archetype={d.archetype} size={15} className="text-text-2" /><Tag>{d.code}</Tag><Tag>{ARCHETYPE_LABEL[d.archetype]}</Tag></span>}
       menu={[
-        { key: 'clone', label: 'Nhân bản', icon: Copy, to: `/library/node-types/new?from=${encodeURIComponent(d.code)}` },
-        { key: 'edit', label: 'Sửa', icon: Pencil, to: `/library/node-types/${encodeURIComponent(d.code)}/edit`, disabled: !rules.canEdit, hint: 'Đã có phiên bản Publish dùng loại này. Nhân bản để sửa.' },
+        { key: 'clone', label: 'Nhân bản', icon: Copy, primary: !rules.canEdit, to: `/library/node-types/new?from=${encodeURIComponent(d.code)}` },
+        { key: 'edit', label: 'Sửa', icon: Pencil, primary: rules.canEdit, to: `/library/node-types/${encodeURIComponent(d.code)}/edit`, disabled: !rules.canEdit, hint: 'Đã có phiên bản Publish dùng loại này. Nhân bản để sửa.' },
         { key: 'delete', label: 'Xoá loại node', icon: Trash2, danger: true, disabled: !rules.canDelete, hint: 'Đang có phiên bản dùng loại này nên không xoá được.', onSelect: () => setDeleting(true) },
       ]}
     >

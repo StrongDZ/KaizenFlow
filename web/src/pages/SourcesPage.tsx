@@ -125,6 +125,7 @@ function SourceDetail({ model, row, names, onGone, onClose }: { model: string; r
     <SidePeek
       title="Chi tiết nguồn dữ liệu" heading={<span className="font-mono">{row.source}</span>} onClose={onClose}
       subtitle={<><i className={`h-2 w-2 rounded-full ${row.live ? 'bg-ok' : 'bg-faint'}`} />{row.live ? 'Đang phát' : 'Im lặng'}</>}
+      summary={<><p>{row.desc || 'Không có mô tả.'}</p><p className="text-muted">Nhận lần cuối {ageText(row.age_ms)} · {row.count.toLocaleString('vi-VN')} bản tin từ khi ghi nhận · {row.origin === 'manual' ? 'khai báo tay' : 'tự ghi nhận'}</p></>}
       menu={[{ key: 'delete', label: 'Xoá nguồn', icon: Trash2, danger: true, onSelect: () => setDeleting(true) }]}
     >
       <DeleteDialog
@@ -132,13 +133,6 @@ function SourceDetail({ model, row, names, onGone, onClose }: { model: string; r
         onDone={() => { refresh(); onGone() }}
       />
       <div className="space-y-4 text-xs">
-        <div className="space-y-0.5 text-text-2">
-          <p>{row.desc || 'Không có mô tả.'}</p>
-          <p className="text-muted">
-            {row.live ? 'Đang phát' : 'Im lặng'} · nhận lần cuối {ageText(row.age_ms)} · {row.count.toLocaleString('vi-VN')} bản tin từ khi ghi nhận ·{' '}
-            {row.origin === 'manual' ? 'khai báo tay' : 'tự ghi nhận'}
-          </p>
-        </div>
         <section>
           <h3 className="mb-1 font-semibold text-text">Đang dùng cho ({row.bindings.length})</h3>
           {row.bindings.length === 0 ? (

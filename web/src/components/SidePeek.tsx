@@ -1,7 +1,7 @@
 import { Maximize2, X } from 'lucide-react'
 import { useEffect, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ActionButtons, ActionMenu, type ActionItem } from './ActionMenu'
+import { ActionButtons, SplitAction, type ActionItem } from './ActionMenu'
 import { Loading, PageBody, PageHeader } from './ui'
 
 /** Đối tượng đang mở trong khung chi tiết, lưu ở `?peek=` của URL: tải lại trang hay gửi link vẫn mở đúng chỗ, không chất thêm lịch sử. */
@@ -44,26 +44,31 @@ export function PeekHost({ peek, onClose, children }: { peek: ReactNode; onClose
 }
 
 /**
- * Khung chi tiết bên phải. Thanh tiêu đề chỉ nói đây là màn gì ("Chi tiết scenario") cùng menu Thao tác, nút mở trang đầy đủ và nút đóng;
- * tên và nhãn của chính đối tượng nằm ở đầu phần thân, ngay trên nội dung.
+ * Khung chi tiết bên phải. Thanh tiêu đề chỉ nói đây là màn gì ("Chi tiết scenario") cùng nút mở trang đầy đủ và nút đóng.
+ * Phần thân mở đầu bằng một khối giới thiệu (hero): tên, nhãn và vài dòng thông tin chung của đối tượng, cùng nút thao tác
+ * (nút chính và menu các thao tác còn lại) vì chúng là của đối tượng đó chứ không của khung.
  */
-export function SidePeek({ title, heading, subtitle, menu, fullPageTo, onClose, children }: {
-  title: string; heading: ReactNode; subtitle?: ReactNode; menu?: ActionItem[]; fullPageTo?: string; onClose: () => void; children: ReactNode
+export function SidePeek({ title, heading, subtitle, summary, menu, fullPageTo, onClose, children }: {
+  title: string; heading: ReactNode; subtitle?: ReactNode; summary?: ReactNode; menu?: ActionItem[]; fullPageTo?: string; onClose: () => void; children?: ReactNode
 }) {
+  const hasMenu = !!menu && menu.length > 0
   return (
     <section className="flex h-full flex-col">
       <header className="flex items-center gap-2 border-b border-line px-4 py-2.5">
         <h2 className="min-w-0 flex-1 truncate text-xs font-semibold text-muted">{title}</h2>
-        {menu && <ActionMenu items={menu} />}
         {fullPageTo && (
           <Link to={fullPageTo} title="Mở trang đầy đủ" aria-label="Mở trang đầy đủ" className="flex-none rounded-md p-1.5 text-muted hover:bg-panel-2 hover:text-text"><Maximize2 size={14} /></Link>
         )}
         <button type="button" aria-label="Đóng chi tiết" title="Đóng (Esc)" onClick={onClose} className="flex-none rounded-md p-1.5 text-muted hover:bg-panel-2 hover:text-text"><X size={15} /></button>
       </header>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 text-xs">
-        <div className="space-y-1.5">
-          <h3 className="break-words text-base font-semibold leading-snug text-text">{heading}</h3>
-          {subtitle && <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted">{subtitle}</div>}
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-3 rounded-xl border border-line bg-panel-2 p-4">
+          <div className="min-w-0 flex-1 basis-44 space-y-1.5">
+            <h3 className="break-words text-base font-semibold leading-snug text-text">{heading}</h3>
+            {subtitle && <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted">{subtitle}</div>}
+            {summary && <div className="space-y-0.5 pt-0.5 text-xs leading-relaxed text-text-2">{summary}</div>}
+          </div>
+          {hasMenu && <SplitAction items={menu} />}
         </div>
         {children}
       </div>
