@@ -11,6 +11,7 @@ import { Card, EmptyState, ErrorBox, Notice, StatusChip, Tag } from '../ui'
 import { fmtDateTime, fmtDuration } from '../../lib/format'
 import { kpiP50 } from '../../lib/insights'
 import { scenarioRules } from '../../lib/rules'
+import { describeOverride } from '../../lib/scenarioView'
 
 const kv = (label: string, value: string) => (
   <div key={label} className="flex justify-between gap-4 border-t border-line py-1.5 first:border-0">
@@ -101,12 +102,15 @@ export function ScenarioDetail({ id, variant, onClose, onSwitch }: { id: number;
             <p className="text-xs text-muted">Không thay đổi nguồn lực nào.</p>
           ) : (
             <div className="text-xs">
-              {s.overrides.map((o: Json, n) => (
-                <div key={n} className="flex justify-between gap-4 border-t border-line py-1.5 first:border-0">
-                  <span className="text-muted">{String(o.target)}{String(o.path)}</span>
-                  <b className="font-medium tabular-nums text-text">{String(o.value)}</b>
-                </div>
-              ))}
+              {s.overrides.map((o: Json, n) => {
+                const d = describeOverride(o)
+                return (
+                  <div key={n} className="flex justify-between gap-4 border-t border-line py-1.5 first:border-0">
+                    <span className="text-muted">{d.label}</span>
+                    <b className="text-right font-medium tabular-nums text-text">{d.lines.map((l) => <span key={l} className="block">{l}</span>)}</b>
+                  </div>
+                )
+              })}
             </div>
           )}
         </Card>
