@@ -4,7 +4,8 @@ import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { DataSourceRow, SourceTestResult } from '../api/types'
-import { DeleteAction } from '../components/DeleteAction'
+import { Trash2 } from 'lucide-react'
+import { DeleteDialog } from '../components/DeleteAction'
 import { FeedControl } from '../components/live/FeedControl'
 import { SampleTree } from '../components/live/SampleTree'
 import { SourceDialog } from '../components/live/SourceDialog'
@@ -109,6 +110,7 @@ function SourceDetail({ model, row, names, onGone, onClose }: { model: string; r
   const qc = useQueryClient()
   const [payload, setPayload] = useState(() => (row.sample === null || row.sample === undefined ? '{\n  \n}' : JSON.stringify(row.sample, null, 2)))
   const [result, setResult] = useState<SourceTestResult | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const parsed = parseSample(payload)
   const test = useMutation({
     mutationFn: () => api.testSource(model, { source: row.source, payload: parsed.ok ? parsed.value : undefined }),
@@ -121,15 +123,14 @@ function SourceDetail({ model, row, names, onGone, onClose }: { model: string; r
   }
   return (
     <SidePeek
-      title={<span className="font-mono">{row.source}</span>} onClose={onClose}
+      title="Chi tiết nguồn dữ liệu" heading={<span className="font-mono">{row.source}</span>} onClose={onClose}
       subtitle={<><i className={`h-2 w-2 rounded-full ${row.live ? 'bg-ok' : 'bg-faint'}`} />{row.live ? 'Đang phát' : 'Im lặng'}</>}
-      actions={
-        <DeleteAction
-          what={`nguồn ${row.source}`} run={(cascade) => api.deleteSource(model, row.source, cascade)}
-          onDone={() => { refresh(); onGone() }}
-        />
-      }
+      menu={[{ key: 'delete', label: 'Xoá nguồn', icon: Trash2, danger: true, onSelect: () => setDeleting(true) }]}
     >
+      <DeleteDialog
+        open={deleting} onClose={() => setDeleting(false)} what={`nguồn ${row.source}`} run={(cascade) => api.deleteSource(model, row.source, cascade)}
+        onDone={() => { refresh(); onGone() }}
+      />
       <div className="space-y-4 text-xs">
         <div className="space-y-0.5 text-text-2">
           <p>{row.desc || 'Không có mô tả.'}</p>

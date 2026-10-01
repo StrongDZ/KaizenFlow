@@ -3,12 +3,14 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../../api/client'
 import { materialRules } from '../../lib/rules'
-import { DeleteAction } from '../DeleteAction'
+import { Trash2 } from 'lucide-react'
+import { DeleteDialog } from '../DeleteAction'
 import { MaterialInfoForm } from '../library/MaterialInfoForm'
 import { DetailShell, type DetailVariant } from '../SidePeek'
 import { Card, EmptyState, ErrorBox, Notice, Tag } from '../ui'
 
 const TABS = ['Đang dùng ở'] as const
+const KIND = 'Chi tiết vật tư'
 
 /** Chi tiết một vật tư: thông tin sửa được, và những nơi đang dùng nó. Dùng ở trang riêng hoặc khung bên phải của danh sách vật tư. */
 export function MaterialDetail({ code, variant, onClose }: { code: string; variant: DetailVariant; onClose?: () => void }) {
@@ -16,28 +18,27 @@ export function MaterialDetail({ code, variant, onClose }: { code: string; varia
   const qc = useQueryClient()
   const m = useQuery({ queryKey: ['material', code], queryFn: () => api.material(code) })
   const [tab, setTab] = useState<(typeof TABS)[number]>('Đang dùng ở')
+  const [deleting, setDeleting] = useState(false)
   const back = { to: '/library/materials', label: 'Danh sách vật tư' }
-  if (m.error) return <DetailShell variant={variant} title={code} back={back} onClose={onClose}><ErrorBox error={m.error} /></DetailShell>
-  if (!m.data) return <DetailShell variant={variant} title={code} back={back} onClose={onClose} loading><span /></DetailShell>
+  if (m.error) return <DetailShell variant={variant} kind={KIND} title={code} back={back} onClose={onClose}><ErrorBox error={m.error} /></DetailShell>
+  if (!m.data) return <DetailShell variant={variant} kind={KIND} title={code} back={back} onClose={onClose} loading><span /></DetailShell>
   const d = m.data
   const rules = materialRules(d.usage)
   const total = d.usage.edges.length + d.usage.nodes.length + d.usage.node_types.length
   const th = 'py-1.5 text-left text-[11px] font-medium text-muted'
   return (
     <DetailShell
-      variant={variant} title={d.name || d.code} subtitle={<Tag>{d.code}</Tag>} back={back} onClose={onClose}
+      variant={variant} kind={KIND} title={d.name || d.code} subtitle={<Tag>{d.code}</Tag>} back={back} onClose={onClose}
       fullPageTo={`/library/materials/${encodeURIComponent(d.code)}`}
-      actions={rules.canDelete ? (
-        <DeleteAction
-          what={`vật tư ${d.code}`}
-          run={() => api.deleteMaterial(d.code)}
-          onDone={() => {
-            void qc.invalidateQueries({ queryKey: ['materials'] })
-            if (variant === 'peek') onClose?.(); else navigate('/library/materials')
-          }}
-        />
-      ) : undefined}
+      menu={[{ key: 'delete', label: 'Xoá vật tư', icon: Trash2, danger: true, disabled: !rules.canDelete, hint: 'Đang được dùng nên không xoá được.', onSelect: () => setDeleting(true) }]}
     >
+      <DeleteDialog
+        open={deleting} onClose={() => setDeleting(false)} what={`vật tư ${d.code}`} run={() => api.deleteMaterial(d.code)}
+        onDone={() => {
+          void qc.invalidateQueries({ queryKey: ['materials'] })
+          if (variant === 'peek') onClose?.(); else navigate('/library/materials')
+        }}
+      />
       {rules.banner && <Notice tone="lock">{rules.banner}</Notice>}
       <MaterialInfoForm key={d.code} d={d} canEditUnit={rules.canEditUnit} compact={variant === 'peek'} />
       <div role="tablist" className="flex gap-5 border-b border-line">

@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router-dom'
+import { Copy, Pencil, Play, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../../api/client'
 import type { Json, Run } from '../../api/types'
-import { DeleteAction } from '../DeleteAction'
+import { DeleteDialog } from '../DeleteAction'
 import { DataTable, type Column } from '../table/DataTable'
 import { DetailShell, type DetailVariant } from '../SidePeek'
-import { Card, EmptyState, ErrorBox, Notice, StatusChip, Tag, btn, btnPrimary } from '../ui'
+import { Card, EmptyState, ErrorBox, Notice, StatusChip, Tag } from '../ui'
 import { fmtDateTime, fmtDuration } from '../../lib/format'
 import { kpiP50 } from '../../lib/insights'
 import { scenarioRules } from '../../lib/rules'
@@ -17,12 +19,14 @@ const kv = (label: string, value: string) => (
   </div>
 )
 
+const KIND = 'Chi tiết scenario'
 const START_STATE: Record<string, string> = { EMPTY: 'Nhà máy rỗng', WARMUP: 'Làm nóng rồi mới ghi', LIVE_SNAPSHOT: 'Từ ảnh chụp trực tiếp' }
 
 /** Chi tiết một scenario: thông số, lỗi đã tiêm, thay đổi nguồn lực, các lần chạy. Dùng ở trang riêng hoặc khung bên phải của danh sách scenario. */
 export function ScenarioDetail({ id, variant, onClose, onSwitch }: { id: number; variant: DetailVariant; onClose?: () => void; onSwitch?: (id: number) => void }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const [deleting, setDeleting] = useState(false)
   const sc = useQuery({ queryKey: ['scenario', id], queryFn: () => api.scenario(id) })
   const graph = useQuery({ queryKey: ['graph', sc.data?.model_version_id], queryFn: () => api.graph(sc.data!.model_version_id), enabled: !!sc.data })
   const runs = useQuery({ queryKey: ['runs', 'of', id], queryFn: () => api.runs(id) })
@@ -36,8 +40,8 @@ export function ScenarioDetail({ id, variant, onClose, onSwitch }: { id: number;
       else navigate(`/scenarios/${r.id}`)
     },
   })
-  if (sc.error) return <DetailShell variant={variant} title={`Scenario #${id}`} onClose={onClose}><ErrorBox error={sc.error} /></DetailShell>
-  if (!sc.data || !graph.data) return <DetailShell variant={variant} title={`Scenario #${id}`} onClose={onClose} loading><span /></DetailShell>
+  if (sc.error) return <DetailShell variant={variant} kind={KIND} title={`Scenario #${id}`} onClose={onClose}><ErrorBox error={sc.error} /></DetailShell>
+  if (!sc.data || !graph.data) return <DetailShell variant={variant} kind={KIND} title={`Scenario #${id}`} onClose={onClose} loading><span /></DetailShell>
   const s = sc.data
   const published = graph.data.status === 'PUBLISHED'
   const rules = runs.data ? scenarioRules(runs.data.length) : { canEdit: false, canDelete: true, banner: null }
@@ -50,24 +54,22 @@ export function ScenarioDetail({ id, variant, onClose, onSwitch }: { id: number;
   ]
   return (
     <DetailShell
-      variant={variant} title={s.name || `Scenario #${s.id}`} subtitle={<Tag>{s.origin === 'RECOMMENDER' ? 'Từ đề xuất' : 'Người dùng'}</Tag>}
+      variant={variant} kind={KIND} title={s.name || `Scenario #${s.id}`} subtitle={<Tag>{s.origin === 'RECOMMENDER' ? 'Từ đề xuất' : 'Người dùng'}</Tag>}
       back={{ to: `/versions/${s.model_version_id}/scenarios`, label: 'Danh sách scenario' }} onClose={onClose} fullPageTo={`/scenarios/${s.id}`}
-      actions={
-        <>
-          <button className={btnPrimary} disabled={!published || start.isPending} onClick={() => start.mutate()}>Chạy</button>
-          {rules.canEdit ? <Link className={btn} to={`/scenarios/${s.id}/edit`}>Sửa</Link> : <button className={btn} disabled>Sửa</button>}
-          <button className={btn} disabled={clone.isPending} onClick={() => clone.mutate()}>Nhân bản</button>
-          <DeleteAction
-            what={`scenario ${s.name || `#${s.id}`}`}
-            run={(cascade) => api.deleteScenario(s.id, cascade)}
-            onDone={() => {
-              void qc.invalidateQueries({ queryKey: ['scenarios'] })
-              if (variant === 'peek') onClose?.(); else navigate(`/versions/${s.model_version_id}/scenarios`)
-            }}
-          />
-        </>
-      }
+      menu={[
+        { key: 'run', label: 'Chạy', icon: Play, primary: true, disabled: !published || start.isPending, hint: 'Mô hình chưa Publish. Publish ở tab Sơ đồ trước.', onSelect: () => start.mutate() },
+        { key: 'edit', label: 'Sửa', icon: Pencil, to: `/scenarios/${s.id}/edit`, disabled: !rules.canEdit, hint: 'Đã có lần chạy nên không sửa được. Nhân bản để thử thông số khác.' },
+        { key: 'clone', label: 'Nhân bản', icon: Copy, disabled: clone.isPending, onSelect: () => clone.mutate() },
+        { key: 'delete', label: 'Xoá scenario', icon: Trash2, danger: true, onSelect: () => setDeleting(true) },
+      ]}
     >
+      <DeleteDialog
+        open={deleting} onClose={() => setDeleting(false)} what={`scenario ${s.name || `#${s.id}`}`} run={(cascade) => api.deleteScenario(s.id, cascade)}
+        onDone={() => {
+          void qc.invalidateQueries({ queryKey: ['scenarios'] })
+          if (variant === 'peek') onClose?.(); else navigate(`/versions/${s.model_version_id}/scenarios`)
+        }}
+      />
       {rules.banner && <Notice tone="lock">{rules.banner}</Notice>}
       {!published && <Notice tone="lock">Mô hình chưa Publish. Publish ở tab Sơ đồ trước khi chạy.</Notice>}
       <ErrorBox error={start.error ?? clone.error} />

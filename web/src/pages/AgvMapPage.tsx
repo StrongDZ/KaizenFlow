@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
+import { Ban, Trash2, Unlock } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import type { AgvMap, MapPoint } from '../api/types'
@@ -8,7 +9,7 @@ import { AgvMapCanvas, type MapSelection, type RingTone } from '../components/li
 import { FeedControl } from '../components/live/FeedControl'
 import { MapTables } from '../components/live/MapTables'
 import { PeekHost, SidePeek } from '../components/SidePeek'
-import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, Tag, btn, btnDangerOutline, btnPrimary, btnWarn, input } from '../components/ui'
+import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, Tag, btn, btnPrimary, input } from '../components/ui'
 import { useFeedStatus, useLive } from '../hooks/useLive'
 import { useModelGraph } from '../hooks/useModelGraph'
 import { nodeBadge } from '../lib/liveFrame'
@@ -96,33 +97,35 @@ export default function AgvMapPage() {
   const nodeOptions = graph?.nodes ?? []
 
   const peek = selPoint ? (
-    <SidePeek title={`Điểm ${selPoint.id}`} onClose={() => setSelected(null)}>
+    <SidePeek
+      title="Chi tiết điểm" heading={selPoint.id} onClose={() => setSelected(null)}
+      subtitle={<Tag>{selPoint.kind === 'station' ? 'Trạm' : selPoint.kind === 'charger' ? 'Chỗ sạc' : 'Ngã tư'}</Tag>}
+      menu={editing ? [{ key: 'delete', label: 'Xoá điểm và các làn nối vào nó', icon: Trash2, danger: true, onSelect: () => { apply((m) => removePoint(m, selPoint.id)); setSelected(null) } }] : undefined}
+    >
       {editing ? <PointEditor point={selPoint} nodes={nodeOptions.map((n) => ({ key: n.key, name: names[n.key] ?? n.key }))}
-        onChange={(p) => apply((m) => ({ ...m, points: m.points.map((q) => (q.id === p.id ? p : q)) }))}
-        onDelete={() => { apply((m) => removePoint(m, selPoint.id)); setSelected(null) }} />
+        onChange={(p) => apply((m) => ({ ...m, points: m.points.map((q) => (q.id === p.id ? p : q)) }))} />
         : <p className="text-xs text-text-2">{selPoint.kind === 'station' ? `Trạm gắn với node ${selPoint.node_key ? names[selPoint.node_key] ?? selPoint.node_key : '(chưa gắn)'}.` : selPoint.kind === 'charger' ? 'Chỗ sạc.' : 'Ngã tư.'}</p>}
     </SidePeek>
   ) : selLane ? (
-    <SidePeek title={`Làn ${selLane.id}`} onClose={() => setSelected(null)}>
+    <SidePeek
+      title="Chi tiết làn" heading={selLane.id} onClose={() => setSelected(null)}
+      subtitle={<Tag>{selLane.from} → {selLane.to}</Tag>}
+      menu={editing
+        ? [{ key: 'delete', label: 'Xoá làn', icon: Trash2, danger: true, onSelect: () => { apply((m) => removeLane(m, selLane.id)); setSelected(null) } }]
+        : laneBlocks.has(selLane.id)
+          ? [{ key: 'unblock', label: 'Gỡ chặn', icon: Unlock, disabled: unblock.isPending, onSelect: () => unblock.mutate(laneBlocks.get(selLane.id)!.id) }]
+          : [{ key: 'block', label: 'Chặn làn này 30 phút', icon: Ban, disabled: !running || block.isPending, hint: 'Bật feed để bơm sự cố chặn làn.', onSelect: () => block.mutate(selLane.id) }]}
+    >
       <div className="space-y-2 text-xs text-text-2">
-        <p>{selLane.from} → {selLane.to}, dài {Math.round(laneLengthM(map!, selLane))} m, chứa tối đa {selLane.capacity} xe.</p>
+        <p>Dài {Math.round(laneLengthM(map!, selLane))} m, chứa tối đa {selLane.capacity} xe.</p>
         {!editing && occ.get(selLane.id) && (
           <p>Đang có <b className="text-text">{occ.get(selLane.id)!.holding}</b> xe, <b className="text-text">{occ.get(selLane.id)!.waiting}</b> chờ vào làn kế: {TONE_LABEL[laneTone(occ.get(selLane.id)!)]}.</p>
         )}
-        {editing ? (
-          <div className="flex items-end gap-2">
-            <label className="space-y-1"><span className="block">Sức chứa</span>
-              <input type="number" min={1} className={`${input} w-20`} value={selLane.capacity} onChange={(e) => apply((m) => setLaneCapacity(m, selLane.id, Number(e.target.value)))} /></label>
-            <button className={btnDangerOutline} onClick={() => { apply((m) => removeLane(m, selLane.id)); setSelected(null) }}>Xoá làn</button>
-          </div>
-        ) : laneBlocks.has(selLane.id) ? (
-          <div className="space-y-1.5">
-            <p className="text-bad-text">Đang bị chặn (sự cố bơm từ bảng demo).</p>
-            <button className={btn} disabled={unblock.isPending} onClick={() => unblock.mutate(laneBlocks.get(selLane.id)!.id)}>Gỡ chặn</button>
-          </div>
-        ) : (
-          <button className={btnWarn} disabled={!running || block.isPending} onClick={() => block.mutate(selLane.id)}>Chặn làn này 30 phút</button>
+        {editing && (
+          <label className="block space-y-1"><span className="block">Sức chứa</span>
+            <input type="number" min={1} className={`${input} w-20`} value={selLane.capacity} onChange={(e) => apply((m) => setLaneCapacity(m, selLane.id, Number(e.target.value)))} /></label>
         )}
+        {!editing && laneBlocks.has(selLane.id) && <p className="text-bad-text">Đang bị chặn (sự cố bơm từ bảng demo).</p>}
         {!editing && !running && <p className="text-faint">Bật feed để bơm sự cố chặn làn.</p>}
       </div>
     </SidePeek>
@@ -240,8 +243,8 @@ export default function AgvMapPage() {
   )
 }
 
-function PointEditor({ point, nodes, onChange, onDelete }: {
-  point: MapPoint; nodes: { key: string; name: string }[]; onChange: (p: MapPoint) => void; onDelete: () => void
+function PointEditor({ point, nodes, onChange }: {
+  point: MapPoint; nodes: { key: string; name: string }[]; onChange: (p: MapPoint) => void
 }) {
   return (
     <div className="space-y-2 text-xs">
@@ -256,7 +259,6 @@ function PointEditor({ point, nodes, onChange, onDelete }: {
             {nodes.map((n) => <option key={n.key} value={n.key}>{n.name} ({n.key})</option>)}
           </select></label>
       )}
-      <button className={btnDangerOutline} onClick={onDelete}>Xoá điểm (và các làn nối vào nó)</button>
     </div>
   )
 }
