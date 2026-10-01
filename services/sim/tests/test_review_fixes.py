@@ -103,6 +103,23 @@ def test_validate_rejects_bad_sensor_and_effect():
         assert e.value.key == "M"
 
 
+@pytest.mark.parametrize("bad_params", [
+    {"cycle": 0},
+    {"cycle": {"dist": "const", "value": 0}},
+    {"cycle": {"dist": "uniform", "min": -2, "max": 0}},
+    {"cycle": {"dist": "weibull", "shape": 0, "scale": 10}},
+    {"cycle": {"dist": "not-a-distribution"}},
+    {"slots": 0},
+    {"slots": 1.5},
+])
+def test_validate_rejects_nonpositive_process_capacity(bad_params):
+    node = {"key": "M", "archetype": "PROCESS", "params": {
+        "recipes": [{"inputs": [], "outputs": [{"material": "Y", "qty": 1}]}], **bad_params}}
+    with pytest.raises(ContractError) as e:
+        validate_refs(make_request([node]))
+    assert e.value.key == "M"
+
+
 # --- I4: direct edge không giữ chỗ khi nguồn chưa có hàng ---------------------
 def test_slow_feeder_does_not_starve_merge_point():
     req = make_request(
