@@ -198,3 +198,8 @@ input::placeholder, textarea::placeholder { color: var(--color-faint); }
 
 /* Ô chọn có tìm kiếm nằm trong form rjsf: giữ kích thước như các ô nhập khác (đè luật `.rjsf button` chung). */
 .rjsf .kf-select { padding: 6px 10px; font-size: 12px; background: var(--color-panel-2); border: 1px solid var(--color-line-2); border-radius: 8px; }
+
+/* Khung chi tiết bên phải (side peek) trượt vào nhẹ khi mở; tắt khi người dùng chọn giảm chuyển động. */
+@keyframes kf-peek-in { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+.kf-peek-in { animation: kf-peek-in 160ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .kf-peek-in { animation: none; } }

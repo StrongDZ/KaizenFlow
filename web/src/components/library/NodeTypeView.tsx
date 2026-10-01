@@ -25,12 +25,12 @@ export function RecipeStrip({ t }: { t: Pick<NodeType, 'name' | 'default_params'
   )
 }
 
-export function ParamGrid({ t }: { t: Pick<NodeType, 'archetype' | 'default_params'> }) {
+export function ParamGrid({ t, compact = false }: { t: Pick<NodeType, 'archetype' | 'default_params'>; compact?: boolean }) {
   const groups = paramGroups(t)
   if (groups.length === 0) return <p className="text-xs text-muted">Loại này chưa có tham số mặc định.</p>
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-3 gap-3">
+      <div className={`grid gap-3 ${compact ? 'grid-cols-1' : 'grid-cols-3'}`}>
         {groups.map((g) => (
           <section key={g.title} className="min-w-0 rounded-xl border border-line bg-panel-2 px-3 py-2">
             <h3 className="mb-1 text-[11.5px] font-semibold text-text-2">{g.title}</h3>

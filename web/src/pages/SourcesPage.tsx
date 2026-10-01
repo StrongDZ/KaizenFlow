@@ -8,8 +8,9 @@ import { DeleteAction } from '../components/DeleteAction'
 import { FeedControl } from '../components/live/FeedControl'
 import { SampleTree } from '../components/live/SampleTree'
 import { SourceDialog } from '../components/live/SourceDialog'
+import { PeekHost, SidePeek, usePeekParam } from '../components/SidePeek'
 import { DataTable, type Column } from '../components/table/DataTable'
-import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, SearchBox, Tag, btn, btnPrimary } from '../components/ui'
+import { EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, SearchBox, Tag, btn, btnPrimary } from '../components/ui'
 import { ageText, parseSample, rateText, summarizeSources } from '../lib/sourceView'
 import { filterRows } from '../lib/table'
 
@@ -47,7 +48,7 @@ export default function SourcesPage() {
   const sources = useQuery({ queryKey: ['sources', model], queryFn: () => api.sources(model), refetchInterval: 4000 })
   const subjects = useQuery({ queryKey: ['live-subjects', model], queryFn: () => api.liveSubjects(model), retry: false })
   const [q, setQ] = useState('')
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selected, setSelected] = usePeekParam()
   const [adding, setAdding] = useState(false)
   const names = useMemo(() => Object.fromEntries((subjects.data?.subjects ?? []).map((s) => [s.subject, s.name])), [subjects.data])
   const list = useMemo(() => sources.data ?? [], [sources.data])
@@ -56,6 +57,10 @@ export default function SourcesPage() {
   const sum = summarizeSources(list)
   if (sources.isLoading) return <Loading />
   return (
+    <PeekHost
+      onClose={() => setSelected(null)}
+      peek={chosen ? <SourceDetail key={chosen.source} model={model} row={chosen} names={names} onGone={() => setSelected(null)} onClose={() => setSelected(null)} /> : null}
+    >
     <PageBody wide>
       <PageHeader
         title="Nguồn dữ liệu"
@@ -78,26 +83,17 @@ export default function SourcesPage() {
         <Tag>{sum.unbound} chưa ghép</Tag>
       </div>
       <ErrorBox error={sources.error} />
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_400px]">
-        <DataTable
-          rows={rows} columns={COLUMNS} rowKey={(r) => r.source} onRowClick={(r) => setSelected(r.source)} selected={(r) => r.source === selected}
-          initialSort={{ key: 'source', dir: 'asc' }}
-          empty={
-            <div className="rounded-xl border border-line">
-              <EmptyState title={q ? 'Không có nguồn khớp' : 'Chưa có nguồn nào'}>
-                {q ? 'Thử từ khoá khác.' : 'Bật feed ở thanh phía trên để các thiết bị giả lập bắt đầu gửi bản tin, hoặc bấm "Thêm nguồn" để khai báo một nguồn bằng tay.'}
-              </EmptyState>
-            </div>
-          }
-        />
-        {chosen ? (
-          <SourceDetail key={chosen.source} model={model} row={chosen} names={names} onGone={() => setSelected(null)} />
-        ) : (
-          <Card title="Chi tiết nguồn">
-            <p className="text-xs text-muted">Chọn một nguồn ở bảng để xem bản tin mẫu, các tín hiệu đang dùng nó và gửi thử một bản tin.</p>
-          </Card>
-        )}
-      </div>
+      <DataTable
+        rows={rows} columns={COLUMNS} rowKey={(r) => r.source} onRowClick={(r) => setSelected(r.source)} selected={(r) => r.source === selected}
+        initialSort={{ key: 'source', dir: 'asc' }}
+        empty={
+          <div className="rounded-xl border border-line">
+            <EmptyState title={q ? 'Không có nguồn khớp' : 'Chưa có nguồn nào'}>
+              {q ? 'Thử từ khoá khác.' : 'Bật feed ở thanh phía trên để các thiết bị giả lập bắt đầu gửi bản tin, hoặc bấm "Thêm nguồn" để khai báo một nguồn bằng tay.'}
+            </EmptyState>
+          </div>
+        }
+      />
       {adding && (
         <SourceDialog
           model={model} existing={list.map((r) => r.source)} onClose={() => setAdding(false)}
@@ -105,10 +101,11 @@ export default function SourcesPage() {
         />
       )}
     </PageBody>
+    </PeekHost>
   )
 }
 
-function SourceDetail({ model, row, names, onGone }: { model: string; row: DataSourceRow; names: Record<string, string>; onGone: () => void }) {
+function SourceDetail({ model, row, names, onGone, onClose }: { model: string; row: DataSourceRow; names: Record<string, string>; onGone: () => void; onClose: () => void }) {
   const qc = useQueryClient()
   const [payload, setPayload] = useState(() => (row.sample === null || row.sample === undefined ? '{\n  \n}' : JSON.stringify(row.sample, null, 2)))
   const [result, setResult] = useState<SourceTestResult | null>(null)
@@ -123,8 +120,9 @@ function SourceDetail({ model, row, names, onGone }: { model: string; row: DataS
     void qc.invalidateQueries({ queryKey: ['live', model] })
   }
   return (
-    <Card
-      title={row.source}
+    <SidePeek
+      title={<span className="font-mono">{row.source}</span>} onClose={onClose}
+      subtitle={<><i className={`h-2 w-2 rounded-full ${row.live ? 'bg-ok' : 'bg-faint'}`} />{row.live ? 'Đang phát' : 'Im lặng'}</>}
       actions={
         <DeleteAction
           what={`nguồn ${row.source}`} run={(cascade) => api.deleteSource(model, row.source, cascade)}
@@ -180,6 +178,6 @@ function SourceDetail({ model, row, names, onGone }: { model: string; row: DataS
           )}
         </section>
       </div>
-    </Card>
+    </SidePeek>
   )
 }

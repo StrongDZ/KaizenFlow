@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Material } from '../api/types'
+import { MaterialDetail } from '../components/detail/MaterialDetail'
 import { MaterialCreateDialog } from '../components/library/MaterialCreateDialog'
+import { PeekHost, usePeekParam } from '../components/SidePeek'
 import { DataTable, type Column } from '../components/table/DataTable'
 import { EmptyState, ErrorBox, Loading, PageBody, PageHeader, SearchBox, btnPrimary } from '../components/ui'
 import { usedIn } from '../lib/format'
@@ -17,13 +18,14 @@ const COLUMNS: Column<Material>[] = [
 ]
 
 export default function MaterialsPage() {
-  const navigate = useNavigate()
   const mats = useQuery({ queryKey: ['materials'], queryFn: api.materials })
   const [q, setQ] = useState('')
   const [creating, setCreating] = useState(false)
+  const [peek, setPeek] = usePeekParam()
   if (mats.isLoading) return <Loading />
   const rows = filterRows(mats.data ?? [], q, (m) => [m.name, m.code])
   return (
+    <PeekHost onClose={() => setPeek(null)} peek={peek ? <MaterialDetail key={peek} code={peek} variant="peek" onClose={() => setPeek(null)} /> : null}>
     <PageBody>
       <PageHeader
         title="Vật tư"
@@ -38,7 +40,7 @@ export default function MaterialsPage() {
       {creating && (
         <MaterialCreateDialog
           onClose={() => setCreating(false)}
-          onCreated={(code) => navigate(`/library/materials/${encodeURIComponent(code)}`)}
+          onCreated={(code) => { setCreating(false); setPeek(code) }}
         />
       )}
       <ErrorBox error={mats.error} />
@@ -46,10 +48,12 @@ export default function MaterialsPage() {
         rows={rows}
         columns={COLUMNS}
         rowKey={(m) => m.code}
-        onRowClick={(m) => navigate(`/library/materials/${encodeURIComponent(m.code)}`)}
+        onRowClick={(m) => setPeek(m.code)}
+        selected={(m) => m.code === peek}
         initialSort={{ key: 'code', dir: 'asc' }}
         empty={<EmptyState title={q ? 'Không có vật tư khớp' : 'Chưa có vật tư nào'}>{q ? 'Thử từ khoá khác.' : 'Bấm "Tạo vật tư" để thêm mã vật tư dùng trong sơ đồ.'}</EmptyState>}
       />
     </PageBody>
+    </PeekHost>
   )
 }
