@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Insight } from '../api/types'
-import { candidatesOf, describeAction, describeInsight, insightDetail, kpiBand, kpiP50 } from './insights'
+import { candidatesOf, describeAction, describeInsight, evidenceRows, expectedImpactRows, insightDetail, kpiBand, kpiP50 } from './insights'
 
 const base: Insight = { id: 1, sim_run_id: 1, kind: 'RED_RISK', subject_key: 'FG', eta: '2026-10-01T01:30:00Z',
   probability: 0.8, severity: 3, payload: {}, status: 'OPEN', created_at: '' }
@@ -19,7 +19,30 @@ describe('insights', () => {
     expect(c).toHaveLength(1)
     expect(describeAction(c[0].action)).toBe('Dừng bảo trì STAMP_3 ở phút 30, trong 30 phút')
     expect(describeAction({ type: 'REALLOCATE_OPERATOR', target: 'OPS', cost: 1 })).toBe('Điều thêm 1 người vào OPS')
+    expect(describeAction({ type: 'INCREASE_PROCESS_CAPACITY', target: 'STAMP_1', delta: 1, cost: 5 })).toBe('Tăng năng lực STAMP_1 thêm 1 slot')
+    expect(describeAction({ type: 'REDUCE_MACHINE_RATE', target: 'A', to_rate: 73.5, cost: 1 })).toBe('Giảm nhịp A xuống 73,5 u/h')
+    expect(describeAction({ type: 'STOP_MACHINE', target: 'A', at_s: 600, duration_s: 1800, cost: 2 })).toBe('Tạm dừng A ở phút 10, trong 30 phút')
     expect(candidatesOf(base)).toEqual([])
+  })
+
+  it('formats optional evidence and expected impact without requiring them for old candidates', () => {
+    expect(evidenceRows()).toEqual([])
+    expect(evidenceRows(null)).toEqual([])
+    expect(evidenceRows({ utilization: Number.NaN, capacity_gap: Number.POSITIVE_INFINITY })).toEqual([])
+    expect(evidenceRows({ utilization: 0.97, nominal_rate: 70, upstream_wip_growth: 22 })).toEqual([
+      { label: 'Mức sử dụng', value: '97%' },
+      { label: 'Năng lực danh nghĩa', value: '70 u/h' },
+      { label: 'WIP thượng nguồn', value: '+22' },
+    ])
+    expect(expectedImpactRows({ rank: 1, action: { type: 'X', target: 'B', cost: 1 }, delta_kpi: { red_minutes: 0, throughput: 20 }, score: 0,
+      expected_impact: { delta: { throughput: 20, backorder: -11, blocked_s: -960, wip_peak: -35 } } })).toEqual([
+      { label: 'Sản lượng', value: '+20' },
+      { label: 'Đơn thiếu', value: '-11' },
+      { label: 'Thời gian blocked', value: '-16 phút' },
+      { label: 'Đỉnh WIP', value: '-35' },
+    ])
+    expect(expectedImpactRows({ rank: 1, action: { type: 'X', target: 'B', cost: 1 }, delta_kpi: { red_minutes: 0, throughput: 0 }, score: 0,
+      expected_impact: null })).toEqual([])
   })
 
   it('reads kpi p50', () => {
@@ -43,6 +66,9 @@ describe('pin details', () => {
     expect(insightDetail(base)).toBe('80% số lần lặp')
     expect(insightDetail({ ...base, kind: 'BOTTLENECK', probability: 0.61, payload: { method: 'active_period' } })).toBe('là điểm nghẽn 61% thời gian')
     expect(insightDetail({ ...base, kind: 'BOTTLENECK', probability: 1, payload: { method: 'wait_pool_mean', mean_s: 240 } })).toBe('chờ trung bình 4 phút')
+    expect(insightDetail({ ...base, kind: 'BOTTLENECK', probability: 0.9, payload: { method: 'active_period', evidence: {
+      utilization: 0.97, capacity_gap: 26, upstream_wip_growth: 22,
+    } } })).toBe('là điểm nghẽn 90% thời gian · sử dụng 97% · thiếu 26 u/h · WIP đang tăng')
     expect(insightDetail({ ...base, kind: 'RECOMMENDATION' })).toBe('')
   })
 })
