@@ -22,6 +22,14 @@ def test_aggregate_and_bands_shape():
     assert agg["throughput"]["p10"] <= agg["throughput"]["p50"] <= agg["throughput"]["p90"]
     assert 0.0 <= agg["storages"]["FG"]["red_probability"] <= 1.0
     assert set(agg["pools"]) == {"TUGGER_A", "OPS_ZONE_B"}
+    assert agg["backorder"]["p50"] == agg["backorder_end"]["p50"]
+    assert 0.0 <= agg["service_level"]["p50"] <= 1.0
+    process = agg["processes"]["STAMP_1"]
+    for name in ("nominal_rate", "effective_throughput", "utilization", "running_s", "blocked_s",
+                 "starved_s", "down_s", "idle_s", "blocked_ratio", "starved_ratio", "down_ratio",
+                 "count_in", "count_ok", "count_ng", "input_wip_peak", "output_wip_peak",
+                 "input_wip_end", "output_wip_end", "wip_growth"):
+        assert set(process[name]) == {"p10", "p50", "p90", "mean"}
     rows = bands(req, reps)
     fg = [r for r in rows if r["subject"] == "FG" and r["metric"] == "coverage_h"]
     assert len(fg) == 60
