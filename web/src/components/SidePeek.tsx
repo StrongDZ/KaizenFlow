@@ -16,8 +16,8 @@ export function usePeekParam(): [string | null, (id: string | null) => void] {
 }
 
 /**
- * Khung bao của trang danh sách: danh sách ở bên trái, chi tiết của dòng đang chọn ở bên phải (side peek), không rời trang danh sách.
- * Danh sách vẫn xem và bấm được khi khung mở; bấm dòng khác thì khung đổi sang dòng đó; Esc hoặc nút ✕ để đóng.
+ * Khung bao của trang danh sách: chi tiết của dòng đang chọn hiện thành tấm bên phải (side peek) đè lên trang, không chiếm chỗ của danh sách
+ * và không rời trang. Phần danh sách còn lộ ra vẫn bấm được; bấm dòng khác thì tấm đổi sang dòng đó; Esc hoặc nút ✕ để đóng.
  */
 export function PeekHost({ peek, onClose, children }: { peek: ReactNode; onClose: () => void; children: ReactNode }) {
   const open = peek !== null && peek !== false && peek !== undefined
@@ -32,14 +32,14 @@ export function PeekHost({ peek, onClose, children }: { peek: ReactNode; onClose
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
   return (
-    <div className="flex min-h-full items-start">
-      <div className="min-w-0 flex-1">{children}</div>
+    <>
+      {children}
       {open && (
-        <aside aria-label="Chi tiết" className="kf-peek-in sticky top-0 h-[calc(100vh-2.5rem)] w-[min(480px,46vw)] flex-none border-l border-line bg-panel print:hidden">
+        <aside aria-label="Chi tiết" className="kf-peek-in fixed bottom-0 right-0 top-10 z-30 w-[min(480px,92vw)] border-l border-line bg-panel shadow-2xl print:hidden">
           {peek}
         </aside>
       )}
-    </div>
+    </>
   )
 }
 
