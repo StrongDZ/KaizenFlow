@@ -645,3 +645,32 @@ func TestPutBindingsCheckModeValidatesWithoutSaving(t *testing.T) {
 		t.Fatalf("message = %q", msg)
 	}
 }
+
+func TestFleetPositionsAreFramedAndMatchedToLanesEndToEnd(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	a.call("PUT", "/api/models/lm/agv-map", map[string]any{"v": 2, "speed_mps": 1.4,
+		"points": []any{
+			map[string]any{"id": "A", "x": 0, "y": 0, "kind": "station", "node_key": "S"},
+			map[string]any{"id": "B", "x": 30, "y": 0, "kind": "station", "node_key": "OUT"}},
+		"lanes": []any{map[string]any{"id": "L1", "from": "A", "to": "B", "capacity": 2}}}, 204)
+	a.call("PUT", "/api/models/lm/bindings", map[string]any{"bindings": []any{
+		map[string]any{"subject": "TUG", "signal": "fleet", "source": "agv/+/pos",
+			"transform": map[string]any{"frame": map[string]any{"scale": 0.001}}}}}, 200) // hãng xe báo mm
+	send := func(x, y float64) {
+		a.call("POST", "/api/ingest", map[string]any{"messages": []any{
+			map[string]any{"source": "agv/t1/pos", "ts": "2026-10-01T08:00:00Z", "payload": map[string]any{"id": "T1", "x": x, "y": y, "st": "MOVING"}}}}, 200)
+	}
+	vehicle := func() map[string]any {
+		fleet := a.call("GET", "/api/models/lm/live", nil, 200)["fleet"].(map[string]any)
+		return fleet["TUG"].([]any)[0].(map[string]any)
+	}
+	send(15000, 500) // 15 m, lệch 0,5 m khỏi làn
+	if v := vehicle(); v["lane"] != "L1" || v["off_map"] != false || v["x"].(float64) != 15 || v["raw_x"].(float64) != 15000 || v["s"].(float64) != 15 {
+		t.Errorf("xe phải nằm trên L1 ở 15 m: %v", v)
+	}
+	send(15000, 9000) // cách làn 9 m
+	if v := vehicle(); v["off_map"] != true || v["lane"] != "" {
+		t.Errorf("xe cách làn 9 m phải ngoài đường: %v", v)
+	}
+}

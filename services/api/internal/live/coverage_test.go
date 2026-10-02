@@ -316,3 +316,23 @@ func TestSuggestMovedIntoAProcessFedByTwoEdgesSubtractsTheOther(t *testing.T) {
 		t.Fatalf("derive = %+v", d)
 	}
 }
+
+func TestOffMapProblem(t *testing.T) {
+	fleet := func(off ...bool) map[string][]Vehicle {
+		vs := make([]Vehicle, len(off))
+		for i, o := range off {
+			vs[i] = Vehicle{ID: string(rune('a' + i)), Off: o}
+		}
+		return map[string][]Vehicle{"TUG_A": vs}
+	}
+	if p := OffMapProblem(map[string][]Vehicle{}); p != nil {
+		t.Errorf("không có xe thì không có vấn đề: %+v", p)
+	}
+	if p := OffMapProblem(fleet(false, false, false, false, true)); p != nil { // 20% đúng bằng ngưỡng
+		t.Errorf("1/5 xe ngoài đường chưa đủ để báo: %+v", p)
+	}
+	p := OffMapProblem(fleet(true, true, false))
+	if p == nil || p.Severity != "warning" || p.Signal != SignalFleet || !strings.Contains(p.Message, "2/3") || !strings.Contains(p.Message, "khung toạ độ") {
+		t.Errorf("problem = %+v", p)
+	}
+}

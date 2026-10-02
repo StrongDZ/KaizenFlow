@@ -92,10 +92,11 @@ type State struct {
 	mu      sync.RWMutex
 	models  map[string]*modelState
 	sources map[string]*sourceInfo
+	maps    map[string]*AgvMap // bản đồ AGV của từng mô hình, để khớp vị trí xe vào làn
 }
 
 func NewState() *State {
-	return &State{models: map[string]*modelState{}, sources: map[string]*sourceInfo{}}
+	return &State{models: map[string]*modelState{}, sources: map[string]*sourceInfo{}, maps: map[string]*AgvMap{}}
 }
 
 func (s *State) model(key string) *modelState {
@@ -105,6 +106,36 @@ func (s *State) model(key string) *modelState {
 		s.models[key] = m
 	}
 	return m
+}
+
+// SetMap đặt (hoặc bỏ, nếu nil) bản đồ AGV dùng để khớp vị trí xe của mô hình vào làn.
+func (s *State) SetMap(model string, m *AgvMap) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if m == nil {
+		delete(s.maps, model)
+		return
+	}
+	s.maps[model] = m
+}
+
+// matchVehicle điền Lane, S, Off cho xe theo bản đồ. Xe tự báo làn hợp lệ thì tin làn đó và chỉ tính S; không có bản đồ thì để nguyên.
+// Gọi khi đang giữ khoá ghi.
+func (s *State) matchVehicle(model string, v *Vehicle, prevLane string) {
+	mp := s.maps[model]
+	if mp == nil {
+		return
+	}
+	if v.Lane != "" {
+		for _, l := range mp.Lanes {
+			if l.ID == v.Lane {
+				v.S, _ = mp.project(l, v.X, v.Y)
+				return
+			}
+		}
+	}
+	m := mp.Match(v.X, v.Y, MatchIn{PrevLane: prevLane, Heading: v.Heading, State: v.State})
+	v.Lane, v.S, v.Off = m.Lane, m.S, m.Off
 }
 
 // NoteSource ghi nhận một nguồn đang phát (để UI liệt kê và gợi ý ghép), kể cả khi chưa có binding nào.
@@ -158,6 +189,7 @@ func (s *State) Apply(model string, rs []Reading, wall time.Time) {
 			}
 			v := *r.Fleet
 			v.seen = wall
+			s.matchVehicle(model, &v, pool[v.ID].Lane)
 			pool[v.ID] = v
 			continue
 		}

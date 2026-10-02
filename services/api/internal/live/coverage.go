@@ -574,3 +574,24 @@ func (g *suggester) poolBusy(s Subject) []Suggestion {
 func vnNum(f float64) string {
 	return strings.Replace(strconv.FormatFloat(f, 'f', -1, 64), ".", ",", 1)
 }
+
+// offMapShare: quá tỷ lệ xe nằm ngoài đường này thì nhiều khả năng khung toạ độ của đội xe đang sai.
+const offMapShare = 0.2
+
+// OffMapProblem báo khi quá 20% số xe đang nhận được nằm ngoài mọi làn (xa hơn dung sai khớp), thường do khung toạ độ sai; nil nếu ổn.
+func OffMapProblem(fleet map[string][]Vehicle) *Problem {
+	total, off := 0, 0
+	for _, vs := range fleet {
+		for _, v := range vs {
+			total++
+			if v.Off {
+				off++
+			}
+		}
+	}
+	if total == 0 || float64(off)/float64(total) <= offMapShare {
+		return nil
+	}
+	return &Problem{Signal: SignalFleet, Severity: "warning", Message: fmt.Sprintf(
+		"%d/%d xe nằm ngoài mọi làn (xa hơn %.1f m): kiểm tra khung toạ độ của đội xe ở trang Bản đồ AGV (dịch, góc xoay, tỉ lệ, lật trục Y).", off, total, MatchTolM)}
+}

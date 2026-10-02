@@ -20,6 +20,14 @@ type Store interface {
 	UpsertSources(ctx context.Context, list []store.DataSource) error
 }
 
+// mapSource: store thật có thể đọc bản đồ AGV; bản giả trong test thì không (khi đó không khớp vị trí vào làn).
+type mapSource interface {
+	GetAgvMap(ctx context.Context, modelKey string) (json.RawMessage, error)
+}
+
+// mapTTL: bản đồ trong bộ nhớ được nạp lại sau khoảng này (giờ thật), phòng sửa bản đồ mà không qua API của tiến trình này.
+const mapTTL = 20 * time.Second
+
 type Broadcaster interface{ Broadcast(v any) }
 
 const (
@@ -80,6 +88,7 @@ type Service struct {
 	errs        map[string][]ErrCount
 	srcAgg      map[string]*srcAgg   // "mô hình|nguồn" → số bản tin và mẫu chưa ghi
 	srcFlushed  map[string]time.Time // lần ghi DB gần nhất của từng nguồn
+	mapLoaded   map[string]time.Time // lần nạp bản đồ AGV gần nhất của từng mô hình
 }
 
 // srcAgg gom các bản tin của một nguồn giữa hai lần ghi DB.
@@ -93,10 +102,57 @@ type srcAgg struct {
 func New(st Store, hub Broadcaster) *Service {
 	return &Service{st: st, hub: hub, state: live.NewState(), now: time.Now,
 		byModel: map[string][]live.Binding{}, derived: map[string][]live.Binding{}, lastPersist: map[string]time.Time{}, lastWall: map[string]time.Time{}, lastState: map[string]string{},
-		dirty: map[string]bool{}, errs: map[string][]ErrCount{}, srcAgg: map[string]*srcAgg{}, srcFlushed: map[string]time.Time{}}
+		dirty: map[string]bool{}, errs: map[string][]ErrCount{}, srcAgg: map[string]*srcAgg{}, srcFlushed: map[string]time.Time{}, mapLoaded: map[string]time.Time{}}
 }
 
 func (s *Service) State() *live.State { return s.state }
+
+// InvalidateMap bắt buộc nạp lại bản đồ AGV của mô hình ở lần ingest kế (gọi sau khi sửa bản đồ).
+func (s *Service) InvalidateMap(model string) {
+	s.mu.Lock()
+	delete(s.mapLoaded, model)
+	s.mu.Unlock()
+}
+
+// refreshMaps nạp bản đồ AGV (nếu cũ hoặc chưa có) cho các mô hình có ghép nối đội xe, để State khớp vị trí xe vào làn.
+func (s *Service) refreshMaps(byModel map[string][]live.Binding, wall time.Time) {
+	ms, ok := s.st.(mapSource)
+	if !ok {
+		return
+	}
+	for model, bs := range byModel {
+		fleet := false
+		for _, b := range bs {
+			if b.Enabled && b.Signal == live.SignalFleet {
+				fleet = true
+				break
+			}
+		}
+		if !fleet {
+			continue
+		}
+		s.mu.Lock()
+		at, seen := s.mapLoaded[model]
+		fresh := seen && wall.Sub(at) < mapTTL
+		if !fresh {
+			s.mapLoaded[model] = wall // đặt trước để lỗi đọc DB không bị thử lại ở mọi lô
+		}
+		s.mu.Unlock()
+		if fresh {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		raw, err := ms.GetAgvMap(ctx, model)
+		cancel()
+		if err != nil {
+			s.state.SetMap(model, nil) // chưa có bản đồ (hoặc đã xoá)
+			continue
+		}
+		if m, err := live.ParseMap(raw); err == nil {
+			s.state.SetMap(model, m)
+		}
+	}
+}
 
 // ReloadBindings nạp lại mapping từ DB (gọi sau mỗi lần sửa mapping).
 func (s *Service) ReloadBindings(ctx context.Context) error {
@@ -144,6 +200,7 @@ func (s *Service) IngestFor(model string, msgs []live.Message) IngestResult {
 		derived[k] = v
 	}
 	s.mu.Unlock()
+	s.refreshMaps(byModel, wall)
 	touched := map[string]map[live.Ref]bool{} // mô hình → tín hiệu vừa nhận giá trị mới trong lô này
 	for _, msg := range msgs {
 		if msg.Source == "" || msg.TS.IsZero() {

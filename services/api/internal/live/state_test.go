@@ -177,3 +177,51 @@ func TestApplyRemembersWhenAValueLastChanged(t *testing.T) {
 		t.Fatalf("Now = %v", s.Now("m"))
 	}
 }
+
+func fleetReading(id string, x, y float64, state, lane string) Reading {
+	return Reading{Model: "m", Subject: "TUG_A", Signal: "fleet", TS: t0, Fleet: &Vehicle{ID: id, X: x, Y: y, State: state, Lane: lane}}
+}
+
+func TestStateMatchesVehiclesToLanes(t *testing.T) {
+	s := NewState()
+	s.SetMap("m", matchMap())
+	wall := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	s.Apply("m", []Reading{
+		fleetReading("on", 10, -1, "MOVING", ""),
+		fleetReading("lost", 10, 9, "MOVING", ""),
+		fleetReading("told", 30, 5, "MOVING", "BC"), // xe tự báo làn: tin theo, chỉ tính S
+	}, wall)
+	got := map[string]Vehicle{}
+	for _, v := range s.Snapshot("m", wall, nil).Fleet["TUG_A"] {
+		got[v.ID] = v
+	}
+	if v := got["on"]; v.Lane != "AB" || v.Off || !near(v.S, 10) {
+		t.Errorf("on = %+v", v)
+	}
+	if v := got["lost"]; v.Lane != "" || !v.Off {
+		t.Errorf("lost phải ngoài đường: %+v", v)
+	}
+	if v := got["told"]; v.Lane != "BC" || v.Off || !near(v.S, 10) {
+		t.Errorf("told = %+v (làn tự báo giữ nguyên, S = 10 dọc BC)", v)
+	}
+}
+
+func TestStateKeepsPreviousLaneBetweenMessages(t *testing.T) {
+	s := NewState()
+	s.SetMap("m", matchMap())
+	wall := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	s.Apply("m", []Reading{fleetReading("v", 5, 0.1, "MOVING", "BA")}, wall) // tự báo BA
+	s.Apply("m", []Reading{fleetReading("v", 6, 0.1, "MOVING", "")}, wall)   // lần sau không báo: giữ BA
+	if v := s.Snapshot("m", wall, nil).Fleet["TUG_A"][0]; v.Lane != "BA" {
+		t.Errorf("phải giữ làn cũ khi hai làn ngang nhau: %+v", v)
+	}
+}
+
+func TestStateWithoutMapLeavesVehiclesAlone(t *testing.T) {
+	s := NewState()
+	wall := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	s.Apply("m", []Reading{fleetReading("v", 5, 0.1, "MOVING", "")}, wall)
+	if v := s.Snapshot("m", wall, nil).Fleet["TUG_A"][0]; v.Lane != "" || v.Off {
+		t.Errorf("chưa có bản đồ thì không kết luận gì: %+v", v)
+	}
+}

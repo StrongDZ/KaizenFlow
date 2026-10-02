@@ -96,3 +96,31 @@ func TestNormalizeFleetNeedsIDAndPosition(t *testing.T) {
 		t.Fatalf("errs=%v", errs)
 	}
 }
+
+func TestNormalizeFleetAppliesFrameAndKeepsRaw(t *testing.T) {
+	b := Binding{Subject: "TUG_A", Signal: "fleet", Source: "agv/+/pos", Enabled: true,
+		Transform: Transform{Frame: &Frame{Scale: 0.001, RotDeg: 90, DX: 10, DY: 20}}}
+	rs, errs := Normalize("m", []Binding{b}, Message{Source: "agv/a/pos", TS: t0,
+		Payload: map[string]any{"id": "T1", "x": 2000.0, "y": 0.0, "th": 10.0, "st": "MOVING"}})
+	if len(errs) != 0 || len(rs) != 1 {
+		t.Fatalf("rs=%v errs=%v", rs, errs)
+	}
+	v := rs[0].Fleet
+	if !near(v.X, 10) || !near(v.Y, 22) { // 2000 mm = 2 m, xoay 90° → (0,2), dịch (10,20)
+		t.Errorf("toạ độ bản đồ = (%v,%v); muốn (10,22)", v.X, v.Y)
+	}
+	if v.RawX != 2000 || v.RawY != 0 {
+		t.Errorf("toạ độ gốc phải giữ nguyên: (%v,%v)", v.RawX, v.RawY)
+	}
+	if v.Heading == nil || !near(*v.Heading, 100) {
+		t.Errorf("hướng = %v; muốn 100", v.Heading)
+	}
+}
+
+func TestNormalizeFleetWithoutHeadingLeavesItNil(t *testing.T) {
+	b := Binding{Subject: "TUG_A", Signal: "fleet", Source: "s", Enabled: true}
+	rs, _ := Normalize("m", []Binding{b}, Message{Source: "s", TS: t0, Payload: map[string]any{"id": "T1", "x": 1.0, "y": 2.0}})
+	if rs[0].Fleet.Heading != nil {
+		t.Errorf("không có trường hướng thì Heading phải nil: %v", *rs[0].Fleet.Heading)
+	}
+}

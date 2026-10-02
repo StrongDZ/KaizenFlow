@@ -287,7 +287,11 @@ func (h *handlers) liveCheck(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	writeJSON(w, 200, live.AnalyzeCoverage(live.CoverageInput{Subjects: subs, Bindings: bs, Sources: samples}))
+	rep := live.AnalyzeCoverage(live.CoverageInput{Subjects: subs, Bindings: bs, Sources: samples})
+	if p := live.OffMapProblem(h.Live.Snapshot(key).Fleet); p != nil {
+		rep.Problems = append(rep.Problems, *p)
+	}
+	writeJSON(w, 200, rep)
 }
 
 func (h *handlers) liveSignals(w http.ResponseWriter, r *http.Request) {
@@ -547,6 +551,7 @@ func (h *handlers) putAgvMap(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	h.Live.InvalidateMap(key)
 	w.WriteHeader(204)
 }
 
