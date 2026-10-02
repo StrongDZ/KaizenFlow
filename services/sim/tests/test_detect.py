@@ -29,6 +29,30 @@ def test_active_period_shares_picks_longest_active():
     assert "B" not in shares
 
 
+def test_active_period_shares_splits_exact_and_near_ties():
+    exact = active_period_shares({"A": [(0, 100)], "B": [(0, 100)]}, horizon=100, step=10)
+    assert exact == pytest.approx({"A": 0.5, "B": 0.5})
+
+    near = active_period_shares({"A": [(0, 100)], "B": [(0, 100.0000005)]}, horizon=100, step=10)
+    assert near == pytest.approx({"A": 0.5, "B": 0.5})
+
+
+def test_detect_marks_shared_bottleneck_ambiguous_and_generates_no_action():
+    def process(key):
+        return {"key": key, "archetype": "PROCESS", "params": {
+            "cycle": 10, "recipes": [{"inputs": [], "outputs": [{"material": "X", "qty": 1}]}]}}
+
+    req = make_request([process("A"), process("B")], horizon_s=100)
+    rep = RepResult(0, {"processes": {}, "storages": {}, "edges": {}}, {}, {
+        "A": [("RUNNING", 0, 100)], "B": [("RUNNING", 0, 100)],
+    }, {}, [], [])
+    bottleneck = next(i for i in detect(req, [rep]) if i["kind"] == "BOTTLENECK")
+    assert bottleneck["payload"]["ambiguous"] is True
+    assert bottleneck["payload"]["co_bottlenecks"] == ["A", "B"]
+    assert bottleneck["probability"] == pytest.approx(0.5)
+    assert generate(req, [bottleneck]) == []
+
+
 def test_red_risk_probability_eta_and_severity():
     req = load_request("denso_mini")
     reps = [fake_rep(first_red=600, red_s=300), fake_rep(first_red=1200, red_s=100), fake_rep(), fake_rep()]
@@ -71,6 +95,8 @@ def test_capacity_line_identifies_slowest_process_with_evidence():
     reps = run_many(req)
     bottleneck = next(i for i in detect(req, reps) if i["kind"] == "BOTTLENECK")
     assert bottleneck["subject_key"] == "B"
+    assert bottleneck["payload"]["ambiguous"] is False
+    assert bottleneck["payload"]["co_bottlenecks"] == ["B"]
     evidence = bottleneck["payload"]["evidence"]
     assert evidence["nominal_rate"] == pytest.approx(70)
     assert 0 <= evidence["utilization"] <= 1
