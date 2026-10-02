@@ -3,12 +3,12 @@ import type { AgvMap } from '../api/types'
 import { filterLaneRows, filterPointRows, laneRows, pointLabel, pointRows } from './mapTables'
 
 const map: AgvMap = {
-  unit_m: 2, speed_mps: 1.2,
+  v: 2, speed_mps: 1.2,
   points: [
     { id: 'A', x: 0, y: 0, kind: 'station', node_key: 'KHO' },
-    { id: 'B', x: 30, y: 40, kind: 'junction' },
-    { id: 'C', x: 60, y: 0, kind: 'station' },
-    { id: 'D', x: 10, y: 10, kind: 'charger' },
+    { id: 'B', x: 60, y: 80, kind: 'junction' },
+    { id: 'C', x: 120, y: 0, kind: 'station' },
+    { id: 'D', x: 20, y: 20, kind: 'charger' },
   ],
   lanes: [{ id: 'L01', from: 'A', to: 'B', capacity: 2 }, { id: 'L02', from: 'B', to: 'C', capacity: 1 }],
 }
@@ -38,7 +38,7 @@ describe('laneRows', () => {
     const occ = new Map([['L01', { holding: 2, waiting: 0, capacity: 2 }], ['L02', { holding: 0, waiting: 1, capacity: 1 }]])
     const rows = laneRows(map, names, occ, new Set(['L02']))
     expect(rows[0]).toMatchObject({ id: 'L01', from: 'Kho NVL A', to: 'B', capacity: 2, status: 'Đầy chỗ' })
-    expect(rows[0].lengthM).toBeCloseTo(100, 5) // hypot(30,40) = 50 đơn vị × 2 m
+    expect(rows[0].lengthM).toBeCloseTo(100, 5) // hypot(60,80) = 100 m
     expect(rows[1]).toMatchObject({ id: 'L02', status: 'Đang bị chặn' })
   })
   it('không có dữ liệu chiếm chỗ thì thông thoáng', () => {

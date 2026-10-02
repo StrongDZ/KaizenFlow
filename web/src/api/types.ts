@@ -153,7 +153,9 @@ export type SubjectView = {
   signals: SignalDef[]
 }
 export type Subjects = { model: string; version_id: number; version: number; status: string; subjects: SubjectView[] }
-export type Transform = { scale?: number; offset?: number; enum?: Record<string, string>; fields?: Record<string, string> }
+/** Khung toạ độ của đội xe: từ toạ độ hãng xe báo sang toạ độ bản đồ (mét): lật Y → nhân scale → xoay → dịch. Cùng nghĩa với Frame của API. */
+export type Frame = { dx: number; dy: number; rot_deg: number; scale: number; flip_y: boolean }
+export type Transform = { scale?: number; offset?: number; enum?: Record<string, string>; fields?: Record<string, string>; frame?: Frame }
 /** Công thức tự tính: cộng trừ các tín hiệu khác (có hệ số nhân), hoặc trạng thái máy suy từ việc một bộ đếm còn tăng. */
 export type DeriveTerm = { subject: string; signal: string; sign: 1 | -1; factor?: number }
 export type Derive = { kind: 'sum' | 'activity'; const?: number; terms?: DeriveTerm[]; watch?: { subject: string; signal: string }; idle_after_s?: number }
@@ -181,7 +183,11 @@ export type CoverageReport = {
 
 export type SigVal = { v: number; ts: string }
 export type SubjectSnap = { state?: string; state_ts?: string; signals: Record<string, SigVal>; age_ms: number; rate?: number }
-export type Vehicle = { id: string; x: number; y: number; state: string; lane: string; load: number; ts: string; age_ms: number }
+/** x, y: toạ độ bản đồ (mét) sau khi đổi khung; raw_x, raw_y: toạ độ hãng xe báo; s: mét dọc làn; off_map: xe không nằm trên làn nào. */
+export type Vehicle = {
+  id: string; x: number; y: number; raw_x: number; raw_y: number; heading?: number; state: string; lane: string; s: number; off_map: boolean
+  load: number; ts: string; age_ms: number
+}
 export type SourceSnap = { source: string; desc: string; last_ts: string; age_ms: number; count: number; last: unknown; bound: boolean }
 /** Một nguồn dữ liệu đã đăng ký của mô hình (GET /api/models/{key}/sources). */
 export type SourceBindingRef = { subject: string; signal: string }
@@ -203,8 +209,11 @@ export type LiveSnapshot = {
 export type LiveMsg = { type: 'live'; model: string; now: string; subjects: Record<string, SubjectSnap>; fleet: Record<string, Vehicle[]>; sources: number }
 
 export type MapPoint = { id: string; x: number; y: number; kind: 'junction' | 'station' | 'charger'; node_key?: string }
-export type MapLane = { id: string; from: string; to: string; capacity: number }
-export type AgvMap = { unit_m: number; speed_mps: number; points: MapPoint[]; lanes: MapLane[] }
+export type Pt = { x: number; y: number }
+/** path: các điểm uốn giữa hai đầu (không gồm hai đầu); bỏ trống là đoạn thẳng. */
+export type MapLane = { id: string; from: string; to: string; capacity: number; path?: Pt[] }
+/** Bản đồ v2: toạ độ tính bằng mét. */
+export type AgvMap = { v?: number; speed_mps: number; points: MapPoint[]; lanes: MapLane[] }
 
 export type Incident = {
   id: number; kind: 'machine_down' | 'lane_block' | 'stock_drain'; target: string; started: string; until: string; active: boolean

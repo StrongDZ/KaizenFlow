@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
-import { Ban, Trash2, Unlock } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Ban, Spline, Trash2, Unlock } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
-import type { AgvMap, MapPoint } from '../api/types'
+import type { AgvMap, MapPoint, Pt } from '../api/types'
 import { CalibrationCard } from '../components/live/CalibrationCard'
 import { AgvMapCanvas, type MapSelection, type RingTone } from '../components/live/AgvMapCanvas'
 import { FeedControl } from '../components/live/FeedControl'
@@ -13,7 +13,9 @@ import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, Tag,
 import { useFeedStatus, useLive } from '../hooks/useLive'
 import { useModelGraph } from '../hooks/useModelGraph'
 import { nodeBadge } from '../lib/liveFrame'
-import { addLane, addPoint, laneLengthM, laneTone, movePoint, occupancy, removeLane, removePoint, setLaneCapacity } from '../lib/mapGeom'
+import {
+  addLane, addPoint, insertWaypoint, laneLengthM, laneTone, movePoint, moveWaypoint, occupancy, removeLane, removePoint, removeWaypoint, setLaneCapacity,
+} from '../lib/mapGeom'
 import { poolCount, thresholdsFor } from '../lib/model'
 
 type Tool = 'select' | 'junction' | 'station' | 'connect'
@@ -35,13 +37,20 @@ export default function AgvMapPage() {
   const [selected, setSelected] = useState<MapSelection>(null)
   const [tool, setTool] = useState<Tool>('select')
   const [linkFrom, setLinkFrom] = useState<string | null>(null)
+  const [via, setVia] = useState<Pt[]>([])  // điểm uốn đã bấm của làn đang vẽ dở
   const [bothWays, setBothWays] = useState(true)
   const editing = draft !== null
+  useEffect(() => {
+    if (linkFrom === null) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setLinkFrom(null); setVia([]) } }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [linkFrom])
   const map = draft ?? saved.data ?? null
 
   const save = useMutation({
     mutationFn: (m: AgvMap) => api.saveAgvMap(model, m),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['agv-map', model] }); setDraft(null); setSelected(null); setTool('select'); setLinkFrom(null) },
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['agv-map', model] }); setDraft(null); setSelected(null); setTool('select'); setLinkFrom(null); setVia([]) },
   })
   const refreshFeed = () => void qc.invalidateQueries({ queryKey: ['feed-status'] })
   const block = useMutation({ mutationFn: (lane: string) => api.feed.addIncident({ kind: 'lane_block', target: lane, duration_s: 1800 }), onSuccess: refreshFeed })
@@ -77,19 +86,22 @@ export default function AgvMapPage() {
   if (saved.isLoading || g.status === 'loading') return <Loading />
   if (saved.error) return <PageBody><PageHeader title="Bản đồ AGV" subtitle={model} /><ErrorBox error={saved.error} /></PageBody>
 
-  const startEdit = () => setDraft(saved.data ?? { unit_m: 1.5, speed_mps: 1.2, points: [], lanes: [] })
-  const cancelEdit = () => { setDraft(null); setSelected(null); setTool('select'); setLinkFrom(null) }
+  const startEdit = () => setDraft(saved.data ?? { v: 2, speed_mps: 1.2, points: [], lanes: [] })
+  const cancelEdit = () => { setDraft(null); setSelected(null); setTool('select'); setLinkFrom(null); setVia([]) }
   const apply = (f: (m: AgvMap) => AgvMap) => setDraft((d) => (d ? f(d) : d))
   const running = feed.data?.state === 'running' && feed.data.model === model
 
   const onPointClick = (id: string) => {
     if (!editing || tool !== 'connect') return
-    if (linkFrom === null) { setLinkFrom(id); return }
-    apply((m) => addLane(m, linkFrom, id, bothWays))
+    if (linkFrom === null) { setLinkFrom(id); setVia([]); return }
+    if (id !== linkFrom) apply((m) => addLane(m, linkFrom, id, bothWays, via))
     setLinkFrom(null)
+    setVia([])
   }
-  const onBackground = (at: { x: number; y: number }) => {
-    if (editing && (tool === 'junction' || tool === 'station')) apply((m) => addPoint(m, at, tool))
+  const onBackground = (at: Pt) => {
+    if (!editing) return
+    if (tool === 'junction' || tool === 'station') apply((m) => addPoint(m, at, tool))
+    else if (tool === 'connect' && linkFrom !== null) setVia((v) => [...v, at])  // chỗ trống khi đang vẽ làn = thêm một điểm uốn
   }
 
   const selPoint = map && selected?.kind === 'point' ? map.points.find((p) => p.id === selected.id) : undefined
@@ -110,9 +122,12 @@ export default function AgvMapPage() {
     <SidePeek
       title="Chi tiết làn" heading={selLane.id} onClose={() => setSelected(null)}
       subtitle={<Tag>{selLane.from} → {selLane.to}</Tag>}
-      summary={<p>Dài {Math.round(laneLengthM(map!, selLane))} m, chứa tối đa {selLane.capacity} xe.</p>}
+      summary={<p>Dài {Math.round(laneLengthM(map!, selLane))} m{(selLane.path?.length ?? 0) > 0 ? `, ${selLane.path!.length} điểm uốn` : ''}, chứa tối đa {selLane.capacity} xe.</p>}
       menu={editing
-        ? [{ key: 'delete', label: 'Xoá làn', icon: Trash2, danger: true, onSelect: () => { apply((m) => removeLane(m, selLane.id)); setSelected(null) } }]
+        ? [
+            ...((selLane.path?.length ?? 0) > 0 ? [{ key: 'straight', label: 'Làm thẳng làn', icon: Spline, onSelect: () => apply((m) => ({ ...m, lanes: m.lanes.map((l) => (l.id === selLane.id ? { ...l, path: undefined } : l)) })) }] : []),
+            { key: 'delete', label: 'Xoá làn', icon: Trash2, danger: true, onSelect: () => { apply((m) => removeLane(m, selLane.id)); setSelected(null) } },
+          ]
         : laneBlocks.has(selLane.id)
           ? [{ key: 'unblock', label: 'Gỡ chặn', icon: Unlock, disabled: unblock.isPending, onSelect: () => unblock.mutate(laneBlocks.get(selLane.id)!.id) }]
           : [{ key: 'block', label: 'Chặn làn này 30 phút', icon: Ban, disabled: !running || block.isPending, hint: 'Bật feed để bơm sự cố chặn làn.', onSelect: () => block.mutate(selLane.id) }]}
@@ -137,16 +152,7 @@ export default function AgvMapPage() {
         <PageHeader
           title="Bản đồ AGV"
           subtitle={model}
-          actions={
-            editing ? (
-              <>
-                <button className={btn} onClick={cancelEdit}>Huỷ</button>
-                <button className={btnPrimary} disabled={save.isPending} onClick={() => save.mutate(draft!)}>Lưu bản đồ</button>
-              </>
-            ) : (
-              map && <button className={btn} onClick={startEdit}>Sửa bản đồ</button>
-            )
-          }
+          actions={!editing && map ? <button className={btn} onClick={startEdit}>Sửa bản đồ</button> : undefined}
         />
         <FeedControl model={model} />
         <ErrorBox error={save.error ?? block.error ?? unblock.error} />
@@ -162,30 +168,40 @@ export default function AgvMapPage() {
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
             <Card
               title={editing ? 'Đang sửa bản đồ' : 'Xe chạy trực tiếp'}
-              actions={
-                editing ? (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {([['select', 'Chọn, kéo'], ['junction', '＋ Ngã tư'], ['station', '＋ Trạm'], ['connect', 'Nối làn']] as [Tool, string][]).map(([t, label]) => (
-                      <button key={t} aria-pressed={tool === t} onClick={() => { setTool(t); setLinkFrom(null) }}
-                        className={`rounded-md border px-2 py-1 text-[11px] ${tool === t ? 'border-text bg-text font-semibold text-bg' : 'border-line-2 text-muted hover:text-text'}`}>{label}</button>
-                    ))}
-                    {tool === 'connect' && (
-                      <label className="flex items-center gap-1 text-[11px] text-muted"><input type="checkbox" checked={bothWays} onChange={(e) => setBothWays(e.target.checked)} /> hai chiều</label>
-                    )}
-                  </div>
-                ) : <Tag>{map.points.length} điểm · {map.lanes.length} làn · {map.speed_mps} m/s</Tag>
-              }
+              actions={editing ? undefined : <Tag>{map.points.length} điểm · {map.lanes.length} làn · {map.speed_mps} m/s</Tag>}
             >
               {editing && (
+                <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                  {/* Lưu/Huỷ nằm đầu hàng bên trái: tấm chi tiết đè lên phần bên phải của trang nên không được để nút quan trọng ở đó. */}
+                  <button className={btnPrimary} disabled={save.isPending} onClick={() => save.mutate(draft!)}>Lưu bản đồ</button>
+                  <button className={btn} onClick={cancelEdit}>Huỷ</button>
+                  <span className="mx-1 h-5 w-px bg-line" aria-hidden />
+                  {([['select', 'Chọn, kéo'], ['junction', '＋ Ngã tư'], ['station', '＋ Trạm'], ['connect', 'Vẽ làn']] as [Tool, string][]).map(([t, label]) => (
+                    <button key={t} aria-pressed={tool === t} onClick={() => { setTool(t); setLinkFrom(null); setVia([]) }}
+                      className={`rounded-md border px-2 py-1 text-[11px] ${tool === t ? 'border-text bg-text font-semibold text-bg' : 'border-line-2 text-muted hover:text-text'}`}>{label}</button>
+                  ))}
+                  {tool === 'connect' && (
+                    <label className="flex items-center gap-1 text-[11px] text-muted"><input type="checkbox" checked={bothWays} onChange={(e) => setBothWays(e.target.checked)} /> hai chiều</label>
+                  )}
+                </div>
+              )}
+              {editing && (
                 <p className="mb-2 text-[11px] text-muted">
-                  {tool === 'connect' ? (linkFrom ? `Bấm điểm đích để nối từ ${linkFrom}.` : 'Bấm điểm đầu, rồi điểm đích để nối làn.')
-                    : tool === 'select' ? 'Kéo điểm để dời; bấm điểm hoặc làn để sửa thuộc tính.' : 'Bấm vào chỗ trống trên bản đồ để đặt điểm mới.'}
+                  {tool === 'connect'
+                    ? (linkFrom
+                      ? `Đang vẽ từ ${linkFrom}: bấm chỗ trống để thêm điểm uốn (đã có ${via.length}), bấm một điểm để kết thúc, Esc để huỷ.`
+                      : 'Bấm điểm đầu, bấm chỗ trống để thêm điểm uốn nếu làn cong hay chéo, rồi bấm điểm cuối.')
+                    : tool === 'select' ? 'Kéo điểm để dời; bấm một làn để thêm (dấu +), kéo hoặc xoá (bấm đúp) điểm uốn của nó.' : 'Bấm vào chỗ trống trên bản đồ để đặt điểm mới.'}
                 </p>
               )}
               <div className="h-[520px] rounded-lg border border-line bg-bg">
                 <AgvMapCanvas
                   map={map} fleets={fleets} names={names} ringOf={(k) => rings[k]} blocked={blockedIds} selected={selected} editing={editing} linkFrom={linkFrom}
+                  draft={linkFrom ? { from: linkFrom, via } : null}
                   onSelect={setSelected} onPointClick={onPointClick} onMovePoint={(id, x, y) => apply((m) => movePoint(m, id, x, y))} onBackgroundClick={onBackground}
+                  onMoveWaypoint={(lane, i, x, y) => apply((m) => moveWaypoint(m, lane, i, x, y))}
+                  onInsertWaypoint={(lane, i, at) => apply((m) => insertWaypoint(m, lane, i, at))}
+                  onRemoveWaypoint={(lane, i) => apply((m) => removeWaypoint(m, lane, i))}
                 />
               </div>
               <p className="mt-2 text-[11px] leading-relaxed text-muted">
@@ -197,11 +213,9 @@ export default function AgvMapPage() {
             <div className="space-y-4">
               {editing && (
                 <Card title="Thông số chung">
-                  <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="text-xs">
                     <label className="space-y-1"><span className="block text-text-2">Tốc độ xe (m/s)</span>
                       <input className={`${input} w-full`} inputMode="decimal" value={draft!.speed_mps} onChange={(e) => apply((m) => ({ ...m, speed_mps: Number(e.target.value) || 0 }))} /></label>
-                    <label className="space-y-1"><span className="block text-text-2">Mét mỗi đơn vị vẽ</span>
-                      <input className={`${input} w-full`} inputMode="decimal" value={draft!.unit_m} onChange={(e) => apply((m) => ({ ...m, unit_m: Number(e.target.value) || 0 }))} /></label>
                   </div>
                 </Card>
               )}
