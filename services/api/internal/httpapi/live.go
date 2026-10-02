@@ -495,7 +495,20 @@ func (h *handlers) getAgvMap(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
-	_, _ = w.Write(raw)
+	_, _ = w.Write(normalizedMap(raw))
+}
+
+// normalizedMap đổi bản đồ lưu từ trước (v1, đơn vị vẽ × unit_m) sang v2 (mét) để mọi nơi đọc đều thấy một dạng; hỏng thì trả nguyên.
+func normalizedMap(raw json.RawMessage) json.RawMessage {
+	m, err := live.ParseMap(raw)
+	if err != nil {
+		return raw
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 func (h *handlers) putAgvMap(w http.ResponseWriter, r *http.Request) {
@@ -514,9 +527,7 @@ func (h *handlers) putAgvMap(w http.ResponseWriter, r *http.Request) {
 	for _, n := range g.Nodes {
 		nodes[n.Key] = true
 	}
-	if m.UnitM <= 0 {
-		m.UnitM = 1
-	}
+	m.Normalize()
 	if m.Points == nil {
 		m.Points = []live.MapPoint{}
 	}
@@ -568,7 +579,7 @@ func (h *handlers) blueprint(w http.ResponseWriter, r *http.Request) {
 	}
 	var agv json.RawMessage
 	if raw, err := h.Store.GetAgvMap(ctx, key); err == nil {
-		agv = raw
+		agv = normalizedMap(raw)
 	} else if !errors.Is(err, store.ErrNotFound) {
 		writeErr(w, err)
 		return

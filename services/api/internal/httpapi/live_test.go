@@ -167,8 +167,28 @@ func TestAgvMapValidationAndRoundTrip(t *testing.T) {
 		"lanes": []any{map[string]any{"id": "L1", "from": "A", "to": "B", "capacity": 2}}}
 	a.call("PUT", "/api/models/lm/agv-map", good, 204)
 	got := a.call("GET", "/api/models/lm/agv-map", nil, 200)
-	if len(got["points"].([]any)) != 2 || got["unit_m"].(float64) != 1 {
+	if len(got["points"].([]any)) != 2 || got["v"].(float64) != 2 {
 		t.Errorf("map = %v", got)
+	}
+}
+
+func TestAgvMapLegacyUnitsAreStoredAndServedAsMeters(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	legacy := map[string]any{"unit_m": 2, "speed_mps": 1.4,
+		"points": []any{
+			map[string]any{"id": "A", "x": 0, "y": 0, "kind": "station", "node_key": "S"},
+			map[string]any{"id": "B", "x": 15, "y": 0, "kind": "station", "node_key": "OUT"}},
+		"lanes": []any{map[string]any{"id": "L1", "from": "A", "to": "B", "capacity": 2, "path": []any{map[string]any{"x": 7, "y": 3}}}}}
+	a.call("PUT", "/api/models/lm/agv-map", legacy, 204)
+	got := a.call("GET", "/api/models/lm/agv-map", nil, 200)
+	b := got["points"].([]any)[1].(map[string]any)
+	path := got["lanes"].([]any)[0].(map[string]any)["path"].([]any)[0].(map[string]any)
+	if b["x"].(float64) != 30 || path["x"].(float64) != 14 || path["y"].(float64) != 6 || got["v"].(float64) != 2 {
+		t.Errorf("legacy map must come back in meters: %v", got)
+	}
+	if _, has := got["unit_m"]; has {
+		t.Errorf("unit_m must be gone: %v", got)
 	}
 }
 
