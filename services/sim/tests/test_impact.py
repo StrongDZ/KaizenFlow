@@ -33,6 +33,12 @@ def test_failure_impact_uses_observed_propagation_and_counterfactual():
     assert impact["downtime_s"] == pytest.approx(1800)
     assert impact["upstream_blocked_s"] > 0
     assert impact["downstream_starved_s"] > 0
+    assert impact["upstream_blocked_s"] == impact["additional_upstream_blocked_s"]
+    assert impact["downstream_starved_s"] == impact["additional_downstream_starved_s"]
+    assert impact["caused_upstream_blocked_s"] == pytest.approx(
+        impact["failed_upstream_blocked_s"] - impact["reference_upstream_blocked_s"])
+    assert impact["caused_downstream_starved_s"] == pytest.approx(
+        impact["failed_downstream_starved_s"] - impact["reference_downstream_starved_s"])
     assert impact["time_to_first_upstream_block"] >= 0
     assert impact["time_to_first_downstream_starve"] >= 0
     assert impact["throughput_loss"] > 0
@@ -42,15 +48,16 @@ def test_failure_impact_uses_observed_propagation_and_counterfactual():
 
     candidates = generate(failed_req, [], [impact])
     kinds = {c.action["type"] for c in candidates}
-    assert {"REDUCE_MACHINE_RATE", "STOP_MACHINE"} <= kinds
+    assert kinds == {"STOP_MACHINE"}
     for candidate in candidates:
         rerun = run_replication(candidate_request(failed_req, candidate))
         assert rerun.kpis["processes"][candidate.action["target"]]["nominal_rate"] > 0
     ranked = rank(failed_req, failed, candidates)
     assert ranked
+    assert all(c["action"]["type"] != "REDUCE_MACHINE_RATE" for c in ranked)
     assert all(c["action"]["type"] in kinds for c in ranked)
 
-    no_block = {**impact, "upstream_blocked_s": 0}
+    no_block = {**impact, "additional_upstream_blocked_s": 0}
     assert generate(failed_req, [], [no_block]) == []
 
 
@@ -72,3 +79,32 @@ def test_line_wip_peak_uses_simultaneous_samples_not_sum_of_per_process_peaks():
     series = {("A", "out:X"): [(0, 10), (60, 0)], ("B", "in:X"): [(0, 0), (60, 10)]}
     rep = RepResult(0, kpis, series, {}, {}, [], [])
     assert mean_line_metrics([rep])["wip_peak"] == 10
+
+
+def test_failure_impact_subtracts_reference_state_after_failure_only():
+    req = serial_failure_request()
+
+    def result(intervals, throughput):
+        processes = {key: {"down_s": 1800 if key == "B" else 0, "blocked_s": 0, "starved_s": 0,
+                           "input_wip_end": 0, "output_wip_end": 0} for key in "ABCD"}
+        kpis = {"throughput": throughput, "red_minutes": 0, "backorder": 0, "processes": processes}
+        series = {("A", "out:X"): [(0, 0), (5400, 0)]}
+        return RepResult(0, kpis, series, intervals, {}, [], [])
+
+    failed = result({
+        "A": [("BLOCKED", 100, 200), ("BLOCKED", 1000, 1200)],
+        "C": [("STARVED", 100, 200), ("STARVED", 1000, 1300)],
+    }, 90)
+    reference = result({
+        "A": [("BLOCKED", 100, 200), ("BLOCKED", 1000, 1100)],
+        "C": [("STARVED", 100, 200), ("STARVED", 1000, 1250)],
+    }, 100)
+    impact = failure_impacts(req, [failed], [reference])[0]
+    assert impact["failed_upstream_blocked_s"] == 200
+    assert impact["reference_upstream_blocked_s"] == 100
+    assert impact["caused_upstream_blocked_s"] == 100
+    assert impact["failed_downstream_starved_s"] == 300
+    assert impact["reference_downstream_starved_s"] == 250
+    assert impact["caused_downstream_starved_s"] == 50
+    assert impact["time_to_first_upstream_block"] == 100
+    assert impact["time_to_first_downstream_starve"] == 100
