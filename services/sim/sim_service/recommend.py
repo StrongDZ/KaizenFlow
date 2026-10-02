@@ -20,6 +20,16 @@ MIN_RATE_FACTOR = 0.5
 THROUGHPUT_COLLAPSE = 0.5
 MAX_WORSEN_FRACTION = 0.10
 MAX_WORSEN_ABS = 1.0
+MAX_STARVED_WORSEN_ABS_S = 60.0
+MIN_SCORE_V2 = 0.0
+MIN_MEANINGFUL_IMPROVEMENT = {
+    "throughput": 1.0,
+    "red_minutes": 1.0,
+    "backorder": 1.0,
+    "blocked_s": 60.0,
+    "starved_s": 60.0,
+    "wip_peak": 1.0,
+}
 
 # Mọi component là delta đã chia cho độ lớn baseline; weights tập trung ở đây để dễ tune cho demo/nghiệp vụ.
 SCORE_WEIGHTS = {
@@ -84,10 +94,6 @@ def _scale_duration(spec, factor: float):
     return out
 
 
-def _nominal_rate(node) -> float:
-    return process_material_rate(node.params)
-
-
 def _machine_candidates(req: RunRequest, insight: dict) -> list[Candidate]:
     nodes = {n.key: n for n in req.nodes}
     target = nodes.get(insight["subject_key"])
@@ -143,23 +149,15 @@ def _failure_candidates(req: RunRequest, impacts: list[dict]) -> list[Candidate]
         failed = impact["failed_machine"]
         duration = float(impact.get("downtime_s", 0.0))
         at_s = float(impact.get("failure_at", 0.0))
-        if duration <= 0 or float(impact.get("upstream_blocked_s", 0.0)) <= 0:
+        caused_blocked = impact.get("additional_upstream_blocked_s")
+        if duration <= 0 or caused_blocked is None or float(caused_blocked) <= 0:
             continue
-        severity = min(1.0, duration / req.horizon_s)
         for upstream in _immediate_upstream(req, failed):
-            cycle = upstream.params.get("cycle", 1.0)
-            factor = 1.0 + severity
-            rate = _nominal_rate(upstream)
-            evidence = {k: impact[k] for k in ("downtime_s", "upstream_blocked_s", "downstream_starved_s",
+            evidence = {k: impact[k] for k in ("downtime_s", "additional_upstream_blocked_s",
+                                                "additional_downstream_starved_s",
+                                                "caused_upstream_blocked_s", "caused_downstream_starved_s",
                                                 "throughput_loss", "throughput_loss_pct") if k in impact}
-            out.append(Candidate(
-                {"type": "REDUCE_MACHINE_RATE", "target": upstream.key, "from_rate": rate,
-                 "to_rate": rate / factor, "delta": rate / factor - rate, "cost": 1.0,
-                 "safety_reason": "failure_recovery"},
-                [{"target": upstream.key, "path": "/cycle", "value": _scale_duration(cycle, factor)}],
-                reason=f"{failed} dừng khoảng {duration / 60:.0f} phút; giảm nhịp {upstream.key} để hạn chế blocked/WIP trong thời gian phục hồi.",
-                evidence=evidence,
-            ))
+            # Không dùng override cycle cho recovery: override đó tác động toàn horizon, không chỉ cửa sổ downtime.
             stop = Injection(target=upstream.key, kind="planned_stop", at_s=at_s, duration_s=duration)
             out.append(Candidate(
                 {"type": "STOP_MACHINE", "target": upstream.key, "at_s": at_s, "duration_s": duration,
@@ -181,6 +179,8 @@ def generate(req: RunRequest, insights: list[dict], failure_impacts: list[dict] 
 
     for ins in insights:
         subject = ins["subject_key"]
+        if ins["kind"] == "BOTTLENECK" and ins.get("payload", {}).get("ambiguous"):
+            continue
         if ins["kind"] == "BOTTLENECK":
             for c in _machine_candidates(req, ins):
                 add(c)
@@ -243,8 +243,25 @@ def _valid_candidate(req: RunRequest, cand: Candidate) -> bool:
         return False
 
 
-def _too_much_worse(base: float, candidate: float) -> bool:
-    return candidate - base > max(MAX_WORSEN_ABS, abs(base) * MAX_WORSEN_FRACTION)
+def _too_much_worse(base: float, candidate: float, absolute: float = MAX_WORSEN_ABS) -> bool:
+    return candidate - base > max(absolute, abs(base) * MAX_WORSEN_FRACTION)
+
+
+def _meaningful_improvement(delta: dict[str, float]) -> bool:
+    for name, threshold in MIN_MEANINGFUL_IMPROVEMENT.items():
+        value = delta.get(name)
+        if value is None:
+            continue
+        benefit = value if name == "throughput" else -value
+        if benefit >= threshold:
+            return True
+    return False
+
+
+def _meaningful_safety_benefit(delta: dict[str, float]) -> bool:
+    return (delta.get("blocked_s", 0.0) <= -MIN_MEANINGFUL_IMPROVEMENT["blocked_s"]
+            or delta.get("wip_peak", 0.0) <= -MIN_MEANINGFUL_IMPROVEMENT["wip_peak"]
+            or delta.get("starved_s", 0.0) <= -MIN_MEANINGFUL_IMPROVEMENT["starved_s"])
 
 
 def _normalized_score(base: dict[str, float], candidate: dict[str, float], cost: float) -> tuple[float, dict]:
@@ -282,14 +299,22 @@ def rank(req: RunRequest, baseline: list[RepResult], cands: list[Candidate],
             continue  # giữ hard constraint cũ: không đề xuất hành động làm tăng phút Đỏ
         if "backorder" in base_metrics and "backorder" in candidate_metrics and _too_much_worse(base_metrics["backorder"], candidate_metrics["backorder"]):
             continue
-        if b_thr > 0 and candidate_metrics["throughput"] < b_thr * THROUGHPUT_COLLAPSE and not safety:
+        if "starved_s" in base_metrics and "starved_s" in candidate_metrics and _too_much_worse(
+                base_metrics["starved_s"], candidate_metrics["starved_s"], MAX_STARVED_WORSEN_ABS_S):
             continue
         delta = metric_delta(base_metrics, candidate_metrics)
+        if b_thr > 0 and candidate_metrics["throughput"] < b_thr * THROUGHPUT_COLLAPSE \
+                and not (safety and _meaningful_safety_benefit(delta)):
+            continue
         secondary = any(delta.get(k, 0.0) < 0 for k in ("backorder", "blocked_s", "starved_s", "wip_peak"))
         if d_red == 0 and d_thr <= 0 and not secondary:
             continue
+        if not _meaningful_improvement(delta):
+            continue
         cost = float(c.action.get("cost", 1.0))
         score_v2, components = _normalized_score(base_metrics, candidate_metrics, cost)
+        if score_v2 <= MIN_SCORE_V2:
+            continue
         scored.append({"action": c.action, "overrides": c.overrides,
                        "injections": [i.model_dump() for i in c.injections] if c.injections is not None else None,
                        "delta_kpi": {"red_minutes": d_red, "throughput": d_thr},
