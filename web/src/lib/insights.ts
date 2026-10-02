@@ -71,8 +71,8 @@ export function evidenceRows(evidence?: NumericMetrics | null): DetailRow[] {
   if (isFiniteNumber(evidence.utilization)) rows.push({ label: 'Mức sử dụng', value: `${formatNumber(evidence.utilization * 100)}%` })
   if (isFiniteNumber(evidence.nominal_rate)) rows.push({ label: 'Năng lực danh nghĩa', value: `${formatNumber(evidence.nominal_rate)} u/h` })
   if (isFiniteNumber(evidence.effective_throughput)) rows.push({ label: 'Lưu lượng thực tế', value: `${formatNumber(evidence.effective_throughput)} u/h` })
-  if (isFiniteNumber(evidence.capacity_gap)) rows.push({ label: 'Chênh lệch năng lực', value: signed(evidence.capacity_gap, ' u/h') })
-  if (isFiniteNumber(evidence.upstream_wip_growth)) rows.push({ label: 'WIP thượng nguồn', value: signed(evidence.upstream_wip_growth) })
+  if (isFiniteNumber(evidence.capacity_gap)) rows.push({ label: 'Chênh năng lực thượng nguồn', value: signed(evidence.capacity_gap, ' u/h') })
+  if (isFiniteNumber(evidence.upstream_wip_growth)) rows.push({ label: 'Mức tăng WIP thượng nguồn', value: signed(evidence.upstream_wip_growth) })
   if (isFiniteNumber(evidence.downtime_s)) rows.push({ label: 'Thời gian dừng', value: `${formatNumber(evidence.downtime_s / 60)} phút` })
   return rows
 }
@@ -86,6 +86,19 @@ export function expectedImpactRows(candidate: Candidate): DetailRow[] {
   if (isFiniteNumber(delta.blocked_s)) rows.push({ label: 'Thời gian blocked', value: signed(delta.blocked_s / 60, ' phút') })
   if (isFiniteNumber(delta.starved_s)) rows.push({ label: 'Thời gian starved', value: signed(delta.starved_s / 60, ' phút') })
   if (isFiniteNumber(delta.wip_peak)) rows.push({ label: 'Đỉnh WIP', value: signed(delta.wip_peak) })
+  return rows
+}
+
+export function tradeOffRows(candidate: Candidate): DetailRow[] {
+  const delta = candidate.expected_impact?.delta
+  if (!delta) return []
+  const rows: DetailRow[] = []
+  if (isFiniteNumber(delta.throughput) && delta.throughput < 0) rows.push({ label: 'Sản lượng', value: signed(delta.throughput) })
+  if (isFiniteNumber(delta.red_minutes) && delta.red_minutes > 0) rows.push({ label: 'Phút Đỏ', value: signed(delta.red_minutes, ' phút') })
+  if (isFiniteNumber(delta.backorder) && delta.backorder > 0) rows.push({ label: 'Đơn thiếu', value: signed(delta.backorder) })
+  if (isFiniteNumber(delta.blocked_s) && delta.blocked_s > 0) rows.push({ label: 'Thời gian blocked', value: signed(delta.blocked_s / 60, ' phút') })
+  if (isFiniteNumber(delta.starved_s) && delta.starved_s > 0) rows.push({ label: 'Thời gian starved', value: signed(delta.starved_s / 60, ' phút') })
+  if (isFiniteNumber(delta.wip_peak) && delta.wip_peak > 0) rows.push({ label: 'Đỉnh WIP', value: signed(delta.wip_peak) })
   return rows
 }
 
@@ -113,6 +126,9 @@ export function describeInsight(ins: Insight): string {
     case 'RED_RISK':
       return `${ins.subject_key} có ${p}% khả năng chuyển Đỏ${fmtEta(ins.eta)}`
     case 'BOTTLENECK':
+      if (ins.payload?.ambiguous === true && Array.isArray(ins.payload?.co_bottlenecks)) {
+        return `Điểm nghẽn tương đương: ${(ins.payload.co_bottlenecks as string[]).join(', ')}`
+      }
       return `Bottleneck: ${ins.subject_key} (${p}% thời gian)`
     case 'FAULT_RISK':
       return `${ins.subject_key} có nguy cơ hỏng (${p}%)${fmtEta(ins.eta)}`
@@ -143,12 +159,15 @@ export function insightDetail(ins: Insight): string {
     case 'FAULT_RISK':
       return `${p}% số lần lặp`
     case 'BOTTLENECK': {
+      if (ins.payload?.ambiguous === true && Array.isArray(ins.payload?.co_bottlenecks)) {
+        return 'các công đoạn có mức nghẽn tương đương; cần thêm bằng chứng để chọn một công đoạn'
+      }
       const evidence = ins.payload?.evidence as NumericMetrics | null | undefined
       const parts: string[] = []
       const meanS = ins.payload?.mean_s
       parts.push(typeof meanS === 'number' ? `chờ trung bình ${Math.round(meanS / 60)} phút` : `là điểm nghẽn ${p}% thời gian`)
       if (isFiniteNumber(evidence?.utilization)) parts.push(`sử dụng ${Math.round(evidence.utilization * 100)}%`)
-      if (isFiniteNumber(evidence?.capacity_gap) && evidence.capacity_gap > 0) parts.push(`thiếu ${formatNumber(evidence.capacity_gap)} u/h`)
+      if (isFiniteNumber(evidence?.capacity_gap) && evidence.capacity_gap > 0) parts.push(`năng lực upstream cao hơn ${formatNumber(evidence.capacity_gap)} u/h`)
       if (isFiniteNumber(evidence?.upstream_wip_growth) && evidence.upstream_wip_growth > 0) parts.push('WIP đang tăng')
       return parts.join(' · ')
     }
