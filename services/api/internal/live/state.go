@@ -1,6 +1,7 @@
 package live
 
 import (
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -17,12 +18,13 @@ const (
 	// NoUseCoverage: quy ước của sim khi kho không bị lấy hàng.
 	NoUseCoverage = 999.0
 	// CoverageWindowS: cửa sổ tính tốc độ tiêu thụ, cùng giá trị mặc định với sim (`coverage_window_s`).
-	CoverageWindowS  = 3600.0
-	minCoverageSpanS = 300.0
-	histMinGapS      = 5.0
-	histCap          = 512
-	rateSamples      = 5
-	maxSources       = 2000
+	CoverageWindowS   = 3600.0
+	recentRateWindowS = 6 * 3600.0
+	minCoverageSpanS  = 300.0
+	histMinGapS       = 5.0
+	histCap           = 512
+	rateSamples       = 5
+	maxSources        = 2000
 	// sessionBackstep: giờ ảo của bản tin mới lùi quá chừng này so với giờ ảo đang giữ thì đó là phiên feed mới (feed bắt đầu lại),
 	// không phải bản tin đến trễ.
 	sessionBackstep = 10 * time.Minute
@@ -185,7 +187,8 @@ func (sub *subject) push(name string, sm Sample) {
 		return
 	}
 	h = append(h, sm)
-	cut := sm.TS.Add(-time.Duration((CoverageWindowS + 60) * float64(time.Second)))
+	keepWindowS := math.Max(CoverageWindowS, recentRateWindowS)
+	cut := sm.TS.Add(-time.Duration((keepWindowS + 60) * float64(time.Second)))
 	i := 0
 	for i < len(h)-1 && h[i].TS.Before(cut) {
 		i++
@@ -220,6 +223,44 @@ func (s *State) historyLen(model, subj, signal string) int {
 		}
 	}
 	return 0
+}
+
+func rateFromHistory(hist []Sample, window time.Duration) (float64, int, float64, bool) {
+	if len(hist) < 2 {
+		return 0, len(hist), 0, false
+	}
+	last := hist[len(hist)-1]
+	from := last.TS.Add(-window)
+	i := 0
+	for i < len(hist)-1 && hist[i].TS.Before(from) {
+		i++
+	}
+	start := max(i, len(hist)-rateSamples)
+	win := hist[start:]
+	if len(win) < 2 {
+		return 0, len(win), 0, false
+	}
+	spanH := last.TS.Sub(win[0].TS).Hours()
+	if spanH <= 0 {
+		return 0, len(win), 0, false
+	}
+	delta := last.V - win[0].V
+	if delta < 0 {
+		return 0, len(win), spanH, false
+	}
+	return delta / spanH, len(win), spanH, true
+}
+
+// SignalRate trả tốc độ tăng gần đây của một tín hiệu cộng dồn theo giờ, lấy trực tiếp từ history trong RAM.
+func (s *State) SignalRate(model, subj, signal string, window time.Duration) (float64, int, float64, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if m := s.models[model]; m != nil {
+		if sub := m.subjects[subj]; sub != nil {
+			return rateFromHistory(sub.hist[signal], window)
+		}
+	}
+	return 0, 0, 0, false
 }
 
 type SubjectSnap struct {

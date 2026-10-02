@@ -1,6 +1,6 @@
 import type { Insight, Json } from '../api/types'
 
-export type Action = { type: string; target: string; cost: number; at_s?: number; duration_s?: number; delta?: number; rop?: number }
+export type Action = { type: string; target: string; cost: number; at_s?: number; duration_s?: number; delta?: number; rop?: number; qty?: number; material?: string }
 export type Candidate = { rank: number; action: Action; delta_kpi: { red_minutes: number; throughput: number }; score: number }
 
 export function candidatesOf(ins: Insight): Candidate[] {
@@ -19,6 +19,7 @@ export function describeAction(a: Action): string {
     case 'FLEET_SIZE':
       return `Thêm 1 xe cho ${a.target}`
     case 'REPLENISH':
+      if (typeof a.qty === 'number') return `Bù ${a.qty.toFixed(1).replace('.', ',')} ${a.material ?? ''} vào ${a.target}`.trim()
       return `Nâng điểm đặt hàng của ${a.target} lên ${a.rop ?? '?'}`
     default:
       return `${a.type} ${a.target}`

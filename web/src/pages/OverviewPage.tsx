@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
-import { Card, ErrorBox, Loading, PageBody, PageHeader, StatusChip } from '../components/ui'
+import { Card, ErrorBox, Loading, PageBody, PageHeader, StatusChip, btn, btnPrimary } from '../components/ui'
 import { fmtDateTime } from '../lib/format'
 import { describeInsight } from '../lib/insights'
 
@@ -16,7 +16,15 @@ export default function OverviewPage() {
   const row = 'flex items-center justify-between gap-3 border-t border-line py-2 first:border-0 hover:text-text'
   return (
     <PageBody wide>
-      <PageHeader title="Tổng quan" />
+      <PageHeader
+        title="Tổng quan"
+        actions={
+          <>
+            <Link className={btn} to="/reports/operations">Dashboard vận hành</Link>
+            <Link className={btnPrimary} to="/reports/benchmarks">Benchmark FMCG</Link>
+          </>
+        }
+      />
       <ErrorBox error={active.error ?? reds.error ?? models.error} />
       <div className="grid grid-cols-3 gap-4">
         <Card title="Đang chạy">
