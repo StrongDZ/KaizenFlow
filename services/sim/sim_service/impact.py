@@ -68,8 +68,10 @@ def _reachable_processes(req: RunRequest, target: str, *, reverse: bool) -> set[
     return (seen - {target}) & processes
 
 
-def _state_total(rep: RepResult, subjects: set[str], state: str) -> float:
-    return sum(end - start for subject in subjects for st, start, end in rep.intervals.get(subject, []) if st == state)
+def _state_total(rep: RepResult, subjects: set[str], state: str, after: float = 0.0) -> float:
+    """Tổng subject-seconds của state sau mốc ``after``; interval cắt qua mốc chỉ tính phần phía sau."""
+    return sum(end - max(start, after) for subject in subjects
+               for st, start, end in rep.intervals.get(subject, []) if st == state and end > after)
 
 
 def _first_state_after(rep: RepResult, subjects: set[str], state: str, after: float) -> float | None:
@@ -101,12 +103,14 @@ def failure_impacts(req: RunRequest, failed: list[RepResult], reference: list[Re
         at_s = min(i.at_s for i in injections)
         upstream = _reachable_processes(req, target, reverse=True)
         downstream = _reachable_processes(req, target, reverse=False)
+        failed_upstream = float(mean(_state_total(r, upstream, "BLOCKED", at_s) for r in failed))
+        failed_downstream = float(mean(_state_total(r, downstream, "STARVED", at_s) for r in failed))
         row: dict = {
             "failed_machine": target,
             "failure_at": at_s,
             "downtime_s": float(mean(r.kpis["processes"][target].get("down_s", 0.0) for r in failed)),
-            "upstream_blocked_s": float(mean(_state_total(r, upstream, "BLOCKED") for r in failed)),
-            "downstream_starved_s": float(mean(_state_total(r, downstream, "STARVED") for r in failed)),
+            "failed_upstream_blocked_s": failed_upstream,
+            "failed_downstream_starved_s": failed_downstream,
         }
         first_block = _mean_defined([_first_state_after(r, upstream, "BLOCKED", at_s) for r in failed])
         first_starve = _mean_defined([_first_state_after(r, downstream, "STARVED", at_s) for r in failed])
@@ -120,17 +124,35 @@ def failure_impacts(req: RunRequest, failed: list[RepResult], reference: list[Re
             expected_up = min(i.at_s + i.duration_s for i in planned)
             recovery = _mean_defined([_first_state_after(r, {target}, "RUNNING", expected_up) for r in failed])
             if recovery is not None:
+                row["recovery_delay_s"] = recovery
                 row["recovery_time"] = recovery
 
         # Một reference bỏ tất cả injection chỉ quy trách nhiệm chính xác khi chúng cùng một target.
         if ref_metrics and len(by_target) == 1:
+            reference_upstream = float(mean(_state_total(r, upstream, "BLOCKED", at_s) for r in reference or []))
+            reference_downstream = float(mean(_state_total(r, downstream, "STARVED", at_s) for r in reference or []))
+            caused_upstream = failed_upstream - reference_upstream
+            caused_downstream = failed_downstream - reference_downstream
             throughput_loss = ref_metrics["throughput"] - failed_metrics["throughput"]
             row.update({
+                "reference_upstream_blocked_s": reference_upstream,
+                "caused_upstream_blocked_s": caused_upstream,
+                "additional_upstream_blocked_s": max(caused_upstream, 0.0),
+                "reference_downstream_starved_s": reference_downstream,
+                "caused_downstream_starved_s": caused_downstream,
+                "additional_downstream_starved_s": max(caused_downstream, 0.0),
+                # Tên cũ giữ compatibility, nhưng từ đây mang nghĩa phần tăng thêm do failure.
+                "upstream_blocked_s": max(caused_upstream, 0.0),
+                "downstream_starved_s": max(caused_downstream, 0.0),
                 "throughput_loss": throughput_loss,
                 "throughput_loss_pct": throughput_loss / ref_metrics["throughput"] if ref_metrics["throughput"] > 0 else None,
                 "lost_output": throughput_loss,
                 "backorder_delta": failed_metrics["backorder"] - ref_metrics["backorder"],
                 "WIP_peak_delta": failed_metrics["wip_peak"] - ref_metrics["wip_peak"],
             })
+        else:
+            # Không có same-seed counterfactual thì chỉ công bố observed totals; không giả causal delta.
+            row["upstream_blocked_s"] = failed_upstream
+            row["downstream_starved_s"] = failed_downstream
         out.append(row)
     return out
