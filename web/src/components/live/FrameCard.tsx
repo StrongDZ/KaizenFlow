@@ -58,6 +58,7 @@ export function FrameCard({ model, map, names, fleets, draft, onDraft }: {
   const [pointId, setPointId] = useState('')
   const [fit, setFit] = useState<{ rmsM: number; n: number } | null>(null)
   const chosenVehicle = vehicles.find((v) => v.id === (vehicleId || vehicles[0]?.id))
+  const moving = chosenVehicle?.state === 'MOVING' || chosenVehicle?.state === 'WAITING'  // xe đang chạy hay chờ ở cuối làn không đứng ở một điểm đã biết
   const chosenPoint = map.points.find((p) => p.id === (pointId || map.points[0]?.id))
 
   const save = useMutation({
@@ -120,12 +121,21 @@ export function FrameCard({ model, map, names, fleets, draft, onDraft }: {
               <p className="text-muted">Chọn một xe đang đứng yên (nghỉ hoặc đang bốc dỡ) đúng ở một điểm đã biết (ví dụ đỗ ở kho), chọn điểm đó, bấm Thêm cặp. Xe đang chạy sẽ cho cặp sai. Cần ít nhất 2 cặp; thêm cặp thứ ba để biết sai số.</p>
               <div className="grid grid-cols-1 gap-1.5">
                 <select className={input} aria-label="Xe" value={chosenVehicle?.id ?? ''} onChange={(e) => setVehicleId(e.target.value)}>
-                  {vehicles.map((v) => <option key={v.id} value={v.id}>{v.id} ({STATE[v.state] ?? v.state}): báo ({fmt(v.raw_x)}; {fmt(v.raw_y)})</option>)}
+                  {vehicles.map((v) => <option key={v.id} value={v.id}>{v.id}</option>)}
                 </select>
                 <select className={input} aria-label="Điểm trên bản đồ" value={chosenPoint?.id ?? ''} onChange={(e) => setPointId(e.target.value)}>
                   {map.points.map((p) => <option key={p.id} value={p.id}>{pointLabel(p, names)} ({fmt(p.x)}; {fmt(p.y)}) m</option>)}
                 </select>
-                <button className={btn} disabled={!chosenVehicle || !chosenPoint} onClick={addPair}>Thêm cặp</button>
+                {/* Giá trị đổi từng giây (toạ độ, trạng thái) nằm ở ô đọc có khung cố định chứ không ở nhãn của ô chọn, để ô chọn không giật. */}
+                <div className="h-9 overflow-hidden whitespace-nowrap rounded-md border border-line bg-panel px-2 py-1 font-mono text-[11px] tabular-nums leading-tight text-text-2" aria-live="off">
+                  {chosenVehicle ? (
+                    <>
+                      <div>báo ({fmt(chosenVehicle.raw_x)}; {fmt(chosenVehicle.raw_y)})</div>
+                      <div className={moving ? 'text-warn' : ''}>{STATE[chosenVehicle.state] ?? chosenVehicle.state}{moving ? ': chờ xe đứng yên' : ''}</div>
+                    </>
+                  ) : '—'}
+                </div>
+                <button className={btn} disabled={!chosenVehicle || !chosenPoint || moving} onClick={addPair}>Thêm cặp</button>
               </div>
               {pairs.length > 0 && (
                 <ul className="space-y-0.5">
