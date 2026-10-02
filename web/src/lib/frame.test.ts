@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyFrame, frameHeading, IDENTITY_FRAME, solveFrame } from './frame'
+import { applyFrame, frameHeading, IDENTITY_FRAME, isIdentityFrame, solveFrame, withFrame } from './frame'
 
 // Các ca này lấy nguyên từ frame_test.go (Frame.Apply của Go): hai bên phải cho cùng kết quả.
 describe('applyFrame khớp Go', () => {
@@ -62,5 +62,26 @@ describe('solveFrame (căn chỉnh bằng các cặp điểm)', () => {
     expect(solveFrame([], false)).toBeNull()
     expect(solveFrame(pairs(truth, [[1, 1]]), false)).toBeNull()
     expect(solveFrame(pairs(truth, [[5, 5], [5, 5]]), false)).toBeNull()
+  })
+})
+
+describe('withFrame / isIdentityFrame', () => {
+  const b = { id: 1, model_key: 'm', subject: 'TUG', signal: 'fleet', source: 'agv/+/pos', json_path: '', transform: { fields: { state: 'mode' } }, enabled: true, mode: 'source' as const }
+  it('đồng nhất khi chưa chỉnh gì (kể cả scale 0)', () => {
+    expect(isIdentityFrame(IDENTITY_FRAME)).toBe(true)
+    expect(isIdentityFrame({ ...IDENTITY_FRAME, scale: 0 })).toBe(true)
+    expect(isIdentityFrame({ ...IDENTITY_FRAME, rot_deg: 90 })).toBe(false)
+    expect(isIdentityFrame({ ...IDENTITY_FRAME, flip_y: true })).toBe(false)
+  })
+  it('ghi khung vào transform, giữ nguyên các phần khác của ghép nối', () => {
+    const f = { ...IDENTITY_FRAME, scale: 0.001, rot_deg: 90 }
+    expect(withFrame(b, f)).toEqual({
+      subject: 'TUG', signal: 'fleet', mode: 'source', source: 'agv/+/pos', json_path: '', enabled: true,
+      transform: { fields: { state: 'mode' }, frame: f },
+    })
+  })
+  it('khung đồng nhất thì bỏ trường frame thay vì lưu số 0', () => {
+    const withOld = { ...b, transform: { fields: { state: 'mode' }, frame: { ...IDENTITY_FRAME, rot_deg: 90 } } }
+    expect(withFrame(withOld, IDENTITY_FRAME).transform).toEqual({ fields: { state: 'mode' } })
   })
 })

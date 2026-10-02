@@ -1,5 +1,5 @@
 import type {
-  AgvMap, Binding, BindingInput, CoverageReport, DataSourceRow, SourceTestResult, CalibrationApplied, CalibrationResp, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
+  AgvMap, Binding, Frame, BindingInput, CoverageReport, DataSourceRow, SourceTestResult, CalibrationApplied, CalibrationResp, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
   BandRow, CheckReport, EventRow, Graph, GraphEdge, GraphNode, InsightRow, Issue, Json, Material, MaterialDetail, MaterialUpdate, ModelSummary,
   NewMaterial, NewNodeType, NewScenario, NodeType, NodeTypeDetail, NodeTypeUpdate, Run, RunDetail, RunRow, Scenario, ScenarioBody, ScenarioRow,
   SignalRow, VersionInfo,
@@ -129,7 +129,7 @@ export const api = {
   saveAgvMap: (key: string, map: AgvMap) => put<void>(`/api/models/${encodeURIComponent(key)}/agv-map`, map),
   feed: {
     status: () => req<FeedStatus>('/api/feed/status'),
-    start: (model: string, speed: number) => post<FeedStatus>('/api/feed/start', { model, speed }),
+    start: (model: string, speed: number, frame?: Frame & { noise_m?: number }) => post<FeedStatus>('/api/feed/start', { model, speed, ...(frame ? { frame } : {}) }),
     pause: () => post<FeedStatus>('/api/feed/pause'),
     resume: () => post<FeedStatus>('/api/feed/resume'),
     speed: (speed: number) => post<FeedStatus>('/api/feed/speed', { speed }),

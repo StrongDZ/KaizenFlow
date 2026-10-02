@@ -3,14 +3,16 @@ import { useEffect, useMemo, useState } from 'react'
 import { Ban, Spline, Trash2, Unlock } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
-import type { AgvMap, MapPoint, Pt } from '../api/types'
+import type { AgvMap, Frame, MapPoint, Pt } from '../api/types'
 import { CalibrationCard } from '../components/live/CalibrationCard'
 import { AgvMapCanvas, type MapSelection, type RingTone } from '../components/live/AgvMapCanvas'
 import { FeedControl } from '../components/live/FeedControl'
+import { FrameCard } from '../components/live/FrameCard'
 import { MapTables } from '../components/live/MapTables'
 import { PeekHost, SidePeek } from '../components/SidePeek'
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, Tag, btn, btnPrimary, input } from '../components/ui'
 import { useFeedStatus, useLive } from '../hooks/useLive'
+import { applyFrame } from '../lib/frame'
 import { useModelGraph } from '../hooks/useModelGraph'
 import { nodeBadge } from '../lib/liveFrame'
 import {
@@ -37,6 +39,7 @@ export default function AgvMapPage() {
   const [selected, setSelected] = useState<MapSelection>(null)
   const [tool, setTool] = useState<Tool>('select')
   const [linkFrom, setLinkFrom] = useState<string | null>(null)
+  const [frameDraft, setFrameDraft] = useState<Frame | null>(null)  // khung toạ độ xe đang chỉnh (xem trước bằng chấm nét đứt)
   const [via, setVia] = useState<Pt[]>([])  // điểm uốn đã bấm của làn đang vẽ dở
   const [bothWays, setBothWays] = useState(true)
   const editing = draft !== null
@@ -82,6 +85,10 @@ export default function AgvMapPage() {
   const blockedIds = useMemo(() => new Set(laneBlocks.keys()), [laneBlocks])
   const fleets = useMemo(() => Object.values(snapshot?.fleet ?? {}), [snapshot])
   const occ = useMemo(() => (map ? occupancy(map, fleets) : new Map()), [map, fleets])
+  const ghosts = useMemo(
+    () => (frameDraft ? fleets.flat().map((v) => { const [x, y] = applyFrame(frameDraft, v.raw_x, v.raw_y); return { id: v.id, x, y } }) : undefined),
+    [frameDraft, fleets],
+  )
 
   if (saved.isLoading || g.status === 'loading') return <Loading />
   if (saved.error) return <PageBody><PageHeader title="Bản đồ AGV" subtitle={model} /><ErrorBox error={saved.error} /></PageBody>
@@ -154,7 +161,7 @@ export default function AgvMapPage() {
           subtitle={model}
           actions={!editing && map ? <button className={btn} onClick={startEdit}>Sửa bản đồ</button> : undefined}
         />
-        <FeedControl model={model} />
+        <FeedControl model={model} offerFrame />
         <ErrorBox error={save.error ?? block.error ?? unblock.error} />
 
         {!map ? (
@@ -197,7 +204,7 @@ export default function AgvMapPage() {
               <div className="h-[520px] rounded-lg border border-line bg-bg">
                 <AgvMapCanvas
                   map={map} fleets={fleets} names={names} ringOf={(k) => rings[k]} blocked={blockedIds} selected={selected} editing={editing} linkFrom={linkFrom}
-                  draft={linkFrom ? { from: linkFrom, via } : null}
+                  draft={linkFrom ? { from: linkFrom, via } : null} ghosts={ghosts}
                   onSelect={setSelected} onPointClick={onPointClick} onMovePoint={(id, x, y) => apply((m) => movePoint(m, id, x, y))} onBackgroundClick={onBackground}
                   onMoveWaypoint={(lane, i, x, y) => apply((m) => moveWaypoint(m, lane, i, x, y))}
                   onInsertWaypoint={(lane, i, at) => apply((m) => insertWaypoint(m, lane, i, at))}
@@ -242,6 +249,8 @@ export default function AgvMapPage() {
                   </div>
                 )}
               </Card>
+
+              {!editing && <FrameCard model={model} map={map} names={names} fleets={fleets} draft={frameDraft} onDraft={setFrameDraft} />}
             </div>
           </div>
         )}

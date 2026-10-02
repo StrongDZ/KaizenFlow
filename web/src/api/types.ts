@@ -232,6 +232,8 @@ export type FeedStatus = {
   vehicles: number
   deadlock_breaks: number
   has_map: boolean
+  /** Hệ toạ độ hãng xe mà feed đang giả lập (null: phát thẳng toạ độ bản đồ). */
+  frame: (Frame & { noise_m: number }) | null
   incidents: Incident[]
 }
 export type IncidentInput = { kind: Incident['kind']; target: string; duration_s?: number; material?: string; fraction?: number }

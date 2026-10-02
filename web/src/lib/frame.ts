@@ -1,4 +1,4 @@
-import type { Frame, Pt } from '../api/types'
+import type { Binding, BindingInput, Frame, Pt } from '../api/types'
 
 export const IDENTITY_FRAME: Frame = { dx: 0, dy: 0, rot_deg: 0, scale: 1, flip_y: false }
 
@@ -64,4 +64,16 @@ export function solveFrame(pairs: FramePair[], flipY: boolean): { frame: Frame; 
     sq += (mx - p.map.x) ** 2 + (my - p.map.y) ** 2
   }
   return { frame, rmsM: Math.sqrt(sq / n) }
+}
+
+/** Khung không đổi gì (scale 0 cũng tính là 1, như API). */
+export function isIdentityFrame(f: Frame): boolean {
+  return f.dx === 0 && f.dy === 0 && f.rot_deg === 0 && (f.scale === 1 || f.scale === 0) && !f.flip_y
+}
+
+/** Dạng gửi lên server của một ghép nối đội xe với khung mới; khung đồng nhất thì bỏ hẳn trường frame. Các phần khác của ghép nối giữ nguyên. */
+export function withFrame(b: Binding, frame: Frame): BindingInput {
+  const { frame: _old, ...rest } = b.transform ?? {}
+  const transform = isIdentityFrame(frame) ? rest : { ...rest, frame }
+  return { subject: b.subject, signal: b.signal, mode: 'source', source: b.source, json_path: b.json_path, transform, enabled: b.enabled }
 }
