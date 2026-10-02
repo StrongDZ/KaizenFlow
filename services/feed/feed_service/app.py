@@ -8,13 +8,25 @@ import time
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from feed_service.frame import ControllerFrame
 from feed_service.runner import Runner
 from feed_service.scale import Truth
 from feed_service.sinks import ApiClient, ApiError, HttpSink
 
 
+class FrameBody(BaseModel):
+    """Hệ toạ độ hãng xe giả lập (cùng nghĩa với khung toạ độ của API); bỏ trống là phát thẳng toạ độ bản đồ."""
+    dx: float = 0.0
+    dy: float = 0.0
+    rot_deg: float = 0.0
+    scale: float = Field(default=1.0, gt=0)
+    flip_y: bool = False
+    noise_m: float = Field(default=0.05, ge=0)
+
+
 class StartBody(BaseModel):
     model: str
+    frame: FrameBody | None = None
     speed: float = Field(default=10.0, gt=0)
     cycle_factor: float = Field(default=Truth.cycle_factor, gt=0)
     demand_factor: float = Field(default=Truth.demand_factor, gt=0)
@@ -62,7 +74,8 @@ def create_app(runner: Runner, client: ApiClient) -> FastAPI:
         except ApiError as exc:
             raise api_error(exc)
         try:
-            runner.start(blueprint, speed=body.speed, truth=Truth(body.cycle_factor, body.demand_factor))
+            runner.start(blueprint, speed=body.speed, truth=Truth(body.cycle_factor, body.demand_factor),
+                         frame=ControllerFrame(**body.frame.model_dump()) if body.frame else None)
         except Exception as exc:  # RunRequest hỏng, bản đồ hỏng…
             raise HTTPException(status_code=422, detail=f"không dựng được nhà máy: {exc}")
         return runner.status()

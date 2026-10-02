@@ -22,6 +22,7 @@ class Vehicle:
     t0: float = 0.0            # lúc bắt đầu chạy làn hiện tại
     dur: float = 0.0           # thời gian chạy hết làn hiện tại
     busy: bool = False
+    heading: float = 0.0       # hướng cuối cùng (độ), giữ lại khi xe đứng
 
 
 @dataclass
@@ -87,11 +88,20 @@ class Fleet:
     def release(self, veh: Vehicle) -> None:
         veh.busy, veh.state, veh.load, veh.lane = False, "IDLE", 0.0, None
 
-    def xy(self, veh: Vehicle, now: float) -> tuple[float, float] | None:
+    def pose(self, veh: Vehicle, now: float) -> tuple[float, float, float] | None:
+        """(x, y, hướng độ) của xe trên bản đồ; None nếu chưa có chỗ đứng."""
         if veh.lane is None:
-            return self.graph.xy_of(veh.point) if veh.point is not None else None
+            if veh.point is None:
+                return None
+            x, y = self.graph.xy_of(veh.point)
+            return (x, y, veh.heading)
         frac = min(1.0, (now - veh.t0) / veh.dur) if veh.state == "MOVING" and veh.dur > 0 else 1.0
-        return self.graph.xy_on_lane(veh.lane, frac)
+        x, y, veh.heading = self.graph.pose_on_lane(veh.lane, frac)
+        return (x, y, veh.heading)
+
+    def xy(self, veh: Vehicle, now: float) -> tuple[float, float] | None:
+        p = self.pose(veh, now)
+        return None if p is None else (p[0], p[1])
 
     # --- chi phí, chặn làn --------------------------------------------------------------------
     def _cost(self, lane: Lane) -> float:

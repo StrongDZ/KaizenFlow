@@ -78,3 +78,22 @@ def test_no_map_means_no_agv_streams(blueprint):
     w, em = make(blueprint, with_map=False)
     w.step(600)
     assert not [m for m in em.messages() if m["source"].startswith("agv/")]
+
+
+def test_agv_positions_in_controller_frame_have_heading_and_no_lane(blueprint):
+    import numpy as np
+    from feed_service.frame import ControllerFrame
+    w, em = make(blueprint)
+    w.frame = ControllerFrame(dx=-4.0, dy=52.0, rot_deg=90, scale=0.001, noise_m=0.05)
+    w.step(1500)
+    pos = [m for m in em.messages() if m["source"].startswith("agv/") and m["source"].endswith("/pos")]
+    assert pos
+    now = w.ctx.env.now
+    truth = {v.id: w.fleet.xy(v, now) for vs in w.fleet.vehicles.values() for v in vs}
+    for m in pos:
+        p = m["payload"]
+        assert "seg" not in p and "th" in p
+        mx, my = w.frame.to_map(p["x"], p["y"])
+        tx, ty = truth[p["id"]]
+        assert abs(mx - tx) < 0.5 and abs(my - ty) < 0.5, "đổi ngược khung phải về đúng vị trí (nhiễu ≤ vài chục cm)"
+        assert abs(p["x"]) > 100, "toạ độ hãng xe phải là mm, khác hệ bản đồ"

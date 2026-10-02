@@ -21,6 +21,7 @@ class Emitter:
     def __init__(self, world: World, seed: int = 1):
         self.w = world
         self.rng = np.random.default_rng(seed)
+        self.pos_rng = np.random.default_rng(seed + 1000)  # nhiễu vị trí xe tách riêng để không làm đổi chuỗi ngẫu nhiên của các luồng khác
         self.arche = {n.key: n.archetype for n in world.req.nodes}
 
     def _name(self, key: str) -> str:
@@ -71,15 +72,20 @@ class Emitter:
             return []
         out = []
         now = self.w.ctx.env.now
+        frame = self.w.frame
         for pool_key, vehicles in fleet.vehicles.items():
             for i, v in enumerate(vehicles):
-                xy = fleet.xy(v, now)
-                if xy is None:
+                pose = fleet.pose(v, now)
+                if pose is None:
                     continue
+                x, y, th = pose
+                payload = {"id": v.id, "x": round(x, 2), "y": round(y, 2), "th": round(th, 1), "st": v.state, "seg": v.lane or "", "load": v.load}
+                if frame is not None:
+                    # Hãng xe thật báo ở hệ toạ độ riêng và không biết "làn" của mình: bỏ seg để API tự khớp vào làn.
+                    rx, ry = frame.to_raw(x, y, self.pos_rng)
+                    payload = {"id": v.id, "x": round(rx, 3), "y": round(ry, 3), "th": round(frame.heading_to_raw(th), 1), "st": v.state, "load": v.load}
                 out.append({"source": f"agv/{alias_of(pool_key)}/{i + 1:02d}/pos", "ts": ts,
-                            "desc": f"{self._name(pool_key)} — xe {i + 1}",
-                            "payload": {"id": v.id, "x": round(xy[0], 2), "y": round(xy[1], 2), "st": v.state,
-                                        "seg": v.lane or "", "load": v.load}})
+                            "desc": f"{self._name(pool_key)} — xe {i + 1}", "payload": payload})
         return out
 
     def _trips(self, ts: str) -> list[dict]:

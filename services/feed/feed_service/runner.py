@@ -6,6 +6,7 @@ import time
 from typing import Callable
 
 from feed_service.emitter import Emitter
+from feed_service.frame import ControllerFrame
 from feed_service.scale import Truth
 from feed_service.world import World
 
@@ -30,8 +31,10 @@ class Runner:
         self.last_error: str | None = None
 
     # --- điều khiển -------------------------------------------------------------------------
-    def start(self, blueprint: dict, speed: float = 10.0, truth: Truth | None = None, seed: int = 7) -> None:
+    def start(self, blueprint: dict, speed: float = 10.0, truth: Truth | None = None, seed: int = 7,
+              frame: ControllerFrame | None = None) -> None:
         world = World(blueprint, truth=truth, seed=seed)  # dựng ngoài khoá: mất khoảng một giây
+        world.frame = frame
         with self._lock:
             self.world, self.emitter = world, Emitter(world, seed=seed + 1)
             self.model, self.version_id = blueprint.get("model"), blueprint.get("version_id")
@@ -107,6 +110,8 @@ class Runner:
                 "vehicles": sum(len(v) for v in w.fleet.vehicles.values()) if w and w.fleet else 0,
                 "deadlock_breaks": w.fleet.deadlock_breaks if w and w.fleet else 0,
                 "has_map": bool(w and w.fleet),
+                "frame": None if not (w and w.frame) else {"dx": w.frame.dx, "dy": w.frame.dy, "rot_deg": w.frame.rot_deg,
+                                                           "scale": w.frame.scale, "flip_y": w.frame.flip_y, "noise_m": w.frame.noise_m},
                 "incidents": w.list_incidents() if w else [],
             }
 
