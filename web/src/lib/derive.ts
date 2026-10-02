@@ -1,4 +1,4 @@
-import type { Derive, DeriveTerm } from '../api/types'
+import type { Derive, DeriveTerm, SubjectView } from '../api/types'
 
 export const DEFAULT_IDLE_S = 60
 
@@ -61,4 +61,24 @@ export function previewDerive(d: Derive, read: (subject: string, signal: string)
     total += t.sign * (t.factor ?? 1) * v
   }
   return total
+}
+
+/**
+ * Những đối tượng mà tín hiệu tự tính của `subject` được lấy đầu vào từ đó: chính nó và những gì nối trực tiếp với nó. Khớp RelatedSubjects của API,
+ * nơi luật này được ép khi lưu. Node: các đường nối vào hoặc ra nó. Đường nối: hai node ở hai đầu và mọi đường nối khác chạm một trong hai đầu
+ * (để trừ đi phần đã đi theo đường khác).
+ */
+export function relatedSubjects(subjects: SubjectView[], subject: string): Set<string> {
+  const out = new Set([subject])
+  const self = subjects.find((s) => s.subject === subject)
+  if (!self) return out
+  const touches = (e: SubjectView, node: string) => e.kind === 'edge' && (e.src === node || e.dst === node)
+  if (self.kind === 'edge') {
+    if (self.src) out.add(self.src)
+    if (self.dst) out.add(self.dst)
+    for (const s of subjects) if ((self.src && touches(s, self.src)) || (self.dst && touches(s, self.dst))) out.add(s.subject)
+    return out
+  }
+  for (const s of subjects) if (touches(s, subject)) out.add(s.subject)
+  return out
 }

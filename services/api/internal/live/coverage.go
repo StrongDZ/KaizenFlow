@@ -143,7 +143,7 @@ func AnalyzeCoverage(in CoverageInput) CoverageReport {
 				c.Status, c.Reason = StatusMissing, "Ghép nối này đang tắt."
 				c.Suggestions = g.suggest(ref)
 			case b.Mode == ModeDerived && b.Derive != nil:
-				if err := ValidateDerive(ref, *b.Derive, in.Bindings, known); err != nil {
+				if err := ValidateDerive(ref, *b.Derive, in.Bindings, known, RelatedSubjects(in.Subjects, ref.Subject)); err != nil {
 					c.Status, c.Reason = StatusBroken, err.Error()
 				} else {
 					c.Status = StatusDerived

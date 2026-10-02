@@ -692,3 +692,16 @@ func TestAgvMapStoredBeforeV2IsServedInMeters(t *testing.T) {
 		t.Errorf("blueprint cho feed cũng phải là v2: %v", bp["agv_map"])
 	}
 }
+
+func TestDerivedBindingMayOnlyUseSignalsOfConnectedObjects(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	bindSource(a, "lm", "SRC", "arrived", "dock/src/count", "n")
+	// SRC nối với đường SRC>S nhưng không nối trực tiếp với đường S>OUT: không dùng làm đầu vào của nó được.
+	res := putBindingsRaw(a, "lm", []any{derivedSum("S>OUT", "moved", term("SRC", "arrived", 1))}, 422)
+	if m := res["issues"].([]any)[0].(map[string]any)["message"].(string); !strings.Contains(m, "không nối trực tiếp") {
+		t.Fatalf("message = %q", m)
+	}
+	// còn đầu của chính đường nối đó thì được (SRC là đầu vào của SRC>S).
+	putBindingsRaw(a, "lm", []any{derivedSum("SRC>S", "moved", term("SRC", "arrived", 1))}, 200)
+}

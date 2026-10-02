@@ -433,7 +433,7 @@ func (h *handlers) putBindings(w http.ResponseWriter, r *http.Request) {
 			}
 			if b.Derive == nil {
 				list = append(list, validate.Issue{Key: b.Subject, Message: "Thiếu công thức tự tính."})
-			} else if err := live.ValidateDerive(live.Ref{Subject: b.Subject, Signal: b.Signal}, *b.Derive, final, known); err != nil {
+			} else if err := live.ValidateDerive(live.Ref{Subject: b.Subject, Signal: b.Signal}, *b.Derive, final, known, live.RelatedSubjects(subs, b.Subject)); err != nil {
 				list = append(list, validate.Issue{Key: b.Subject, Message: err.Error()})
 			}
 		}

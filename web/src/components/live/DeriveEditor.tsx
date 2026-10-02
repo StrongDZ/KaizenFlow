@@ -1,7 +1,7 @@
 import { Plus, X } from 'lucide-react'
 import { useMemo } from 'react'
 import type { Derive, SubjectView } from '../../api/types'
-import { addTerm, removeTerm, updateTerm } from '../../lib/derive'
+import { addTerm, relatedSubjects, removeTerm, updateTerm } from '../../lib/derive'
 import { ARCHETYPE_LABEL } from '../KfNode'
 import { Field } from '../FormDialog'
 import { SearchSelect } from '../SearchSelect'
@@ -23,14 +23,18 @@ type Props = {
  * (mỗi số hạng: dấu, đối tượng, tín hiệu, hệ số nhân), trạng thái máy suy từ việc một bộ đếm còn tăng.
  */
 export function DeriveEditor({ kind, value, onChange, subjects, bound, self }: Props) {
+  // Chỉ được lấy đầu vào từ chính đối tượng này và những gì nối trực tiếp với nó (API cũng ép luật này khi lưu).
+  const related = useMemo(() => relatedSubjects(subjects, self.subject), [subjects, self.subject])
+  const neighbours = useMemo(() => subjects.filter((s) => related.has(s.subject) && s.subject !== self.subject).map((s) => s.name), [subjects, related, self.subject])
   const candidates = useMemo(() => {
     const out: Record<string, SubjectView['signals']> = {}
     for (const s of subjects) {
+      if (!related.has(s.subject)) continue
       const sigs = s.signals.filter((g) => g.kind === 'number' && bound(s.subject, g.name) && !(s.subject === self.subject && g.name === self.signal))
       if (sigs.length > 0) out[s.subject] = sigs
     }
     return out
-  }, [subjects, bound, self.subject, self.signal])
+  }, [subjects, related, bound, self.subject, self.signal])
   const subjectOptions = useMemo(
     () => subjects.filter((s) => candidates[s.subject]).map((s) => ({ value: s.subject, label: s.name, hint: s.kind === 'node' ? ARCHETYPE_LABEL[s.archetype ?? ''] ?? 'Node' : `đường nối · ${s.material ?? ''}` })),
     [subjects, candidates],
@@ -42,11 +46,18 @@ export function DeriveEditor({ kind, value, onChange, subjects, bound, self }: P
     </select>
   )
   const empty = subjectOptions.length === 0
+  const scope = (
+    <p className="text-muted">
+      Chỉ lấy được tín hiệu của chính đối tượng này và của những đối tượng nối trực tiếp với nó
+      {neighbours.length > 0 ? `: ${neighbours.join(', ')}.` : ' (hiện chưa có đối tượng nào nối với nó).'}
+    </p>
+  )
 
   if (kind === 'text') {
     const watch = value.watch ?? { subject: '', signal: '' }
     return (
       <div className="space-y-2">
+        {scope}
         <Field label="Theo dõi bộ đếm" hint="Máy được coi là đang chạy khi bộ đếm này còn tăng. Chọn bộ đếm đã ghép (vd. số lượt đã nhận hoặc số sản phẩm đạt).">
           <div className="space-y-1.5">
             <SearchSelect value={watch.subject} options={subjectOptions} label="Đối tượng có bộ đếm" placeholder="Chọn node hoặc đường nối" onChange={(v) => onChange({ ...value, watch: { subject: v, signal: '' } })} />
@@ -57,7 +68,7 @@ export function DeriveEditor({ kind, value, onChange, subjects, bound, self }: P
           <input className={`${input} w-full`} type="number" min={1} step="any" value={value.idle_after_s ?? ''}
             onChange={(e) => onChange({ ...value, idle_after_s: e.target.value === '' ? undefined : Number(e.target.value) })} />
         </Field>
-        {empty && <p className="text-lock-text">Chưa có bộ đếm nào được ghép. Ghép số lượt hoặc số sản phẩm của máy trước, rồi quay lại đây.</p>}
+        {empty && <p className="text-lock-text">Chưa có bộ đếm liền kề nào được ghép. Ghép số lượt hoặc số sản phẩm của máy (hoặc của đường nối vào, ra nó) trước, rồi quay lại đây.</p>}
       </div>
     )
   }
@@ -65,6 +76,7 @@ export function DeriveEditor({ kind, value, onChange, subjects, bound, self }: P
   const terms = value.terms ?? []
   return (
     <div className="space-y-2">
+      {scope}
       {terms.map((t, i) => (
         <div key={i} className="space-y-1.5 rounded-lg border border-line p-2">
           <div className="flex items-center gap-2">
@@ -92,7 +104,7 @@ export function DeriveEditor({ kind, value, onChange, subjects, bound, self }: P
         <input className={`${input} w-full`} type="number" step="any" placeholder="0" value={value.const ?? ''}
           onChange={(e) => onChange({ ...value, const: e.target.value === '' ? 0 : Number(e.target.value) })} />
       </Field>
-      {empty && <p className="text-lock-text">Chưa có tín hiệu nào được ghép để làm đầu vào. Ghép các tín hiệu liền kề trước, rồi quay lại đây.</p>}
+      {empty && <p className="text-lock-text">Chưa có tín hiệu liền kề nào được ghép để làm đầu vào. Ghép tín hiệu của các đối tượng nối với nó trước, rồi quay lại đây.</p>}
     </div>
   )
 }

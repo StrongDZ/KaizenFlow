@@ -70,9 +70,43 @@ func (d Derive) Inputs() []Ref {
 // numeric: tín hiệu dạng số (không phải trạng thái chữ, không phải vị trí xe).
 func numeric(signal string) bool { return !IsTextSignal(signal) && signal != SignalFleet }
 
+// RelatedSubjects là những đối tượng mà tín hiệu tự tính của `subject` được phép lấy đầu vào từ đó: chính nó và những gì nối trực tiếp với nó.
+// Node: các đường nối vào hoặc ra nó. Đường nối: hai node ở hai đầu, và mọi đường nối khác chạm một trong hai đầu đó (để trừ đi phần
+// đã đi theo đường khác). Đối tượng không có trong sơ đồ chỉ có chính nó.
+func RelatedSubjects(subjects []Subject, subject string) map[string]bool {
+	out := map[string]bool{subject: true}
+	var self *Subject
+	for i := range subjects {
+		if subjects[i].Subject == subject {
+			self = &subjects[i]
+			break
+		}
+	}
+	if self == nil {
+		return out
+	}
+	touches := func(e Subject, node string) bool { return e.Kind == "edge" && (e.Src == node || e.Dst == node) }
+	if self.Kind == "edge" {
+		out[self.Src], out[self.Dst] = true, true
+		for _, s := range subjects {
+			if touches(s, self.Src) || touches(s, self.Dst) {
+				out[s.Subject] = true
+			}
+		}
+		return out
+	}
+	for _, s := range subjects {
+		if touches(s, subject) {
+			out[s.Subject] = true
+		}
+	}
+	return out
+}
+
 // ValidateDerive kiểm tra một công thức tự tính trước khi lưu. `final` là mọi ghép nối của mô hình sau khi lưu (có cả ghép nối đích);
-// known cho biết một tín hiệu có nằm trong danh mục tín hiệu của sơ đồ không. Thông điệp bằng tiếng Việt, nói rõ sửa gì.
-func ValidateDerive(target Ref, d Derive, final []Binding, known func(Ref) bool) error {
+// known cho biết một tín hiệu có nằm trong danh mục tín hiệu của sơ đồ không; related (từ RelatedSubjects) là các đối tượng được phép
+// làm đầu vào, nil là không kiểm. Thông điệp bằng tiếng Việt, nói rõ sửa gì.
+func ValidateDerive(target Ref, d Derive, final []Binding, known func(Ref) bool, related map[string]bool) error {
 	switch d.Kind {
 	case KindSum:
 		if !numeric(target.Signal) {
@@ -126,6 +160,8 @@ func ValidateDerive(target Ref, d Derive, final []Binding, known func(Ref) bool)
 			return fmt.Errorf("%s không thể tự tính từ chính nó", target)
 		case !known(in):
 			return fmt.Errorf("%s không có trong sơ đồ", in)
+		case related != nil && !related[in.Subject]:
+			return fmt.Errorf("%s không nối trực tiếp với %s trong sơ đồ nên không dùng làm đầu vào được. Công thức chỉ lấy tín hiệu của chính nó và của các node, đường nối liền kề", in.Subject, target.Subject)
 		case !bound[in]:
 			return fmt.Errorf("%s chưa có nguồn hay công thức nên chưa dùng làm đầu vào được. Ghép nó trước", in)
 		}

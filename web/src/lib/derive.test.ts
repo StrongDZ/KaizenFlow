@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Derive } from '../api/types'
-import { addTerm, describeDerive, emptyDerive, isComplete, previewDerive, toInput, updateTerm, removeTerm } from './derive'
+import type { Derive, SubjectView } from '../api/types'
+import { addTerm, describeDerive, emptyDerive, isComplete, previewDerive, toInput, updateTerm, removeTerm, relatedSubjects } from './derive'
 
 const names: Record<string, string> = { A: 'Nhà cung cấp', 'A>K': 'Nhà cung cấp → Kho A', 'K>P': 'Kho A → Máy dập', P: 'Máy dập' }
 const labelOf = (_subject: string, signal: string) => ({ moved: 'số đã chuyển', count_in: 'số lượt đã nhận', arrived: 'số đã nhập về', level: 'tồn' })[signal] ?? signal
@@ -76,5 +76,24 @@ describe('previewDerive', () => {
   it('thiếu một đầu vào thì chưa xem trước được; trạng thái không xem trước bằng số', () => {
     expect(previewDerive({ kind: 'sum', terms: [{ subject: 'Z', signal: 'moved', sign: 1 }] }, read)).toBeUndefined()
     expect(previewDerive({ kind: 'activity', watch: { subject: 'A>K', signal: 'moved' }, idle_after_s: 60 }, read)).toBeUndefined()
+  })
+})
+
+describe('relatedSubjects (khớp RelatedSubjects của API)', () => {
+  const node = (subject: string): SubjectView => ({ subject, kind: 'node', name: subject, signals: [] })
+  const edge = (subject: string, src: string, dst: string): SubjectView => ({ subject, kind: 'edge', name: subject, src, dst, signals: [] })
+  // KHO -KHO>M1-> M1 -M1>OUT-> OUT, M1 -M1>SCRAP-> SCRAP, và Z không nối với ai
+  const subjects = [node('KHO'), node('M1'), node('OUT'), node('SCRAP'), node('Z'), edge('KHO>M1', 'KHO', 'M1'), edge('M1>OUT', 'M1', 'OUT'), edge('M1>SCRAP', 'M1', 'SCRAP')]
+  const list = (s: Set<string>) => [...s].sort().join(',')
+
+  it('node: chính nó và các đường nối vào hoặc ra nó', () => {
+    expect(list(relatedSubjects(subjects, 'M1'))).toBe('KHO>M1,M1,M1>OUT,M1>SCRAP')
+    expect(list(relatedSubjects(subjects, 'Z'))).toBe('Z')
+  })
+  it('đường nối: hai đầu và mọi đường nối khác chạm một trong hai đầu', () => {
+    expect(list(relatedSubjects(subjects, 'M1>OUT'))).toBe('KHO>M1,M1,M1>OUT,M1>SCRAP,OUT')
+  })
+  it('đối tượng lạ chỉ có chính nó', () => {
+    expect(list(relatedSubjects(subjects, 'NOPE'))).toBe('NOPE')
   })
 })
