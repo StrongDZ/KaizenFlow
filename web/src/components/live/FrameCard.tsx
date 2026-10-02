@@ -43,8 +43,10 @@ export function describeFrame(f: Frame): string {
  * Khung toạ độ của đội xe: hãng xe báo vị trí theo hệ toạ độ riêng, khung đổi sang toạ độ bản đồ (mét) trước khi API khớp xe vào làn.
  * `draft` (giữ ở trang) là khung đang chỉnh; khi có thì canvas vẽ vị trí xe theo khung đó dạng chấm nét đứt để xem trước.
  */
-export function FrameCard({ model, map, names, fleets, draft, onDraft }: {
+export function FrameCard({ model, map, names, fleets, draft, onDraft, bare = false }: {
   model: string; map: AgvMap; names: Record<string, string>; fleets: Vehicle[][]; draft: Frame | null; onDraft: (f: Frame | null) => void
+  /** Không bọc trong thẻ có tiêu đề: để đặt vào một mục của bảng bên. */
+  bare?: boolean
 }) {
   const qc = useQueryClient()
   const bindings = useQuery({ queryKey: ['bindings', model], queryFn: () => api.bindings(model) })
@@ -81,16 +83,15 @@ export function FrameCard({ model, map, names, fleets, draft, onDraft }: {
     if (r) { onDraft(r.frame); setFit({ rmsM: r.rmsM, n: pairs.length }) }
   }
 
-  return (
-    <Card
-      title="Khung toạ độ xe"
-      actions={vehicles.length > 0 ? (
-        <span className={`rounded-md border px-1.5 py-0.5 text-[11px] ${share.off > 0 ? 'border-warn text-warn' : 'border-line-2 text-muted'}`}>
-          {share.off > 0 ? `${share.off}/${share.total} xe ngoài đường` : 'mọi xe trên làn'}
-        </span>
-      ) : undefined}
-    >
+  const badge = vehicles.length > 0 ? (
+    <span className={`rounded-md border px-1.5 py-0.5 text-[11px] ${share.off > 0 ? 'border-warn text-warn' : 'border-line-2 text-muted'}`}>
+      {share.off > 0 ? `${share.off}/${share.total} xe ngoài đường` : 'mọi xe trên làn'}
+    </span>
+  ) : undefined
+
+  const body = (
       <div className="space-y-2.5 text-xs">
+        {bare && badge && <div>{badge}</div>}
         <p className="text-muted">Hãng xe báo vị trí theo hệ toạ độ riêng. Khung này đổi sang toạ độ bản đồ (mét) rồi hệ thống khớp xe vào làn.</p>
         {fleetBindings.length === 0 && bindings.isSuccess && (
           <Notice tone="lock">Chưa có ghép nối "Vị trí từng xe" nào. Ghép ở trang Kết nối dữ liệu, tab Node, rồi quay lại đây.</Notice>
@@ -167,6 +168,6 @@ export function FrameCard({ model, map, names, fleets, draft, onDraft }: {
           </>
         )}
       </div>
-    </Card>
   )
+  return bare ? body : <Card title="Khung toạ độ xe" actions={badge}>{body}</Card>
 }

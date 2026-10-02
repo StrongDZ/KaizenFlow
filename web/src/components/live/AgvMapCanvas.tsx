@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { AgvMap, Pt, Vehicle } from '../../api/types'
-import { bounds, laneShape, laneTone, midpointOf, occupancy, polylineD, type LaneTone } from '../../lib/mapGeom'
+import { bounds, laneShape, laneTone, midpointOf, occupancy, polylineD, type LaneTone, type Rect } from '../../lib/mapGeom'
 
 export type MapSelection = { kind: 'point' | 'lane'; id: string } | null
 export type RingTone = 'ok' | 'warn' | 'bad'
@@ -17,15 +17,29 @@ const RING_COLOR: Record<RingTone, string> = { ok: 'var(--color-ok)', warn: 'var
 
 type Drag = { kind: 'point'; id: string } | { kind: 'wp'; lane: string; index: number } | null
 
+/** Lệnh điều khiển khung nhìn từ ngoài (thanh công cụ): vừa khung, thu phóng quanh tâm. */
+export type CanvasHandle = { fit: () => void; zoomBy: (factor: number) => void }
+
+/** Mở rộng khung `view` cho cùng tỉ lệ với vùng vẽ (tâm giữ nguyên) để canvas lấp đầy chỗ mà không chừa viền trống. */
+export function fitBox(view: Rect, size: { w: number; h: number }, padLeft = 0): Rect {
+  if (size.w <= 0 || size.h <= 0) return view
+  const free = Math.max(size.w - padLeft, size.w * 0.3)  // phần bề rộng không bị bảng nổi che
+  const aspect = free / size.h
+  let w = view.w
+  let h = view.h
+  if (w / h < aspect) w = h * aspect
+  else h = w / aspect
+  const per = w / free  // mét mỗi pixel
+  // Bản đồ nằm giữa phần còn trống; phần bị bảng che nằm bên trái nó.
+  return { x: view.x + view.w / 2 - w / 2 - padLeft * per, y: view.y + view.h / 2 - h / 2, w: w + padLeft * per, h }
+}
+
 /**
  * Bản đồ AGV vẽ bằng SVG, đơn vị vẽ là mét. Kích thước hình/chữ tính theo cỡ khung nhìn nên bản đồ nhỏ hay lớn đều đọc được.
  * Xe chạy mượt nhờ CSS transition giữa các bản tin vị trí. Khi `editing`: kéo điểm hoặc điểm uốn để dời, bấm "+" giữa đoạn để thêm
  * điểm uốn, bấm đúp điểm uốn để xoá. Mọi thay đổi đi ra qua callback, component không giữ dữ liệu bản đồ.
  */
-export function AgvMapCanvas({
-  map, fleets, names, ringOf, blocked, selected, editing, linkFrom, draft, ghosts, onSelect, onPointClick, onMovePoint, onBackgroundClick,
-  onMoveWaypoint, onInsertWaypoint, onRemoveWaypoint,
-}: {
+type Props = {
   map: AgvMap
   fleets: Vehicle[][]
   /** node_key → tên hiển thị của trạm */
@@ -41,6 +55,8 @@ export function AgvMapCanvas({
   /** Làn đang vẽ dở, vẽ nét đứt theo chuột */
   draft?: DraftLane | null
   ghosts?: Ghost[]
+  /** Bề rộng (px) của bảng nổi bên trái: khi vừa khung, bản đồ được dời sang phải để không nằm dưới bảng */
+  padLeft?: number
   onSelect: (s: MapSelection) => void
   onPointClick?: (id: string) => void
   onMovePoint?: (id: string, x: number, y: number) => void
@@ -48,7 +64,12 @@ export function AgvMapCanvas({
   onMoveWaypoint?: (laneId: string, index: number, x: number, y: number) => void
   onInsertWaypoint?: (laneId: string, index: number, at: Pt) => void
   onRemoveWaypoint?: (laneId: string, index: number) => void
-}) {
+}
+
+export const AgvMapCanvas = forwardRef<CanvasHandle, Props>(function AgvMapCanvas({
+  map, fleets, names, ringOf, blocked, selected, editing, linkFrom, draft, ghosts, padLeft = 0, onSelect, onPointClick, onMovePoint, onBackgroundClick,
+  onMoveWaypoint, onInsertWaypoint, onRemoveWaypoint,
+}, handle) {
   const svg = useRef<SVGSVGElement>(null)
   const [drag, setDrag] = useState<Drag>(null)
   const [cursor, setCursor] = useState<Pt | null>(null)
@@ -58,6 +79,61 @@ export function AgvMapCanvas({
     return { view: bounds(map, 12 * k), k }
   }, [map])
   const occ = useMemo(() => occupancy(map, fleets), [map, fleets])
+
+  // Khung nhìn: lấp đầy vùng vẽ, lăn chuột để thu phóng quanh con trỏ, kéo chỗ trống để dời.
+  const [size, setSize] = useState({ w: 0, h: 0 })
+  const [vb, setVb] = useState<Rect | null>(null)
+  const pan = useRef<{ x: number; y: number; vb: Rect; moved: boolean } | null>(null)
+  const swallowClick = useRef(false)
+  const fitted = useRef(false)
+  const prevSize = useRef(size)
+  useEffect(() => {
+    const el = svg.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: el.clientHeight }))
+    ro.observe(el)
+    setSize({ w: el.clientWidth, h: el.clientHeight })
+    return () => ro.disconnect()
+  }, [])
+  // Lần đầu có chỗ vẽ và có điểm thì vừa khung; đổi cỡ vùng vẽ thì giữ tâm và tỉ lệ.
+  useEffect(() => {
+    if (size.w <= 0 || size.h <= 0) return
+    if (!fitted.current && map.points.length > 0) { fitted.current = true; setVb(fitBox(view, size, padLeft)) }
+    else if (prevSize.current.w > 0 && (prevSize.current.w !== size.w || prevSize.current.h !== size.h)) {
+      setVb((cur) => {
+        if (!cur) return cur
+        const per = cur.w / prevSize.current.w
+        const w = per * size.w
+        const h = per * size.h
+        return { x: cur.x + cur.w / 2 - w / 2, y: cur.y + cur.h / 2 - h / 2, w, h }
+      })
+    }
+    prevSize.current = size
+  }, [size, view, map.points.length])
+  const box = vb ?? fitBox(view, size)
+  const zoomAt = (factor: number, at: Pt) => setVb((cur) => {
+    const c = cur ?? fitBox(view, size)
+    const w = Math.min(Math.max(c.w / factor, view.w * 0.04), view.w * 10)
+    const f = w / c.w
+    return { x: at.x - (at.x - c.x) * f, y: at.y - (at.y - c.y) * f, w, h: c.h * f }
+  })
+  useImperativeHandle(handle, () => ({
+    fit: () => setVb(fitBox(view, size, padLeft)),
+    zoomBy: (factor) => zoomAt(factor, { x: box.x + box.w / 2, y: box.y + box.h / 2 }),
+  }))
+  useEffect(() => {
+    const el = svg.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const ctm = el.getScreenCTM()
+      if (!ctm) return
+      const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse())
+      zoomAt(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), { x: p.x, y: p.y })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  })
 
   const toMap = (e: { clientX: number; clientY: number }): Pt => {
     const el = svg.current
@@ -75,17 +151,35 @@ export function AgvMapCanvas({
       ref={svg}
       role="img"
       aria-label="Bản đồ AGV"
-      viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
-      className={`h-full w-full select-none ${editing ? 'cursor-crosshair' : ''}`}
+      viewBox={`${box.x} ${box.y} ${box.w} ${box.h}`}
+      className={`h-full w-full select-none ${editing ? 'cursor-crosshair' : pan.current?.moved ? 'cursor-grabbing' : 'cursor-grab'}`}
+      onPointerDown={(e) => {
+        if (e.target !== e.currentTarget && e.button !== 1) return
+        ;(e.currentTarget as SVGSVGElement).setPointerCapture?.(e.pointerId)
+        pan.current = { x: e.clientX, y: e.clientY, vb: box, moved: false }
+      }}
       onPointerMove={(e) => {
+        const pn = pan.current
+        if (pn) {
+          const dx = e.clientX - pn.x
+          const dy = e.clientY - pn.y
+          if (pn.moved || Math.hypot(dx, dy) > 4) {
+            pn.moved = true
+            setVb({ ...pn.vb, x: pn.vb.x - (dx * pn.vb.w) / size.w, y: pn.vb.y - (dy * pn.vb.h) / size.h })
+          }
+          return
+        }
         const p = toMap(e)
         if (draft) setCursor(p)
         if (drag?.kind === 'point') onMovePoint?.(drag.id, p.x, p.y)
         else if (drag?.kind === 'wp') onMoveWaypoint?.(drag.lane, drag.index, p.x, p.y)
       }}
-      onPointerUp={() => setDrag(null)}
+      onPointerUp={() => { setDrag(null); if (pan.current?.moved) swallowClick.current = true; pan.current = null }}
       onPointerLeave={() => { setDrag(null); setCursor(null) }}
-      onClick={(e) => { if (e.target === e.currentTarget) { onSelect(null); onBackgroundClick?.(toMap(e)) } }}
+      onClick={(e) => {
+        if (swallowClick.current) { swallowClick.current = false; return }  // vừa kéo canvas thì không tính là bấm vào chỗ trống
+        if (e.target === e.currentTarget) { onSelect(null); onBackgroundClick?.(toMap(e)) }
+      }}
     >
       <defs>
         {(['ok', 'busy', 'jam'] as LaneTone[]).map((t) => (
@@ -183,7 +277,7 @@ export function AgvMapCanvas({
       ))}
     </svg>
   )
-}
+})
 
 /** Tay cầm điểm uốn của làn đang chọn: chấm để kéo (bấm đúp để xoá) và dấu "+" giữa mỗi đoạn để thêm điểm uốn. */
 function WaypointHandles({ map, laneId, k, onDrag, onInsert, onRemove }: {
