@@ -150,3 +150,16 @@ func TestZeroLengthLaneIsSafe(t *testing.T) {
 		t.Errorf("project trên làn dài 0 = (%v,%v); muốn (0,5)", s, d)
 	}
 }
+
+func TestTravelFollowsLanePathLength(t *testing.T) {
+	m := &AgvMap{Version: 2, SpeedMPS: 1,
+		Points: []MapPoint{
+			{ID: "A", X: 0, Y: 0, Kind: "station", NodeKey: "SRC"},
+			{ID: "B", X: 10, Y: 0, Kind: "station", NodeKey: "DST"}},
+		Lanes: []MapLane{{ID: "L", From: "A", To: "B", Capacity: 1, Path: []Pt{{5, 5}}}}}
+	secs, ok := m.Travel("SRC", "DST")
+	want := 2 * math.Hypot(5, 5)
+	if !ok || math.Abs(secs-want) > 1e-9 {
+		t.Fatalf("Travel = %v, %v; muốn %v (đi theo đường gấp khúc, không phải đoạn thẳng 10 m)", secs, ok, want)
+	}
+}

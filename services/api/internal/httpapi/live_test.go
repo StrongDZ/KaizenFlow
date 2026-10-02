@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -672,5 +673,22 @@ func TestFleetPositionsAreFramedAndMatchedToLanesEndToEnd(t *testing.T) {
 	send(15000, 9000) // cách làn 9 m
 	if v := vehicle(); v["off_map"] != true || v["lane"] != "" {
 		t.Errorf("xe cách làn 9 m phải ngoài đường: %v", v)
+	}
+}
+
+func TestAgvMapStoredBeforeV2IsServedInMeters(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	raw := `{"unit_m":1.5,"speed_mps":1.2,"points":[{"id":"A","x":0,"y":0,"kind":"junction"},{"id":"B","x":20,"y":0,"kind":"junction"}],"lanes":[{"id":"L","from":"A","to":"B","capacity":1}]}`
+	if err := a.store.PutAgvMap(context.Background(), "lm", json.RawMessage(raw)); err != nil { // bản lưu từ trước khi có v2
+		t.Fatal(err)
+	}
+	got := a.call("GET", "/api/models/lm/agv-map", nil, 200)
+	if got["v"].(float64) != 2 || got["points"].([]any)[1].(map[string]any)["x"].(float64) != 30 {
+		t.Errorf("bản đồ lưu từ trước phải được phục vụ ở dạng v2 (mét): %v", got)
+	}
+	bp := a.call("GET", "/api/models/lm/live/blueprint", nil, 200)
+	if bp["agv_map"].(map[string]any)["v"].(float64) != 2 {
+		t.Errorf("blueprint cho feed cũng phải là v2: %v", bp["agv_map"])
 	}
 }
