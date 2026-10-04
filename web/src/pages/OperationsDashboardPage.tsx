@@ -138,6 +138,7 @@ export default function OperationsDashboardPage() {
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([])
   const [selectedCompareRuns, setSelectedCompareRuns] = useState<number[]>([])
   const [lastBatchRunIds, setLastBatchRunIds] = useState<number[]>([])
+  const [batchApplyIssue, setBatchApplyIssue] = useState<Error | null>(null)
 
   useEffect(() => {
     if (!models.data || models.data.length === 0) return
@@ -153,7 +154,11 @@ export default function OperationsDashboardPage() {
 
   const feed = useQuery({ queryKey: ['feed', 'status'], queryFn: api.feed.status })
   const live = useQuery({ queryKey: ['live', modelKey], queryFn: () => api.live(modelKey), enabled: !!currentModel })
-  const active = useQuery({ queryKey: ['runs', 'active'], queryFn: () => api.allRuns({ status: 'QUEUED,RUNNING', limit: 20 }) })
+  const active = useQuery({
+    queryKey: ['runs', modelKey, 'active'],
+    queryFn: () => api.allRuns({ model: modelKey, status: 'QUEUED,RUNNING', limit: 20 }),
+    enabled: !!currentModel,
+  })
   const nowcasts = useQuery({ queryKey: ['runs', modelKey, 'nowcast'], queryFn: () => api.allRuns({ model: modelKey, origin: 'NOWCAST', limit: 8 }), enabled: !!currentModel })
   const recentRuns = useQuery({ queryKey: ['runs', modelKey, 'recent'], queryFn: () => api.allRuns({ model: modelKey, limit: 12 }), enabled: !!currentModel })
   const recommenderRuns = useQuery({
@@ -178,9 +183,14 @@ export default function OperationsDashboardPage() {
     enabled: !!latestNowcast,
   })
 
-  const appliedCandidate = useMemo(
-    () => recommenderRuns.data?.find((item) => item.scenario.parent_id === latestNowcast?.scenario_id) ?? null,
+  const descendentRuns = useMemo(
+    () => recommenderRuns.data?.filter((item) => item.scenario.parent_id === latestNowcast?.scenario_id) ?? [],
     [recommenderRuns.data, latestNowcast?.scenario_id],
+  )
+
+  const appliedCandidate = useMemo(
+    () => descendentRuns.find((item) => item.run.status === 'DONE') ?? descendentRuns[0] ?? null,
+    [descendentRuns],
   )
 
   const appliedRun = useQuery({
@@ -205,9 +215,13 @@ export default function OperationsDashboardPage() {
     }))), [latestRecommendations])
   const totalCandidates = latestRecommendations.reduce((sum, ins) => sum + (((ins.payload?.candidates as unknown[]) ?? []).length), 0)
   const criticalCount = replenishment.filter((r) => r.priority === 'CRITICAL').length
-  const activeForModel = (active.data ?? []).filter((r) => r.model_key === modelKey)
+  const activeForModel = active.data ?? []
+  const liveSubjectCount = Object.keys(live.data?.subjects ?? {}).length
+  const liveSourceCount = live.data?.sources.length ?? 0
   const staleSources = (live.data?.sources ?? []).filter((s) => s.age_ms > STALE_MS).length
   const boundSources = (live.data?.sources ?? []).filter((s) => s.bound).length
+  const hasLiveClock = !!live.data?.now && live.data.now > '0002'
+  const hasLiveEvidence = hasLiveClock && (liveSubjectCount > 0 || liveSourceCount > 0)
   const nowcastRed = latestNowcastRun.data ? kpiP50(latestNowcastRun.data.kpis, 'red_minutes') : undefined
   const nowcastTp = latestNowcastRun.data ? kpiP50(latestNowcastRun.data.kpis, 'throughput') : undefined
   const appliedRed = appliedRun.data ? kpiP50(appliedRun.data.kpis, 'red_minutes') : undefined
@@ -225,15 +239,15 @@ export default function OperationsDashboardPage() {
       fill: originTone(r.scenario_origin),
     }))
   const topRecommendation = replenishment[0] ?? null
-  const descendentRuns = useMemo(
-    () => recommenderRuns.data?.filter((item) => item.scenario.parent_id === latestNowcast?.scenario_id) ?? [],
-    [recommenderRuns.data, latestNowcast?.scenario_id],
-  )
   const redDelta = nowcastRed !== undefined && appliedRed !== undefined ? appliedRed - nowcastRed : undefined
   const tpDelta = nowcastTp !== undefined && appliedTp !== undefined ? appliedTp - nowcastTp : undefined
-  const liveReady = !!live.data && staleSources === 0 && boundSources > 0
-  const systemVerdict = !live.data
+  const liveReady = hasLiveEvidence && staleSources === 0 && boundSources > 0
+  const systemVerdict = !live.data || !hasLiveClock
     ? 'Chưa có live snapshot'
+    : liveSourceCount === 0 && liveSubjectCount === 0
+      ? live.data.bindings > 0
+        ? 'Đã cấu hình live nhưng chưa có dữ liệu đổ về'
+        : 'Mô hình chưa có binding hoặc nguồn live hoạt động'
     : staleSources > 0
       ? `Live đang chạy nhưng có ${staleSources} nguồn trễ`
       : feed.data?.state === 'running'
@@ -260,6 +274,7 @@ export default function OperationsDashboardPage() {
     setSelectedCandidates([])
     setSelectedCompareRuns([])
     setLastBatchRunIds([])
+    setBatchApplyIssue(null)
   }, [latestNowcast?.id])
 
   useEffect(() => {
@@ -277,22 +292,38 @@ export default function OperationsDashboardPage() {
   }, [descendentRuns])
 
   const batchApply = useMutation({
-    mutationFn: async (keys: string[]) => {
+    mutationFn: async ({ keys }: { keys: string[]; model: string }) => {
       const chosen = recommendationOptions.filter((o) => keys.includes(o.key))
       const out: number[] = []
+      const failures: string[] = []
       for (const item of chosen) {
-        const res = await api.applyInsight(item.insightId, item.rank)
-        out.push(res.run_id)
+        try {
+          const res = await api.applyInsight(item.insightId, item.rank)
+          out.push(res.run_id)
+        } catch (error) {
+          failures.push(`${item.title}: ${error instanceof Error ? error.message : 'lỗi không rõ'}`)
+        }
       }
-      return out
+      return { runIds: out, failures }
     },
-    onSuccess: async (runIds) => {
+    onMutate: () => {
+      setBatchApplyIssue(null)
+    },
+    onSuccess: async ({ runIds, failures }, vars) => {
       setLastBatchRunIds(runIds)
       await Promise.all([
-        qc.invalidateQueries({ queryKey: ['runs', modelKey, 'recommender'] }),
-        qc.invalidateQueries({ queryKey: ['runs', modelKey, 'recent'] }),
-        qc.invalidateQueries({ queryKey: ['runs', modelKey, 'nowcast'] }),
+        qc.invalidateQueries({ queryKey: ['runs', vars.model, 'active'] }),
+        qc.invalidateQueries({ queryKey: ['runs', vars.model, 'recommender'] }),
+        qc.invalidateQueries({ queryKey: ['runs', vars.model, 'recent'] }),
+        qc.invalidateQueries({ queryKey: ['runs', vars.model, 'nowcast'] }),
       ])
+      if (failures.length > 0) {
+        setBatchApplyIssue(new Error(
+          runIds.length > 0
+            ? `Đã tạo ${runIds.length} run, nhưng ${failures.length} phương án lỗi: ${failures.join('; ')}`
+            : `Không tạo được run nào: ${failures.join('; ')}`,
+        ))
+      }
     },
   })
 
@@ -358,8 +389,16 @@ export default function OperationsDashboardPage() {
         <div className="mt-4 grid gap-4 lg:grid-cols-3">
           <HeadlineMetric
             label="Tình trạng live"
-            value={feed.data?.state === 'running' ? 'Realtime' : live.data ? 'Snapshot' : 'Offline'}
-            hint={live.data ? `${boundSources} nguồn đã ghép, ${staleSources} nguồn stale, ${live.data.errors.length} lỗi binding` : 'Chưa có nguồn live đổ về mô hình này'}
+            value={feed.data?.state === 'running' ? 'Realtime' : hasLiveEvidence ? 'Snapshot' : live.data?.bindings ? 'Đã cấu hình' : 'Offline'}
+            hint={
+              !live.data || !hasLiveClock
+                ? 'Chưa có snapshot live để đánh giá'
+                : liveSourceCount === 0 && liveSubjectCount === 0
+                  ? live.data.bindings > 0
+                    ? `Đã ghép ${live.data.bindings} tín hiệu nhưng chưa thấy nguồn live đổ về`
+                    : 'Chưa có binding hoặc nguồn live cho mô hình này'
+                  : `${boundSources} nguồn đã ghép, ${staleSources} nguồn stale, ${live.data.errors.length} lỗi binding`
+            }
             accent={liveReady ? 'text-ok' : staleSources > 0 ? 'text-warn' : 'text-text'}
           />
           <HeadlineMetric
@@ -381,7 +420,15 @@ export default function OperationsDashboardPage() {
         <StatCard
           title="Feed & Live"
           value={feed.data?.state === 'running' ? 'Đang chạy' : feed.data?.state === 'paused' ? 'Tạm dừng' : 'Chưa bật'}
-          hint={live.data ? `${boundSources}/${live.data.bindings} binding hoạt động, ${staleSources} nguồn trễ` : 'Chưa có snapshot live để đánh giá'}
+          hint={
+            !live.data || !hasLiveClock
+              ? 'Chưa có snapshot live để đánh giá'
+              : liveSourceCount === 0 && liveSubjectCount === 0
+                ? live.data.bindings > 0
+                  ? `${live.data.bindings} binding đã cấu hình nhưng chưa có dữ liệu vào`
+                  : 'Chưa cấu hình binding live'
+                : `${boundSources}/${live.data.bindings} binding hoạt động, ${staleSources} nguồn trễ`
+          }
           accent={feed.data?.state === 'running' ? 'text-ok' : 'text-text'}
         />
         <Card title="NOWCAST mới nhất">
@@ -434,13 +481,20 @@ export default function OperationsDashboardPage() {
             <div className="space-y-2 rounded-lg border border-line bg-panel-2 p-3 text-xs">
               <div className="font-medium text-text">Nguồn live hiện tại</div>
               {feed.error && <div className="text-muted">Feed service chưa phản hồi. Dashboard vẫn đọc được snapshot và runs đã có.</div>}
-              {!live.data ? (
+              {!live.data || !hasLiveClock ? (
                 <div className="text-muted">Chưa có snapshot live cho mô hình này.</div>
+              ) : liveSourceCount === 0 && liveSubjectCount === 0 ? (
+                <div className="text-muted">
+                  {live.data.bindings > 0
+                    ? `Đã ghép ${live.data.bindings} tín hiệu nhưng hiện chưa thấy nguồn live nào đổ về.`
+                    : 'Mô hình chưa có binding hoặc nguồn live hoạt động.'}
+                </div>
               ) : (
                 <>
                   <div className="text-muted">Mốc live: {fmtDateTime(live.data.now)}</div>
-                  <div className="text-muted">Subject có tín hiệu: {Object.keys(live.data.subjects).length}</div>
-                  <div className="text-muted">Nguồn đã ghép: {live.data.sources.length}</div>
+                  <div className="text-muted">Subject có tín hiệu: {liveSubjectCount}</div>
+                  <div className="text-muted">Nguồn đang thấy: {liveSourceCount}</div>
+                  <div className="text-muted">Nguồn đã ghép: {boundSources}</div>
                   <div className="text-muted">Nguồn stale hơn 2 phút: {staleSources}</div>
                   <div className="text-muted">Lỗi binding gần đây: {live.data.errors.length}</div>
                 </>
@@ -559,13 +613,13 @@ export default function OperationsDashboardPage() {
             <button
               className={btnPrimary}
               disabled={selectedCandidates.length === 0 || batchApply.isPending}
-              onClick={() => batchApply.mutate(selectedCandidates)}
+              onClick={() => batchApply.mutate({ keys: selectedCandidates, model: modelKey })}
             >
               {batchApply.isPending ? 'Đang tạo các phương án...' : `Chạy ${selectedCandidates.length} phương án đã chọn`}
             </button>
           }
         >
-          <ErrorBox error={batchApply.error} />
+          <ErrorBox error={batchApply.error ?? batchApplyIssue} />
           <div className="mb-3 rounded-lg border border-line bg-panel-2 px-3 py-2 text-xs text-text-2">
             Khu này dành cho việc thử nhiều phương án cùng lúc. Tick nhiều candidate rồi chạy batch để tạo nhiều run `RECOMMENDER`. Mỗi phương án là một giả thuyết xử lý khác nhau để đem ra so sánh.
           </div>
