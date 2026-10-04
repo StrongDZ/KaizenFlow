@@ -60,6 +60,9 @@ func TestBuildRuntimeNowcastForBimbo(t *testing.T) {
 	if meta == nil || meta["method"] != "HYBRID_LIVE_FLOW_BACKORDER" {
 		t.Fatalf("unexpected meta: %#v", meta)
 	}
+	if meta["provider"] != ProviderHybridRuntime {
+		t.Fatalf("provider = %v, want %s", meta["provider"], ProviderHybridRuntime)
+	}
 }
 
 func TestBuildRuntimeNowcastUsesBackorderLift(t *testing.T) {

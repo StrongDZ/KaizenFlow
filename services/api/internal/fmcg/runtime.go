@@ -509,6 +509,7 @@ func BuildRuntimeNowcast(g *store.Graph, types map[string]store.NodeType, levels
 	meta := map[string]any{
 		"label":          "FMCG Hybrid Runtime Booster",
 		"method":         "HYBRID_LIVE_FLOW_BACKORDER",
+		"provider":       ProviderHybridRuntime,
 		"generated_at":   now,
 		"lookback_hours": lookbackHours,
 		"horizon_hours":  hours,

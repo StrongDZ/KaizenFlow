@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kaizenflow/api/internal/fmcg"
 	"github.com/kaizenflow/api/internal/httpapi"
 	"github.com/kaizenflow/api/internal/livesvc"
 	"github.com/kaizenflow/api/internal/runs"
@@ -26,14 +27,19 @@ type liveAPI struct {
 }
 
 func newLiveAPI(t *testing.T, feedURL string) *liveAPI {
+	return newLiveAPIWithDeps(t, feedURL, httpapi.Deps{})
+}
+
+func newLiveAPIWithDeps(t *testing.T, feedURL string, extra httpapi.Deps) *liveAPI {
 	st := testfix.Seeded(t, "httpapi_live")
 	fake := simfake.New()
 	t.Cleanup(fake.Close)
 	sim := simclient.New(fake.URL)
 	hub := ws.NewHub()
 	svc := livesvc.New(st, hub)
-	h := httpapi.New(httpapi.Deps{Store: st, Sim: sim, Hub: hub, Validator: validate.New(), Live: svc, FeedURL: feedURL,
-		Runs: &runs.Service{Store: st, Sim: sim, Hub: hub, Poll: 10 * time.Millisecond}})
+	deps := httpapi.Deps{Store: st, Sim: sim, Hub: hub, Validator: validate.New(), Live: svc, FeedURL: feedURL,
+		Runs: &runs.Service{Store: st, Sim: sim, Hub: hub, Poll: 10 * time.Millisecond}, FMCGNowcast: extra.FMCGNowcast}
+	h := httpapi.New(deps)
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	return &liveAPI{&api{t, srv, fake}, svc, st}
@@ -45,6 +51,34 @@ func (a *liveAPI) publishedModel(key string) int64 {
 	a.call("PUT", fmt.Sprintf("/api/versions/%d/graph", vid), graphBody(), 204)
 	a.call("POST", fmt.Sprintf("/api/versions/%d/publish", vid), nil, 200)
 	return vid
+}
+
+func (a *liveAPI) publishedGraph(key string, body map[string]any) int64 {
+	vid := int64(a.call("POST", "/api/models", map[string]any{"model_key": key}, 201)["version_id"].(float64))
+	a.call("PUT", fmt.Sprintf("/api/versions/%d/graph", vid), body, 204)
+	a.call("POST", fmt.Sprintf("/api/versions/%d/publish", vid), nil, 200)
+	return vid
+}
+
+type stubNowcastProvider struct{}
+
+func (stubNowcastProvider) Name() string { return "project_m_stub" }
+
+func (stubNowcastProvider) BuildNowcast(context.Context, fmcg.BuildRequest) (fmcg.BuildResult, error) {
+	return fmcg.BuildResult{
+		Overrides: []map[string]any{
+			{"target": "SHIP_A", "path": "/demand", "value": []any{
+				map[string]any{"kind": "FORECAST", "material": "CASE-01", "hourly_rate": []float64{12, 13}},
+			}},
+		},
+		Meta: map[string]any{
+			"provider":      "project_m_stub",
+			"method":        "PROJECT_M",
+			"series":        []map[string]any{{"subject": "SHIP_A", "material": "CASE-01", "blend_per_hour": 12.5}},
+			"replenishment": []map[string]any{},
+			"notes":         []string{"stub provider"},
+		},
+	}, nil
 }
 
 func TestLiveSubjectsListNodesAndEdgesWithSignals(t *testing.T) {
@@ -276,6 +310,56 @@ func TestLiveForecastBuildsANowcastScenarioFromLiveStateAndRunsIt(t *testing.T) 
 	}
 	if n := len(a.call("GET", "/api/runs?model=lm&origin=USER", nil, 200)["items"].([]any)); n != 0 {
 		t.Errorf("USER rows = %d", n)
+	}
+}
+
+func TestLiveForecastUsesInjectedFMCGProvider(t *testing.T) {
+	a := newLiveAPIWithDeps(t, "", httpapi.Deps{FMCGNowcast: stubNowcastProvider{}})
+	a.publishedGraph("bimbo-fmcg", map[string]any{
+		"nodes": []any{
+			map[string]any{"key": "FG_A", "node_type": "RACK_WAREHOUSE", "params": map[string]any{
+				"stock": []any{map[string]any{"material": "CASE-01", "initial": 180.0, "max": 1200.0}},
+			}},
+			map[string]any{"key": "SHIP_A", "node_type": "SHIP_DOCK", "params": map[string]any{
+				"demand": []any{map[string]any{
+					"kind":     "TAKT",
+					"material": "CASE-01",
+					"qty":      1.0,
+					"takt":     map[string]any{"dist": "exp", "mean": 360.0},
+				}},
+			}},
+		},
+		"edges": []any{
+			map[string]any{"key": "FG_A>SHIP_A", "src": "FG_A", "dst": "SHIP_A", "material": "CASE-01", "params": map[string]any{}},
+		},
+	})
+	a.call("PUT", "/api/models/bimbo-fmcg/bindings", map[string]any{"bindings": []any{
+		map[string]any{"subject": "FG_A", "signal": "level:CASE-01", "source": "wms/fg-a/stock", "json_path": "items[sku=CASE-01].qty"},
+	}}, 200)
+	a.call("POST", "/api/ingest", map[string]any{"messages": []any{
+		map[string]any{"source": "wms/fg-a/stock", "ts": "2026-10-01T08:00:00+07:00", "payload": map[string]any{"items": []any{map[string]any{"sku": "CASE-01", "qty": 222}}}},
+	}}, 200)
+
+	res := a.call("POST", "/api/models/bimbo-fmcg/live/forecast", map[string]any{"horizon_s": 7200}, 202)
+	sid := int64(res["scenario_id"].(float64))
+	sc := a.call("GET", fmt.Sprintf("/api/scenarios/%d", sid), nil, 200)
+	action := sc["action"].(map[string]any)["live_snapshot"].(map[string]any)
+	if action["forecast_provider"] != "project_m_stub" {
+		t.Fatalf("forecast provider = %v, want project_m_stub", action["forecast_provider"])
+	}
+	forecast := action["forecast"].(map[string]any)
+	if forecast["provider"] != "project_m_stub" || forecast["method"] != "PROJECT_M" {
+		t.Fatalf("forecast meta = %v", forecast)
+	}
+	foundDemandOverride := false
+	for _, raw := range sc["overrides"].([]any) {
+		ov := raw.(map[string]any)
+		if ov["target"] == "SHIP_A" && ov["path"] == "/demand" {
+			foundDemandOverride = true
+		}
+	}
+	if !foundDemandOverride {
+		t.Fatalf("scenario overrides do not include provider demand override: %v", sc["overrides"])
 	}
 }
 

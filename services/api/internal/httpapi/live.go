@@ -606,17 +606,32 @@ func (h *handlers) liveForecast(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, err)
 			return
 		}
-		fmcgOverrides, meta, err := fmcg.BuildRuntimeNowcast(g, types, snap.Levels, obs, now, body.HorizonS)
+		provider := h.FMCGNowcast
+		if provider == nil {
+			provider = fmcg.DefaultNowcastProvider()
+		}
+		result, err := provider.BuildNowcast(ctx, fmcg.BuildRequest{
+			Graph:        g,
+			Types:        types,
+			Levels:       snap.Levels,
+			Observations: obs,
+			Now:          now,
+			HorizonS:     body.HorizonS,
+		})
 		if err != nil {
 			writeErr(w, err)
 			return
 		}
-		if len(fmcgOverrides) > 0 {
-			overrides = append(overrides, fmcgOverrides...)
+		if len(result.Overrides) > 0 {
+			overrides = append(overrides, result.Overrides...)
 		}
-		if meta != nil {
-			forecastMeta = meta
-			actionLive["forecast"] = meta
+		if result.Meta != nil {
+			if result.Meta["provider"] == nil {
+				result.Meta["provider"] = provider.Name()
+			}
+			forecastMeta = result.Meta
+			actionLive["forecast"] = result.Meta
+			actionLive["forecast_provider"] = provider.Name()
 		}
 	}
 	sc := store.Scenario{
