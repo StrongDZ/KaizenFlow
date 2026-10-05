@@ -1,0 +1,349 @@
+# gauge-twin infrastructure.
+#
+# Profiles (exactly one of dev/cluster at a time, they share host ports):
+#   dev      1 EMQX + 1 Redpanda          -> make up
+#   cluster  3 EMQX + 3 Redpanda          -> make up-cluster
+# TimescaleDB, Redis, MinIO, Prometheus, Grafana and MediaMTX run in both.
+#
+# Clients inside the network always use the names `emqx` and `redpanda`; in the
+# cluster profile those are DNS aliases shared by all nodes.
+# Credentials below are development defaults only. Host ports and credentials
+# can be overridden in infra/compose/.env (see .env.example).
+name: gauge-twin
+
+x-emqx: &emqx
+  # 5.8.x is the last Apache 2.0 line; do not move to 5.9+ (BSL, clustering needs a license).
+  image: emqx/emqx:5.8.6
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "/opt/emqx/bin/emqx", "ctl", "status"]
+    interval: 5s
+    timeout: 25s
+    retries: 12
+    start_period: 20s
+
+# Session queue limits. Every subscriber session, in particular the ones of
+# mqtt-bridge, may hold max_inflight unacknowledged messages plus
+# max_mqueue_len queued ones; EMQX silently drops QoS 1 messages beyond that
+# (the publisher still gets its PUBACK). The defaults (32 and 1000) lose data
+# on any burst the bridge does not keep up with.
+x-emqx-queue-env: &emqx-queue-env
+  EMQX_MQTT__MAX_INFLIGHT: ${EMQX_MAX_INFLIGHT:-1024}
+  EMQX_MQTT__MAX_MQUEUE_LEN: ${EMQX_MAX_MQUEUE_LEN:-200000}
+  # EMQX kills a session process whose heap exceeds this (default 32MB), and
+  # the whole queue with it; a long queue needs a matching heap allowance.
+  EMQX_FORCE_SHUTDOWN__MAX_HEAP_SIZE: ${EMQX_MAX_HEAP_SIZE:-512MB}
+
+x-emqx-cluster-env: &emqx-cluster-env
+  <<: *emqx-queue-env
+  EMQX_NODE__COOKIE: ${EMQX_COOKIE:?}
+  EMQX_CLUSTER__DISCOVERY_STRATEGY: static
+  EMQX_CLUSTER__STATIC__SEEDS: "[emqx@emqx1.gauge.internal,emqx@emqx2.gauge.internal,emqx@emqx3.gauge.internal]"
+
+x-redpanda: &redpanda
+  image: redpandadata/redpanda:v24.2.18
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD-SHELL", "rpk cluster health | grep -Eq 'Healthy:.+true'"]
+    interval: 5s
+    timeout: 10s
+    retries: 24
+    start_period: 10s
+
+services:
+  # ---------------------------------------------------------------- dev ----
+  emqx:
+    <<: *emqx
+    profiles: [dev]
+    hostname: emqx.gauge.internal
+    environment:
+      <<: *emqx-queue-env
+      EMQX_NODE__NAME: emqx@emqx.gauge.internal
+      EMQX_NODE__COOKIE: ${EMQX_COOKIE:?}
+    ports:
+      - "${EMQX_MQTT_PORT:-1883}:1883"         # MQTT
+      - "${EMQX_DASHBOARD_PORT:-18083}:18083"  # dashboard + REST API
+    volumes:
+      - emqx-data:/opt/emqx/data
+    networks:
+      default:
+        aliases: [emqx.gauge.internal]
+
+  redpanda:
+    <<: *redpanda
+    profiles: [dev]
+    command:
+      - redpanda
+      - start
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+      - --rpc-addr=redpanda:33145
+      - --advertise-rpc-addr=redpanda:33145
+      - --mode=dev-container
+      - --smp=1
+      - --memory=1G
+      - --default-log-level=warn
+    ports:
+      - "19092:19092"   # Kafka API from the host (advertised, keep fixed)
+      - "${REDPANDA_ADMIN_PORT:-9644}:9644"     # admin API + metrics
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+
+  # ------------------------------------------------------------ cluster ----
+  emqx1:
+    <<: *emqx
+    profiles: [cluster]
+    hostname: emqx1.gauge.internal
+    environment:
+      <<: *emqx-cluster-env
+      EMQX_NODE__NAME: emqx@emqx1.gauge.internal
+    ports:
+      - "${EMQX_MQTT_PORT:-1883}:1883"
+      - "${EMQX_DASHBOARD_PORT:-18083}:18083"
+    volumes:
+      - emqx1-data:/opt/emqx/data
+    networks:
+      default:
+        aliases: [emqx, emqx1.gauge.internal]
+
+  emqx2:
+    <<: *emqx
+    profiles: [cluster]
+    hostname: emqx2.gauge.internal
+    environment:
+      <<: *emqx-cluster-env
+      EMQX_NODE__NAME: emqx@emqx2.gauge.internal
+    ports:
+      - "1884:1883"
+    volumes:
+      - emqx2-data:/opt/emqx/data
+    networks:
+      default:
+        aliases: [emqx, emqx2.gauge.internal]
+
+  emqx3:
+    <<: *emqx
+    profiles: [cluster]
+    hostname: emqx3.gauge.internal
+    environment:
+      <<: *emqx-cluster-env
+      EMQX_NODE__NAME: emqx@emqx3.gauge.internal
+    ports:
+      - "1885:1883"
+    volumes:
+      - emqx3-data:/opt/emqx/data
+    networks:
+      default:
+        aliases: [emqx, emqx3.gauge.internal]
+
+  redpanda-0:
+    <<: *redpanda
+    profiles: [cluster]
+    command:
+      - redpanda
+      - start
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda-0:9092,external://localhost:19092
+      - --rpc-addr=redpanda-0:33145
+      - --advertise-rpc-addr=redpanda-0:33145
+      - --mode=dev-container
+      - --smp=1
+      - --memory=1G
+      - --default-log-level=warn
+    ports:
+      - "19092:19092"
+      - "${REDPANDA_ADMIN_PORT:-9644}:9644"
+    volumes:
+      - redpanda-0-data:/var/lib/redpanda/data
+    networks:
+      default:
+        aliases: [redpanda]
+
+  redpanda-1:
+    <<: *redpanda
+    profiles: [cluster]
+    command:
+      - redpanda
+      - start
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:29092
+      - --advertise-kafka-addr=internal://redpanda-1:9092,external://localhost:29092
+      - --rpc-addr=redpanda-1:33145
+      - --advertise-rpc-addr=redpanda-1:33145
+      - --seeds=redpanda-0:33145
+      - --mode=dev-container
+      - --smp=1
+      - --memory=1G
+      - --default-log-level=warn
+    ports:
+      - "29092:29092"
+    volumes:
+      - redpanda-1-data:/var/lib/redpanda/data
+    networks:
+      default:
+        aliases: [redpanda]
+
+  redpanda-2:
+    <<: *redpanda
+    profiles: [cluster]
+    command:
+      - redpanda
+      - start
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:39092
+      - --advertise-kafka-addr=internal://redpanda-2:9092,external://localhost:39092
+      - --rpc-addr=redpanda-2:33145
+      - --advertise-rpc-addr=redpanda-2:33145
+      - --seeds=redpanda-0:33145
+      - --mode=dev-container
+      - --smp=1
+      - --memory=1G
+      - --default-log-level=warn
+    ports:
+      - "39092:39092"
+    volumes:
+      - redpanda-2-data:/var/lib/redpanda/data
+    networks:
+      default:
+        aliases: [redpanda]
+
+  # One-shot topic creation, started by `make up` / `make up-cluster` once the
+  # brokers are healthy.
+  kafka-init:
+    image: redpandadata/redpanda:v24.2.18
+    profiles: [init]
+    entrypoint: ["/bin/bash", "/scripts/create-topics.sh"]
+    environment:
+      RPK_BROKERS: redpanda:9092
+      KAFKA_RF: ${KAFKA_RF:-1}
+    volumes:
+      - ./redpanda/create-topics.sh:/scripts/create-topics.sh:ro
+
+  # ------------------------------------------------------------- common ----
+  timescaledb:
+    # Keep in sync with schemas/test/run_in_docker.sh.
+    image: timescale/timescaledb:2.17.2-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gauge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: ${POSTGRES_DB:-gauge}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - timescaledb-data:/var/lib/postgresql/data
+    healthcheck:
+      # TCP on purpose: the init phase only listens on the unix socket.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  minio:
+    # The official minio/minio images are no longer published on Docker Hub or
+    # quay.io; this is the community-maintained build of the same server.
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-gauge}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?}
+      MINIO_PROMETHEUS_AUTH_TYPE: public
+    ports:
+      - "${MINIO_PORT:-9000}:9000"          # S3 API
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"  # console
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/healthy"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      POSTGRES_USER: ${POSTGRES_USER:-gauge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: ${POSTGRES_DB:-gauge}
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  mediamtx:
+    # The -ffmpeg variant is Alpine based, so it has a shell for the
+    # healthcheck and ffmpeg for the RTSP simulator (GD1).
+    image: bluenviron/mediamtx:1.9.3-ffmpeg
+    restart: unless-stopped
+    volumes:
+      - ./mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    ports:
+      - "${RTSP_PORT:-8554}:8554"  # RTSP
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9998/metrics"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+networks:
+  default:
+    name: gauge-twin
+
+volumes:
+  emqx-data:
+  emqx1-data:
+  emqx2-data:
+  emqx3-data:
+  redpanda-data:
+  redpanda-0-data:
+  redpanda-1-data:
+  redpanda-2-data:
+  timescaledb-data:
+  redis-data:
+  minio-data:
+  prometheus-data:
+  grafana-data:

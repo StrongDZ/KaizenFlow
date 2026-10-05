@@ -1,0 +1,33 @@
+# Fake cameras: loops every video rendered into data/sim/ as an RTSP stream
+# rtsp://mediamtx:8554/<machine_id>. Needs the stack of dev.yml (`make up`)
+# and a rendered dataset (`make render`). Start with `make sim-up`.
+# SIM_DATA_DIR (absolute path) streams another directory of
+# <machine_id>/video.mp4, e.g. real videos prepared by gauge_ml.real_stations.
+name: gauge-twin-sim
+
+services:
+  rtsp-publisher:
+    # Same image as the MediaMTX service: it already ships ffmpeg.
+    image: bluenviron/mediamtx:1.9.3-ffmpeg
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/scripts/publish-rtsp.sh"]
+    environment:
+      RTSP_BASE_URL: rtsp://mediamtx:8554
+      VIDEO_DIR: /data
+    volumes:
+      - ./sim/publish-rtsp.sh:/scripts/publish-rtsp.sh:ro
+      - ./sim/check-rtsp.sh:/scripts/check-rtsp.sh:ro
+      - ${SIM_DATA_DIR:-../../data/sim}:/data:ro
+    healthcheck:
+      # Healthy while at least one ffmpeg publisher is running.
+      test: ["CMD-SHELL", "pgrep -x ffmpeg >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    networks:
+      - gauge-twin
+
+networks:
+  gauge-twin:
+    external: true

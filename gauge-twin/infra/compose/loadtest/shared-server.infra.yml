@@ -1,0 +1,79 @@
+# Overlay for load tests on a shared server (SPEC section 8): no port is
+# published on the host, every container has CPU and memory limits and is
+# pinned to the cores in INFRA_CPUSET, away from the load generator
+# (EDGE_SIM_CPUSET). Use with:
+#   export INFRA_CPUSET=8-31 EDGE_SIM_CPUSET=0-7
+#   export LOADTEST_OVERRIDES="-f infra/compose/loadtest/shared-server.infra.yml"
+#   export LOADTEST_SERVER_OVERRIDES="-f infra/compose/loadtest/shared-server.server.yml"
+#   export LOADTEST_EDGE_OVERRIDES="-f infra/compose/loadtest/shared-server.edge.yml"
+services:
+  emqx:
+    ports: !reset []
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 4
+    mem_limit: 2g
+  emqx1:
+    ports: !reset []
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 4
+    mem_limit: 2g
+  emqx2:
+    ports: !reset []
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 4
+    mem_limit: 2g
+  emqx3:
+    ports: !reset []
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 4
+    mem_limit: 2g
+  redpanda:
+    ports: !reset []
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 2
+    mem_limit: 2g
+  redpanda-0:
+    ports: !reset []
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 2
+    mem_limit: 2g
+  redpanda-1:
+    ports: !reset []
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 2
+    mem_limit: 2g
+  redpanda-2:
+    ports: !reset []
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 2
+    mem_limit: 2g
+  timescaledb:
+    ports: !reset []
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 8
+    mem_limit: 6g
+  redis:
+    ports: !reset []
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 2
+    mem_limit: 1g
+  minio:
+    ports: !reset []
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 1
+    mem_limit: 1g
+  mediamtx:
+    ports: !reset []
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 2
+    mem_limit: 1g
+  prometheus:
+    ports: !reset []
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 2
+    mem_limit: 2g
+  grafana:
+    ports: !reset []
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 1
+    mem_limit: 1g

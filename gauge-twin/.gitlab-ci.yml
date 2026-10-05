@@ -1,0 +1,73 @@
+# Jobs run inside the tools image (tools/Dockerfile), so they call the same
+# Makefile targets as developers with GAUGE_TOOLS=local.
+stages:
+  - tools
+  - check
+
+variables:
+  TOOLS_IMAGE: $CI_REGISTRY_IMAGE/tools:latest
+  GAUGE_TOOLS: local
+  TIMESCALE_IMAGE: timescale/timescaledb:2.17.2-pg16
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# Rebuilt only when the toolchain changes. Run it manually once to bootstrap
+# the registry before the first pipeline.
+tools-image:
+  stage: tools
+  image: docker:27
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_TLS_CERTDIR: /certs
+  script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - docker build -t "$TOOLS_IMAGE" tools
+    - docker push "$TOOLS_IMAGE"
+  rules:
+    - changes: [tools/**/*]
+    - when: manual
+      allow_failure: true
+
+.tools:
+  stage: check
+  image: $TOOLS_IMAGE
+
+lint:
+  extends: .tools
+  script:
+    - make lint
+
+unit-test:
+  extends: .tools
+  script:
+    - make test-go test-py
+
+migration-test:
+  extends: .tools
+  services:
+    - name: $TIMESCALE_IMAGE
+      alias: timescaledb
+  variables:
+    POSTGRES_USER: gauge
+    # A throwaway database of one job: no password at all.
+    POSTGRES_HOST_AUTH_METHOD: trust
+    POSTGRES_DB: gauge
+    DATABASE_URL: postgres://gauge@timescaledb:5432/gauge?sslmode=disable
+  script:
+    - make test-sql
+
+# Fails the merge request when a proto change breaks existing consumers.
+buf-breaking:
+  extends: .tools
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+    - make breaking BREAKING_AGAINST="origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes: [schemas/**/*]

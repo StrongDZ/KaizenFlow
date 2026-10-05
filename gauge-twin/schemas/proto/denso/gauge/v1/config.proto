@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package denso.gauge.v1;
+
+option go_package = "gauge-twin/gen/go/denso/gauge/v1;gaugev1";
+
+// StationConfig is the server -> edge payload published retained on
+// denso/{plant}/{line}/{machine}/config. Its JSON form (proto field names)
+// is the document shown in SPEC section 3.1.
+message StationConfig {
+  // The edge only applies a config whose version is newer than the running one.
+  uint32 config_version = 1;
+  string machine_id = 2;
+  string plant = 3;
+  string line = 4;
+  Camera camera = 5;
+  uint32 window_sec = 6;
+  repeated Gauge gauges = 7;
+  // Model name -> version, e.g. "dial_pose" -> "dial-pose-0.3".
+  map<string, string> model_versions = 8;
+}
+
+message Camera {
+  string url = 1;
+  uint32 sample_fps = 2;
+}
+
+message Gauge {
+  string gauge_id = 1;
+  // One of: analog_dial, seg7, timer_mmss, rolling_counter.
+  // Kept as a string so the JSON matches the spec; config-api validates it.
+  string type = 2;
+  string unit = 3;
+  // [x, y, width, height] in camera frame pixels. Always the axis-aligned
+  // bounding box used for cropping.
+  repeated int32 roi = 4;
+  Calib calib = 5;
+  Rules rules = 6;
+  // Either empty or exactly 4 points in camera frame pixels, ordered
+  // top-left, top-right, bottom-right, bottom-left. A homography maps the quad
+  // onto the square rect_size x rect_size, and calib is expressed in that
+  // square. For a round face the quad is the square circumscribing the face.
+  // When empty, roi is used as is (frontal view).
+  repeated Point quad = 7;
+  // Side of the rectified square in pixels; 256 when unset.
+  optional uint32 rect_size = 8;
+}
+
+// Point is a 2D position in pixels.
+message Point {
+  double x = 1;
+  double y = 2;
+}
+
+// Calib is a flat union of the calibration fields of every gauge type; only
+// the fields relevant to Gauge.type are set. Coordinates are expressed in the
+// rectified square described on Gauge.quad.
+message Calib {
+  // analog_dial: [x, y] points.
+  repeated double center = 1;
+  repeated double min_pt = 2;
+  repeated double max_pt = 3;
+  optional double min_val = 4;
+  optional double max_val = 5;
+  // "cw" or "ccw".
+  optional string sweep = 6;
+  // "linear" for now.
+  optional string scale = 7;
+
+  // seg7, timer_mmss, rolling_counter.
+  optional uint32 digits = 8;
+  // seg7: position of the decimal point within the digits.
+  optional uint32 decimal_pos = 9;
+  // seg7: display kind, e.g. "red_led".
+  optional string color = 10;
+  // timer_mmss: number of digits before the colon.
+  optional uint32 colon_after = 11;
+  // rolling_counter: number of fractional digits.
+  optional uint32 decimal_digits = 12;
+}
+
+// Rules are the physical constraints checked on the edge and on the server.
+message Rules {
+  optional double min = 1;
+  optional double max = 2;
+  optional double max_rate_per_s = 3;
+  optional double deadband = 4;
+  optional bool monotonic = 5;
+  optional uint32 report_interval_s = 6;
+}

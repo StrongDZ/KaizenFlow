@@ -1,0 +1,9 @@
+go 1.22
+
+use (
+	./edge/decode
+	./edge/edge-agent
+	./gen/go
+	./server
+	./sim/edge-sim
+)

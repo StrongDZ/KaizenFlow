@@ -1,0 +1,10 @@
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    # STANDARD is the buf v2 name of the former DEFAULT rule set.
+    - STANDARD
+breaking:
+  use:
+    - FILE

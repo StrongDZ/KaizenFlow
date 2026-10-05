@@ -1,0 +1,6 @@
+# C++ is only needed by ds-pipeline, which only speaks FrameResult.
+# Invoked with --path proto/denso/gauge/v1/frame_result.proto.
+version: v2
+plugins:
+  - protoc_builtin: cpp
+    out: ../gen/cpp

@@ -1,0 +1,3 @@
+[
+  {"name": "timescaledb", "listen": "0.0.0.0:5432", "upstream": "timescaledb:5432", "enabled": true}
+]
