@@ -176,6 +176,96 @@ func stockConfig(p map[string]any) []storageStock {
 	return out
 }
 
+func chooseUpstreamSource(sources []string, levelsByNode map[string]map[string]float64, paramsByNode map[string]map[string]any, material string, extraQty float64) (string, float64, bool) {
+	bestIdx := -1
+	bestRoom := -1.0
+	bestHeadroom := 0.0
+	for idx, src := range sources {
+		cfg := stockConfig(paramsByNode[src])
+		cfgByMat := map[string]storageStock{}
+		for _, c := range cfg {
+			cfgByMat[c.Material] = c
+		}
+		live := levelsByNode[src]
+		if live == nil {
+			live = map[string]float64{}
+		}
+		base := live[material]
+		if base == 0 {
+			if c, ok := cfgByMat[material]; ok && c.Initial > 0 {
+				base = c.Initial
+			}
+		}
+		maxQty := 0.0
+		if c, ok := cfgByMat[material]; ok {
+			maxQty = c.Max
+		}
+		current := base
+		if current > maxQty && maxQty > 0 {
+			maxQty = current
+		}
+		headroom := math.Max(0, maxQty-current)
+		score := current
+		if maxQty > 0 {
+			score = headroom
+		}
+		if score > bestRoom || (score == bestRoom && current > 0) {
+			if extraQty > 0 && maxQty > 0 && current+extraQty > maxQty {
+				continue
+			}
+			bestIdx = idx
+			bestRoom = score
+			bestHeadroom = headroom
+		}
+	}
+	if bestIdx < 0 {
+		for idx, src := range sources {
+			cfg := stockConfig(paramsByNode[src])
+			cfgByMat := map[string]storageStock{}
+			for _, c := range cfg {
+				cfgByMat[c.Material] = c
+			}
+			live := levelsByNode[src]
+			if live == nil {
+				live = map[string]float64{}
+			}
+			base := live[material]
+			if base == 0 {
+				if c, ok := cfgByMat[material]; ok && c.Initial > 0 {
+					base = c.Initial
+				}
+			}
+			maxQty := 0.0
+			if c, ok := cfgByMat[material]; ok {
+				maxQty = c.Max
+			}
+			current := base
+			if current > maxQty && maxQty > 0 {
+				maxQty = current
+			}
+			headroom := math.Max(0, maxQty-current)
+			score := current
+			if maxQty > 0 {
+				score = headroom
+			}
+			if score > bestRoom {
+				bestIdx = idx
+				bestRoom = score
+				bestHeadroom = headroom
+			}
+		}
+	}
+	if bestIdx < 0 {
+		return "", 0, false
+	}
+	chosen := sources[bestIdx]
+	applyQty := extraQty
+	if applyQty > 0 {
+		applyQty = math.Min(applyQty, math.Max(bestHeadroom, applyQty))
+	}
+	return chosen, applyQty, true
+}
+
 func storageOverrideValue(cfg []storageStock, live map[string]float64, material string, extraQty float64) []any {
 	if live == nil {
 		live = map[string]float64{}
@@ -187,19 +277,32 @@ func storageOverrideValue(cfg []storageStock, live map[string]float64, material 
 		if initial == 0 && item.Initial > 0 {
 			initial = item.Initial
 		}
+		apply := 0.0
 		if item.Material == material {
-			initial += extraQty
+			apply = extraQty
 		}
 		maxQty := item.Max
-		if maxQty < initial {
-			maxQty = initial
+		if maxQty <= 0 {
+			maxQty = initial + apply
 		}
-		out = append(out, map[string]any{"material": item.Material, "initial": round(initial, 1), "max": round(maxQty, 1)})
+		nextInitial := initial + apply
+		if nextInitial > maxQty {
+			nextInitial = maxQty
+			apply = nextInitial - initial
+		}
+		if item.Material == material && extraQty > 0 && apply > 0 {
+			_ = apply
+		}
+		out = append(out, map[string]any{"material": item.Material, "initial": round(nextInitial, 1), "max": round(maxQty, 1)})
 		seen[item.Material] = true
 	}
 	if !seen[material] {
-		initial := live[material] + extraQty
-		out = append(out, map[string]any{"material": material, "initial": round(initial, 1), "max": round(initial, 1)})
+		initial := live[material]
+		if initial == 0 {
+			initial = 0
+		}
+		nextInitial := initial + extraQty
+		out = append(out, map[string]any{"material": material, "initial": round(nextInitial, 1), "max": round(nextInitial, 1)})
 	}
 	return out
 }
@@ -454,8 +557,37 @@ func BuildRuntimeNowcast(g *store.Graph, types map[string]store.NodeType, levels
 				targetStock := blend * targetCoverageH
 				deficitQty := math.Max(0, targetStock-stock)
 				priority, score := replenishPriority(pressure, preCoverage, liveObs.BackorderPerHour)
-				if deficitQty > 0 && (pressure >= 0.2 || liveObs.BackorderPerHour > 0.5) {
+				hasShortageSignal := deficitQty > 0 && (pressure >= 0.2 || liveObs.BackorderPerHour > 0.5)
+				if deficitQty > 0 && (hasShortageSignal || pressure >= 0.01 || liveObs.BackorderPerHour > 0) {
 					sources := append([]string(nil), feed.Sources...)
+					projStock := stock
+					projCoverage := 0.0
+					applyQty := 0.0
+					sourceNode := ""
+					candidates := make([]any, 0, 1)
+					upstreamLabel := ""
+					if len(sources) > 0 {
+						picked, clipped, ok := chooseUpstreamSource(sources, levels, paramsByNode, material, deficitQty)
+						if ok {
+							sourceNode = picked
+							applyQty = clipped
+							if applyQty <= 0 && deficitQty > 0 {
+								applyQty = deficitQty
+							}
+							cfg := stockConfig(paramsByNode[sourceNode])
+							override := storageOverrideValue(cfg, levels[sourceNode], material, applyQty)
+							candidates = append(candidates, replenishCandidate(1, sourceNode, material, override, applyQty, score, pressure))
+							upstreamLabel = nameByNode[sourceNode]
+						}
+					}
+					projStock = stock + applyQty
+					if blend > 0 {
+						projCoverage = projStock / blend
+					}
+					finalDeficit := deficitQty
+					if applyQty > 0 && applyQty < deficitQty {
+						finalDeficit = applyQty
+					}
 					action := map[string]any{
 						"subject":               n.Key,
 						"label":                 nameByNode[n.Key],
@@ -463,34 +595,39 @@ func BuildRuntimeNowcast(g *store.Graph, types map[string]store.NodeType, levels
 						"priority":              priority,
 						"priority_score":        round(score, 1),
 						"source":                source,
+						"provider":              ProviderHybridRuntime,
 						"stock":                 round(stock, 1),
 						"target_stock":          round(targetStock, 1),
-						"recommended_replenish": round(deficitQty, 1),
+						"recommended_replenish": round(finalDeficit, 1),
 						"pre_coverage_hours":    round(preCoverage, 1),
-						"projected_coverage_h":  round(stock/blend, 1),
+						"projected_coverage_h":  round(projCoverage, 1),
 						"coverage_pressure":     round(pressure, 2),
 						"backorder_per_hour":    round(liveObs.BackorderPerHour, 2),
 						"live_basis":            firstNonEmpty(liveBasis, liveObs.Basis),
 						"upstream_sources":      sources,
-						"estimated_recovery_h":  round(deficitQty/blend, 1),
+						"estimated_recovery_h":  round(finalDeficit/math.Max(1e-9, blend), 1),
 						"severity":              prioritySeverity(priority),
+						"has_shortage_signal":   hasShortageSignal,
 					}
-					if len(sources) > 0 {
-						source := sources[0]
-						cfg := stockConfig(paramsByNode[source])
-						override := storageOverrideValue(cfg, levels[source], material, deficitQty)
-						action["candidates"] = []any{
-							replenishCandidate(1, source, material, override, deficitQty, score, pressure),
-						}
-						action["upstream_label"] = nameByNode[source]
+					if len(candidates) > 0 {
+						action["candidates"] = candidates
+					}
+					if upstreamLabel != "" {
+						action["upstream_label"] = upstreamLabel
+						action["upstream_node"] = sourceNode
+						action["planned_replenish_qty"] = round(applyQty, 1)
 					}
 					reason := fmt.Sprintf("%s cần bù %.1f %s để quay về mức phủ %.1f giờ.",
-						nameByNode[n.Key], round(deficitQty, 1), material, targetCoverageH)
+						nameByNode[n.Key], round(finalDeficit, 1), material, targetCoverageH)
 					if preCoverage > 0 {
 						reason += fmt.Sprintf(" Hiện chỉ còn %.1f giờ phủ.", round(preCoverage, 1))
 					}
 					if liveObs.BackorderPerHour > 0 {
 						reason += fmt.Sprintf(" Backorder đang tăng %.1f/h.", round(liveObs.BackorderPerHour, 1))
+					}
+					if sourceNode != "" && applyQty != deficitQty {
+						reason += fmt.Sprintf(" Nguồn %s bù tối đa %.1f theo sức chứa.",
+							upstreamLabel, round(applyQty, 1))
 					}
 					action["reason"] = reason
 					replenishment = append(replenishment, action)

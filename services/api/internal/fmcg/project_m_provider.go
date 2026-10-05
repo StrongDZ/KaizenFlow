@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/kaizenflow/api/internal/resolve"
-	"github.com/kaizenflow/api/internal/store"
 )
 
 const (
@@ -254,8 +253,37 @@ func (projectMProvider) BuildNowcast(ctx context.Context, req BuildRequest) (Bui
 				targetStock := blend * targetCoverageH
 				deficitQty := math.Max(0, targetStock-stock)
 				priority, score := replenishPriority(pressure, preCoverage, ctxRow.liveObs.BackorderPerHour)
-				if deficitQty > 0 && (pressure >= 0.2 || ctxRow.liveObs.BackorderPerHour > 0.5) {
+				hasShortageSignal := deficitQty > 0 && (pressure >= 0.2 || ctxRow.liveObs.BackorderPerHour > 0.5)
+				if deficitQty > 0 && (hasShortageSignal || pressure >= 0.01 || ctxRow.liveObs.BackorderPerHour > 0) {
 					sources := append([]string(nil), feed.Sources...)
+					projStock := stock
+					projCoverage := 0.0
+					applyQty := 0.0
+					sourceNode := ""
+					candidates := make([]any, 0, 1)
+					upstreamLabel := ""
+					if len(sources) > 0 {
+						picked, clipped, ok := chooseUpstreamSource(sources, req.Levels, paramsByNode, material, deficitQty)
+						if ok {
+							sourceNode = picked
+							applyQty = clipped
+							if applyQty <= 0 && deficitQty > 0 {
+								applyQty = deficitQty
+							}
+							cfg := stockConfig(paramsByNode[sourceNode])
+							override := storageOverrideValue(cfg, req.Levels[sourceNode], material, applyQty)
+							candidates = append(candidates, replenishCandidate(1, sourceNode, material, override, applyQty, score, pressure))
+							upstreamLabel = nameByNode[sourceNode]
+						}
+					}
+					projStock = stock + applyQty
+					if blend > 0 {
+						projCoverage = projStock / blend
+					}
+					finalDeficit := deficitQty
+					if applyQty > 0 && applyQty < deficitQty {
+						finalDeficit = applyQty
+					}
 					action := map[string]any{
 						"subject":               n.Key,
 						"label":                 nameByNode[n.Key],
@@ -269,27 +297,38 @@ func (projectMProvider) BuildNowcast(ctx context.Context, req BuildRequest) (Bui
 						"sku_id":                float64(pred.SKU),
 						"stock":                 round(stock, 1),
 						"target_stock":          round(targetStock, 1),
-						"recommended_replenish": round(deficitQty, 1),
+						"recommended_replenish": round(finalDeficit, 1),
 						"pre_coverage_hours":    round(preCoverage, 1),
-						"projected_coverage_h":  round(stock/blend, 1),
+						"projected_coverage_h":  round(projCoverage, 1),
 						"coverage_pressure":     round(pressure, 2),
 						"backorder_per_hour":    round(ctxRow.liveObs.BackorderPerHour, 2),
 						"live_basis":            firstNonEmpty(liveBasis, ctxRow.liveObs.Basis),
 						"upstream_sources":      sources,
-						"estimated_recovery_h":  round(deficitQty/blend, 1),
+						"estimated_recovery_h":  round(finalDeficit/math.Max(1e-9, blend), 1),
 						"severity":              prioritySeverity(priority),
+						"has_shortage_signal":   hasShortageSignal,
 					}
-					if len(sources) > 0 {
-						sourceNode := sources[0]
-						cfg := stockConfig(paramsByNode[sourceNode])
-						override := storageOverrideValue(cfg, req.Levels[sourceNode], material, deficitQty)
-						action["candidates"] = []any{
-							replenishCandidate(1, sourceNode, material, override, deficitQty, score, pressure),
-						}
-						action["upstream_label"] = nameByNode[sourceNode]
+					if len(candidates) > 0 {
+						action["candidates"] = candidates
 					}
-					action["reason"] = fmt.Sprintf("%s dùng project M (%s) và cần bù %.1f %s để quay về mức phủ %.1f giờ.",
-						nameByNode[n.Key], pred.Backend, round(deficitQty, 1), material, targetCoverageH)
+					if upstreamLabel != "" {
+						action["upstream_label"] = upstreamLabel
+						action["upstream_node"] = sourceNode
+						action["planned_replenish_qty"] = round(applyQty, 1)
+					}
+					reason := fmt.Sprintf("%s dùng project M (%s) và cần bù %.1f %s để quay về mức phủ %.1f giờ.",
+						nameByNode[n.Key], pred.Backend, round(finalDeficit, 1), material, targetCoverageH)
+					if preCoverage > 0 {
+						reason += fmt.Sprintf(" Hiện chỉ còn %.1f giờ phủ.", round(preCoverage, 1))
+					}
+					if ctxRow.liveObs.BackorderPerHour > 0 {
+						reason += fmt.Sprintf(" Backorder đang tăng %.1f/h.", round(ctxRow.liveObs.BackorderPerHour, 1))
+					}
+					if sourceNode != "" && applyQty != deficitQty {
+						reason += fmt.Sprintf(" Nguồn %s bù tối đa %.1f theo sức chứa.",
+							upstreamLabel, round(applyQty, 1))
+					}
+					action["reason"] = reason
 					replenishment = append(replenishment, action)
 				}
 			}
@@ -339,11 +378,16 @@ func runProjectMBridge(ctx context.Context, pythonBin, bridgePath string, req pr
 		return nil, fmt.Errorf("decode project M bridge response: %w", err)
 	}
 	out := map[string]projectMResponseRow{}
+	errs := make([]string, 0, len(res.Items))
 	for _, item := range res.Items {
 		if item.Error != "" {
-			return nil, fmt.Errorf("project M forecast error for %s: %s", item.ID, item.Error)
+			errs = append(errs, fmt.Sprintf("%s: %s", item.ID, item.Error))
+			continue
 		}
 		out[item.ID] = item
+	}
+	if len(errs) > 0 && len(out) == 0 {
+		return nil, fmt.Errorf("project M forecast errors: %s", strings.Join(errs, "; "))
 	}
 	return out, nil
 }

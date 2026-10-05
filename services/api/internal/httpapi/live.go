@@ -507,33 +507,80 @@ func (h *handlers) insertFmcgRecommendations(ctx context.Context, runID int64, f
 	if forecastMeta == nil {
 		return nil
 	}
-	for _, row := range toAnyMaps(forecastMeta["replenishment"]) {
-		candidates := toAnyMaps(row["candidates"])
-		if len(candidates) == 0 {
-			continue
-		}
+	wantKind := "RECOMMENDATION"
+	wantSource, _ := forecastMeta["provider"].(string)
+	if wantSource == "" {
+		wantSource = "FMCG_RUNTIME"
+	}
+	rows := toAnyMaps(forecastMeta["replenishment"])
+	insights := make([]store.Insight, 0, len(rows))
+	for _, row := range rows {
 		subject, _ := row["subject"].(string)
+		candidates := toAnyMaps(row["candidates"])
+		kind := wantKind
+		source := "FMCG_RUNTIME"
+		if named, _ := row["source"].(string); named != "" {
+			source = named
+		}
+		priority, _ := row["priority"].(string)
+		reason, _ := row["reason"].(string)
+		material, _ := row["material"].(string)
+		hasShortage, _ := row["has_shortage_signal"].(bool)
+		if len(candidates) == 0 {
+			if !hasShortage {
+				if priority == "" {
+					continue
+				}
+				if priority == "LOW" {
+					continue
+				}
+			}
+			kind = "RECOMMENDATION"
+		}
 		payload := map[string]any{
-			"source":        "FMCG_RUNTIME",
-			"metric":        "replenishment",
-			"priority":      row["priority"],
-			"reason":        row["reason"],
-			"material":      row["material"],
-			"live_basis":    row["live_basis"],
-			"target_stock":  row["target_stock"],
-			"current_stock": row["stock"],
-			"candidates":    candidates,
+			"source":               source,
+			"metric":               "replenishment",
+			"priority":             priority,
+			"reason":               reason,
+			"material":             material,
+			"live_basis":           row["live_basis"],
+			"target_stock":         row["target_stock"],
+			"current_stock":        row["stock"],
+			"recommended_replenish": row["recommended_replenish"],
+			"pre_coverage_hours":   row["pre_coverage_hours"],
+			"projected_coverage_h": row["projected_coverage_h"],
+			"coverage_pressure":    row["coverage_pressure"],
+			"backorder_per_hour":   row["backorder_per_hour"],
+			"upstream_sources":     row["upstream_sources"],
+			"upstream_label":       row["upstream_label"],
+			"upstream_node":        row["upstream_node"],
+			"planned_replenish_qty": row["planned_replenish_qty"],
+			"provider":             row["provider"],
+			"has_shortage_signal":  hasShortage,
+		}
+		if len(candidates) == 0 {
+			payload["kind"] = "shortage_alert"
+		} else {
+			payload["candidates"] = candidates
 		}
 		sev := severityValue(row["severity"], 3)
+		if len(candidates) == 0 {
+			if sev < 3 {
+				sev = 3
+			}
+		}
 		run := runID
 		subj := subject
-		if _, err := h.Store.InsertInsight(ctx, store.Insight{
+		insights = append(insights, store.Insight{
 			SimRunID:   &run,
-			Kind:       "RECOMMENDATION",
+			Kind:       kind,
 			SubjectKey: &subj,
 			Severity:   &sev,
 			Payload:    payload,
-		}); err != nil {
+		})
+	}
+	for i := range insights {
+		if _, err := h.Store.InsertInsight(ctx, insights[i]); err != nil {
 			return err
 		}
 	}

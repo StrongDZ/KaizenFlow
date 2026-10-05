@@ -311,11 +311,13 @@ export default function OperationsDashboardPage() {
     },
     onSuccess: async ({ runIds, failures }, vars) => {
       setLastBatchRunIds(runIds)
+      const indiv = runIds.map((id) => qc.invalidateQueries({ queryKey: ['run', id] }))
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['runs', vars.model, 'active'] }),
         qc.invalidateQueries({ queryKey: ['runs', vars.model, 'recommender'] }),
         qc.invalidateQueries({ queryKey: ['runs', vars.model, 'recent'] }),
         qc.invalidateQueries({ queryKey: ['runs', vars.model, 'nowcast'] }),
+        ...indiv,
       ])
       if (failures.length > 0) {
         setBatchApplyIssue(new Error(
@@ -642,7 +644,7 @@ export default function OperationsDashboardPage() {
                     <div className="font-semibold text-text">{opt.title}</div>
                     <div className="mt-1 text-muted">{opt.subject} • score {num(opt.score, 2)}</div>
                     <div className="mt-1 flex flex-wrap gap-2">
-                        <Tag>giảm đỏ {num(opt.redDelta, 1)} phút</Tag>
+                      <Tag>giảm đỏ {num(opt.redDelta, 1)} phút</Tag>
                       <Tag>throughput {fmtDelta(opt.throughputDelta)}</Tag>
                       <Tag>rank #{opt.rank}</Tag>
                     </div>
