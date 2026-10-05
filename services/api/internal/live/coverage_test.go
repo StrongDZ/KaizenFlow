@@ -223,6 +223,29 @@ func TestCoverageNeedsAndReadinessPerFeature(t *testing.T) {
 	}
 }
 
+func TestLiveOnlyNeedsMovedOnEdgesNotTheCountInFlight(t *testing.T) {
+	// Hạt chảy trên sơ đồ lấy từ tốc độ tăng của moved; in_transit chỉ là nhãn phụ (bao nhiêu lô đang đi), nên thiếu nó không chặn live.
+	subs := testSubjects(false)
+	rep := AnalyzeCoverage(CoverageInput{Subjects: subs})
+	got := byRef(rep)
+	if n := got[Ref{"SRC>KHO", "moved"}].Need; len(n) != 1 || n[0] != "live" {
+		t.Errorf("moved cần cho live: %v", n)
+	}
+	if n := got[Ref{"SRC>KHO", "in_transit"}].Need; len(n) != 0 {
+		t.Errorf("in_transit là tuỳ chọn: %v", n)
+	}
+	for _, r := range rep.Readiness {
+		if r.Feature != "live" {
+			continue
+		}
+		for _, m := range r.Missing {
+			if m.Signal == "in_transit" {
+				t.Errorf("live không được đòi in_transit: %+v", r.Missing)
+			}
+		}
+	}
+}
+
 func TestCoverageFlagsSourceBindingsThatCannotWorkAgainstTheKnownSample(t *testing.T) {
 	subs := testSubjects(false)
 	a := Binding{Subject: "SRC", Signal: "arrived", Source: "dock/src", JSONPath: "n", Enabled: true}

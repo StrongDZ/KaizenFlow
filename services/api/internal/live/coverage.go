@@ -97,8 +97,8 @@ var features = []string{"live", "forecast", "calibration", "map"}
 
 func needOf(s Subject, signal string) []string {
 	switch {
-	case s.Kind == "edge" && (signal == "moved" || signal == "in_transit"):
-		return []string{"live"}
+	case s.Kind == "edge" && signal == "moved":
+		return []string{"live"} // hạt chảy lấy từ tốc độ tăng của moved; in_transit chỉ là nhãn phụ nên tuỳ chọn
 	case s.Kind == "edge" && signal == "trip_s":
 		return []string{"calibration"}
 	case s.Archetype == "PROCESS" && signal == "state":
