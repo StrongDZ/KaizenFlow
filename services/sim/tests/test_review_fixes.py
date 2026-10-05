@@ -66,6 +66,20 @@ def test_rank_drops_candidates_that_increase_red_minutes(monkeypatch):
     assert rank(req, [_fake(10.0, 50.0)] * 2, [cand]) == []
 
 
+def test_rank_drops_negative_score_and_tiny_improvement(monkeypatch):
+    req = load_request("denso_mini", replications=2)
+    cand = Candidate({"type": "FLEET_SIZE", "target": "TUGGER_A", "cost": 1.0},
+                     [{"target": "TUGGER_A", "path": "/count", "value": 3}])
+
+    monkeypatch.setattr(rec_mod, "run_many", lambda r, w=1: [_fake(10.0, 101.0)] * 2)
+    assert rank(req, [_fake(10.0, 100.0)] * 2, [cand]) == []  # cost khiến score v2 âm
+
+    cheap = Candidate({"type": "FLEET_SIZE", "target": "TUGGER_A", "cost": 0.01},
+                      [{"target": "TUGGER_A", "path": "/count", "value": 3}])
+    monkeypatch.setattr(rec_mod, "run_many", lambda r, w=1: [_fake(10.0, 100.05)] * 2)
+    assert rank(req, [_fake(10.0, 100.0)] * 2, [cheap]) == []  # score dương nhưng lợi ích quá nhỏ
+
+
 # --- I2 / I3 / I5: validate bắt lỗi cấu hình trước khi chạy -------------------
 SRC_OK = {"key": "SRC", "archetype": "SOURCE",
           "params": {"arrivals": {"interarrival": 10}, "lots": [{"material": "X", "qty": 1}]}}
@@ -101,6 +115,23 @@ def test_validate_rejects_bad_sensor_and_effect():
         with pytest.raises(ContractError) as e:
             validate_refs(make_request([proc(**p)]))
         assert e.value.key == "M"
+
+
+@pytest.mark.parametrize("bad_params", [
+    {"cycle": 0},
+    {"cycle": {"dist": "const", "value": 0}},
+    {"cycle": {"dist": "uniform", "min": -2, "max": 0}},
+    {"cycle": {"dist": "weibull", "shape": 0, "scale": 10}},
+    {"cycle": {"dist": "not-a-distribution"}},
+    {"slots": 0},
+    {"slots": 1.5},
+])
+def test_validate_rejects_nonpositive_process_capacity(bad_params):
+    node = {"key": "M", "archetype": "PROCESS", "params": {
+        "recipes": [{"inputs": [], "outputs": [{"material": "Y", "qty": 1}]}], **bad_params}}
+    with pytest.raises(ContractError) as e:
+        validate_refs(make_request([node]))
+    assert e.value.key == "M"
 
 
 # --- I4: direct edge không giữ chỗ khi nguồn chưa có hàng ---------------------

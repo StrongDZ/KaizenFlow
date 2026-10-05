@@ -4,23 +4,26 @@ import time
 from collections import defaultdict
 
 import numpy as np
-from sim_service.detect import active_period_shares
+from sim_service.detect import ACTIVE_PERIOD_TIE_EPS_S, active_period_shares
 
 
 def reference(periods: dict, horizon: float, step: float = 60.0) -> dict[str, float]:
-    """Bản gốc (chậm): duyệt từng mốc, chọn khoảng dài nhất đang phủ mốc đó; hoà thì lấy node đứng trước."""
-    counts: dict[str, int] = defaultdict(int)
+    """Bản chậm: duyệt từng mốc, các khoảng dài nhất bằng/near nhau chia đều credit."""
+    counts: dict[str, float] = defaultdict(float)
     ticks = np.arange(0.0, horizon, step)
     for t in ticks:
-        best, best_len = None, 0.0
+        active: dict[str, float] = {}
         for subject, ps in periods.items():
             for a, b in ps:
                 if a <= t < b:
-                    if b - a > best_len:
-                        best, best_len = subject, b - a
+                    active[subject] = b - a
                     break
-        if best is not None:
-            counts[best] += 1
+        if active:
+            best_len = max(active.values())
+            tied = [subject for subject, length in active.items()
+                    if abs(length - best_len) <= ACTIVE_PERIOD_TIE_EPS_S]
+            for subject in tied:
+                counts[subject] += 1 / len(tied)
     return {s: c / len(ticks) for s, c in counts.items()}
 
 
@@ -37,11 +40,11 @@ def test_matches_the_reference_on_random_inputs():
         assert active_period_shares(periods, horizon) == reference(periods, horizon), f"trial {trial}"
 
 
-def test_ties_go_to_the_node_listed_first_and_touching_periods_are_half_open():
+def test_ties_split_credit_and_touching_periods_are_half_open():
     periods = {"A": [(0.0, 120.0)], "B": [(0.0, 120.0)], "C": [(120.0, 240.0)]}
     got = active_period_shares(periods, 240.0, step=60.0)
     assert got == reference(periods, 240.0, step=60.0)
-    assert got["A"] == 0.5 and "B" not in got and got["C"] == 0.5
+    assert got["A"] == 0.25 and got["B"] == 0.25 and got["C"] == 0.5
 
 
 def test_no_periods_gives_empty_and_empty_horizon_is_safe():

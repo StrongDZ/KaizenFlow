@@ -79,3 +79,24 @@ def test_blocked_when_output_full_and_run_still_ends():
         horizon_s=5000)
     st = run_replication(req).kpis["processes"]["M"]["state_s"]
     assert st["BLOCKED"] > 2500
+
+
+def test_process_kpis_expose_capacity_state_counts_and_wip():
+    req = make_request(
+        [source("SRC", "X", interarrival=1),
+         proc(cycle={"dist": "tri", "min": 45, "mode": 60, "max": 75}, slots=2,
+              outputs=(("Y", 2, "OK"),), in_buffer=20, out_buffer=10),
+         sink()],
+        [edge("SRC", "M", "X"), edge("M", "OUT", "Y")],
+        horizon_s=3600, sample_s=60)
+    k = run_replication(req).kpis["processes"]["M"]
+    assert k["nominal_rate"] == pytest.approx(240.0)  # 2 slots × 2 units × 3600 / mean(45,60,75)
+    assert k["effective_throughput"] == pytest.approx(k["count_ok"] * 2)
+    assert k["utilization"] == k["util"]
+    assert k["running_s"] == k["state_s"].get("RUNNING", 0.0)
+    assert k["blocked_ratio"] == pytest.approx(k["blocked_s"] / 3600)
+    assert k["starved_ratio"] == pytest.approx(k["starved_s"] / 3600)
+    assert k["down_ratio"] == pytest.approx(k["down_s"] / 3600)
+    assert sum(k[f"{state.lower()}_s"] for state in ("RUNNING", "BLOCKED", "STARVED", "DOWN", "IDLE")) == pytest.approx(3600)
+    assert k["input_wip_peak"] >= k["input_wip_end"] >= 0
+    assert k["output_wip_peak"] >= k["output_wip_end"] >= 0

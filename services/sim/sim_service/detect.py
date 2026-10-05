@@ -8,9 +8,12 @@ import numpy as np
 
 from sim_service.contract import RunRequest
 from sim_service.engine import RepResult
+from sim_service.nodes.process import process_material_rate
 
 ACTIVE = frozenset({"RUNNING", "DOWN", "SETUP"})
 WAIT_THRESHOLD_S = 120.0
+ACTIVE_PERIOD_TIE_EPS_S = 1e-6
+BOTTLENECK_SHARE_TIE_EPS = 0.01
 
 
 def _insight(kind, subject, eta, probability, severity, payload) -> dict:
@@ -38,7 +41,7 @@ def active_periods(intervals) -> list[tuple[float, float]]:
 
 
 def active_period_shares(periods: dict, horizon: float, step: float = 60.0) -> dict[str, float]:
-    """Tỉ lệ mốc thời gian mà mỗi node giữ khoảng hoạt động dài nhất (hoà thì node đứng trước). Vector hoá bằng numpy."""
+    """Tỉ lệ credit active-period; các node hoà nhau chia đều credit tại mốc đó."""
     ticks = np.arange(0.0, horizon, step)
     if len(ticks) == 0 or not periods:
         return {}
@@ -55,10 +58,51 @@ def active_period_shares(periods: dict, horizon: float, step: float = 60.0) -> d
         safe = np.where(valid, idx, 0)
         covered = valid & (ticks < ends[safe])
         lengths[i] = np.where(covered, (ends - starts)[safe], 0.0)
-    best = lengths.argmax(axis=0)  # argmax lấy phần tử đầu khi hoà, như bản duyệt tuần tự
-    has = lengths.max(axis=0) > 0
-    counts = np.bincount(best[has], minlength=len(subjects))
-    return {subjects[i]: int(c) / len(ticks) for i, c in enumerate(counts) if c > 0}
+    longest = lengths.max(axis=0)
+    has = longest > 0
+    if not has.any():
+        return {}
+    tied = np.isclose(lengths[:, has], longest[has], rtol=0.0, atol=ACTIVE_PERIOD_TIE_EPS_S)
+    credits = (tied / tied.sum(axis=0)).sum(axis=1)
+    return {subjects[i]: float(value) / len(ticks) for i, value in enumerate(credits) if value > 0}
+
+
+def _series_growth(rep: RepResult, subject: str, metric: str) -> float | None:
+    values = rep.series.get((subject, metric), [])
+    return values[-1][1] - values[0][1] if len(values) >= 2 else None
+
+
+def _process_evidence(req: RunRequest, reps: list[RepResult], subject: str) -> dict:
+    """Evidence chỉ gồm đại lượng đo được; capacity gap chỉ hợp lệ cho một upstream PROCESS trực tiếp."""
+    rows = [r.kpis["processes"].get(subject) for r in reps]
+    rows = [r for r in rows if r is not None]
+    if not rows:
+        return {}
+    names = ("nominal_rate", "effective_throughput", "utilization", "blocked_ratio", "starved_ratio")
+    evidence = {name: float(np.mean([row[name] for row in rows])) for name in names if all(name in row for row in rows)}
+
+    incoming = [e for e in req.edges if e.dst == subject]
+    processes = {n.key for n in req.nodes if n.archetype == "PROCESS"}
+    upstream = [e for e in incoming if e.src in processes]
+    series_keys = {(edge.src, f"out:{edge.material}") for edge in upstream}
+    growth_by_rep = []
+    for rep in reps:
+        values = [_series_growth(rep, src, metric) for src, metric in series_keys]
+        if values and all(value is not None for value in values):
+            growth_by_rep.append(sum(values))
+    if growth_by_rep:
+        # Absolute quantity accumulated over the simulation horizon, not a rate/slope.
+        evidence["upstream_wip_growth"] = float(np.mean(growth_by_rep))
+    if len(upstream) == 1:
+        edge = upstream[0]
+        nodes = {n.key: n for n in req.nodes}
+        upstream_rate = process_material_rate(nodes[edge.src].params, edge.material)
+        target_input_rate = process_material_rate(nodes[subject].params, edge.material, side="inputs")
+        evidence["upstream_nominal_rate"] = upstream_rate
+        evidence["target_input_capacity"] = target_input_rate
+        # Positive means upstream can feed this material faster than the bottleneck can consume it.
+        evidence["capacity_gap"] = max(0.0, upstream_rate - target_input_rate)
+    return evidence
 
 
 def detect(req: RunRequest, reps: list[RepResult]) -> list[dict]:
@@ -73,8 +117,14 @@ def detect(req: RunRequest, reps: list[RepResult]) -> list[dict]:
         shares = {k: total[k] / len(reps) for k in procs}
         top = max(shares, key=shares.get)
         if shares[top] > 0:
-            insights.append(_insight("BOTTLENECK", top, None, shares[top], 2,
-                                     {"method": "active_period", "shares": shares}))
+            top_share = shares[top]
+            co_bottlenecks = [key for key in procs if top_share - shares[key] <= BOTTLENECK_SHARE_TIE_EPS]
+            ambiguous = len(co_bottlenecks) > 1
+            payload = {"method": "active_period", "share": top_share, "shares": shares,
+                       "ambiguous": ambiguous, "co_bottlenecks": co_bottlenecks}
+            if not ambiguous:
+                payload["evidence"] = _process_evidence(req, reps, top)
+            insights.append(_insight("BOTTLENECK", top, None, top_share, 2, payload))
 
     pool_waits: dict[str, dict] = {}
     for e in req.edges:
