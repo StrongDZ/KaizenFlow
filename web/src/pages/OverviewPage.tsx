@@ -20,6 +20,7 @@ export default function OverviewPage() {
         title="Tổng quan"
         actions={
           <>
+            <Link className={btn} to="/reports/warehouse">Điều khiển kho</Link>
             <Link className={btn} to="/reports/operations">Dashboard vận hành</Link>
             <Link className={btnPrimary} to="/reports/benchmarks">Benchmark FMCG</Link>
           </>

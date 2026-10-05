@@ -67,6 +67,7 @@ export function crumbsFor(path: string, ctx: NavCtx): Crumb[] {
   if (path === '/') return [{ label: 'Tổng quan' }]
   if (path === '/reports/benchmarks') return [{ label: 'Tổng quan', to: '/' }, { label: 'Benchmark FMCG' }]
   if (path === '/reports/operations') return [{ label: 'Tổng quan', to: '/' }, { label: 'Dashboard vận hành' }]
+  if (path === '/reports/warehouse') return [{ label: 'Tổng quan', to: '/' }, { label: 'Điều khiển kho' }]
   if (path === '/models') return [{ label: 'Mô hình' }]
   if (/^\/models\/[^/]+\/versions/.test(path)) {
     return [{ label: 'Mô hình', to: '/models' }, { label: model ?? '…' }, { label: 'Phiên bản' }]
