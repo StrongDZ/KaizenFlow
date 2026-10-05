@@ -795,3 +795,66 @@ func TestDerivedBindingMayOnlyUseSignalsOfConnectedObjects(t *testing.T) {
 	// còn đầu của chính đường nối đó thì được (SRC là đầu vào của SRC>S).
 	putBindingsRaw(a, "lm", []any{derivedSum("SRC>S", "moved", term("SRC", "arrived", 1))}, 200)
 }
+
+func TestEdgePlanProposesFormulasThatCanBeSavedAsIs(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.call("GET", "/api/models/nope/live/edge-plan", nil, 404)
+	a.publishedGraph("lm", map[string]any{
+		"nodes": []any{
+			map[string]any{"key": "SRC", "node_type": "DOCK_IN", "params": map[string]any{
+				"arrivals": map[string]any{"interarrival": 60.0}, "lots": []any{map[string]any{"material": "RAW-01", "qty": 10.0}}}},
+			map[string]any{"key": "S", "node_type": "RACK_WAREHOUSE", "params": map[string]any{
+				"stock": []any{map[string]any{"material": "RAW-01", "initial": 30.0, "max": 500.0}}}},
+			map[string]any{"key": "OUT", "node_type": "SHIP_DOCK", "params": map[string]any{
+				"demand": []any{map[string]any{"kind": "TAKT", "material": "RAW-01", "takt": 60.0}}}},
+		},
+		"edges": []any{
+			map[string]any{"key": "SRC>S", "src": "SRC", "dst": "S", "material": "RAW-01", "params": map[string]any{}},
+			map[string]any{"key": "S>OUT", "src": "S", "dst": "OUT", "material": "RAW-01", "params": map[string]any{}},
+		},
+	})
+
+	// Chưa có bộ đếm nào: không đường nào suy được, và nói rõ vì sao.
+	plan := a.call("GET", "/api/models/lm/live/edge-plan", nil, 200)
+	if n := len(plan["items"].([]any)); n != 0 {
+		t.Fatalf("chưa ghép gì mà có %d công thức", n)
+	}
+	if n := len(plan["skipped"].([]any)); n != 2 {
+		t.Fatalf("skipped = %v, muốn 2 đường nối", plan["skipped"])
+	}
+
+	// Có số đã giao ở đích và tồn kho: đường vào đích suy từ fulfilled, đường vào kho suy từ cân bằng kho (ước lượng).
+	bindSource(a, "lm", "OUT", "fulfilled", "ship/out/count", "n")
+	bindSource(a, "lm", "S", "level:RAW-01", "wms/s/stock", "qty")
+	plan = a.call("GET", "/api/models/lm/live/edge-plan", nil, 200)
+	items := plan["items"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("items = %v", items)
+	}
+	est := map[string]bool{}
+	var bindings []any
+	for _, raw := range items {
+		it := raw.(map[string]any)
+		est[it["subject"].(string)] = it["estimate"].(bool)
+		bindings = append(bindings, map[string]any{"subject": it["subject"], "signal": it["signal"], "mode": "derived", "derive": it["derive"], "enabled": true})
+	}
+	if est["S>OUT"] || !est["SRC>S"] {
+		t.Fatalf("estimate = %v, muốn S>OUT là số tính từ bộ đếm và SRC>S là ước lượng", est)
+	}
+
+	// Lưu nguyên kế hoạch được (mọi công thức hợp lệ, hợp luật liền kề), rồi không còn gì để lập.
+	putBindingsRaw(a, "lm", bindings, 200)
+	plan = a.call("GET", "/api/models/lm/live/edge-plan", nil, 200)
+	if len(plan["items"].([]any)) != 0 || len(plan["skipped"].([]any)) != 0 {
+		t.Fatalf("sau khi lưu: %v", plan)
+	}
+	rep := a.call("GET", "/api/models/lm/live/check", nil, 200)
+	if rep["summary"].(map[string]any)["broken"].(float64) != 0 {
+		for _, raw := range rep["signals"].([]any) {
+			if c := raw.(map[string]any); c["status"] == "broken" {
+				t.Logf("hỏng: %v/%v: %v", c["subject"], c["signal"], c["reason"])
+			}
+		}
+		t.Fatalf("kế hoạch đã lưu làm hỏng ghép nối: %v", rep["summary"])
+	}
+}

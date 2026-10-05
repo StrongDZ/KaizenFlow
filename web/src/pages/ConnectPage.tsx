@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Sparkles } from 'lucide-react'
+import { Plus, Sparkles, Waypoints } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
@@ -8,6 +8,7 @@ import { ARCHETYPE_LABEL } from '../components/KfNode'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { BindingDialog, type BindingDraft } from '../components/live/BindingDialog'
 import { BindingsTable } from '../components/live/BindingsTable'
+import { EdgePlanDialog } from '../components/live/EdgePlanDialog'
 import { FeedControl } from '../components/live/FeedControl'
 import { ReadinessBar } from '../components/live/ReadinessBar'
 import { SignalChip } from '../components/live/SignalChip'
@@ -40,6 +41,8 @@ export default function ConnectPage() {
   const registry = useQuery({ queryKey: ['sources', model], queryFn: () => api.sources(model), refetchInterval: 4000 })
   // Độ phủ: từng tín hiệu đã có nguồn, đã tự tính, chưa có hay hỏng; chức năng nào đã đủ tín hiệu.
   const coverage = useQuery({ queryKey: ['live-check', model], queryFn: () => api.liveCheck(model), refetchInterval: 6000, retry: false })
+  // Công thức tự suy lượng hàng trên các đường nối chưa có dữ liệu (kể cả rẽ nhánh).
+  const edgePlan = useQuery({ queryKey: ['edge-plan', model], queryFn: () => api.edgePlan(model), refetchInterval: 6000, retry: false })
   const [params, setParams] = useSearchParams()
   const tab: 'node' | 'edge' | 'all' = params.get('tab') === 'edge' ? 'edge' : params.get('tab') === 'all' ? 'all' : 'node'
   const setTab = (t: 'node' | 'edge' | 'all') => setParams((p) => { const n = new URLSearchParams(p); if (t === 'node') n.delete('tab'); else n.set('tab', t); return n }, { replace: true })
@@ -48,6 +51,7 @@ export default function ConnectPage() {
   const [feature, setFeature] = useState<string | null>(null)
   const [draft, setDraft] = useState<{ d: BindingDraft; existing?: Binding } | null>(null)
   const [suggestOpen, setSuggestOpen] = useState(false)
+  const [planOpen, setPlanOpen] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
   const [openSource, setOpenSource] = useState<string | null>(null)
   const [srcQ, setSrcQ] = useState('')
@@ -153,6 +157,9 @@ export default function ConnectPage() {
           <>
             <button className={btnPrimary} disabled={suggestion.suggestions.length === 0} onClick={() => setSuggestOpen(true)}>
               <Sparkles size={12} /> Gợi ý ghép tự động{suggestion.suggestions.length > 0 ? ` (${suggestion.suggestions.length})` : ''}
+            </button>
+            <button className={btn} disabled={(edgePlan.data?.items.length ?? 0) === 0} onClick={() => setPlanOpen(true)} title="Tính lượng hàng trên các đường nối chưa có dữ liệu từ bộ đếm của máy và tồn kho">
+              <Waypoints size={12} /> Tự suy đường nối{(edgePlan.data?.items.length ?? 0) > 0 ? ` (${edgePlan.data!.items.length})` : ''}
             </button>
             <button className={btn} onClick={() => open({})}><Plus size={12} /> Ghép thủ công</button>
             <button className={btnDangerOutline} disabled={(bindings.data ?? []).length === 0} onClick={() => setConfirmClear(true)}>Xoá mọi ghép nối</button>
@@ -284,6 +291,7 @@ export default function ConnectPage() {
           open model={model} subjects={list} sources={sources} coverage={idx} live={snapshot} draft={draft.d} existing={draft.existing} onClose={() => setDraft(null)}
         />
       )}
+      {planOpen && edgePlan.data && <EdgePlanDialog open model={model} plan={edgePlan.data} subjects={list} onClose={() => setPlanOpen(false)} />}
       {suggestOpen && (
         <SuggestDialog open model={model} suggestions={suggestion.suggestions} unmatched={suggestion.unmatched} subjects={list} onClose={() => setSuggestOpen(false)} />
       )}

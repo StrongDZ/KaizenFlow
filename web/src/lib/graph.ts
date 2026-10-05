@@ -28,7 +28,7 @@ export type FlowData = {
   icon?: string
 }
 /** dots/cycleS/running chỉ có ở Control Room (hạt chạy trên edge); không bao giờ được lưu vào sơ đồ. */
-export type EdgeData = { material: string; params: Json; dots?: number; cycleS?: number; running?: boolean }
+export type EdgeData = { material: string; params: Json; dots?: number; cycleS?: number; running?: boolean; /** Lưu lượng của đường nối là số ước lượng, không phải số đo: vẽ nét đứt. */ estimated?: boolean }
 export type FlowNode = Node<FlowData, 'kf'>
 export type FlowEdge = Edge<EdgeData>
 

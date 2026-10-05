@@ -15,6 +15,7 @@ import { EmptyState, Loading, btn } from '../components/ui'
 import { useFeedStatus, useLive } from '../hooks/useLive'
 import { useModelGraph } from '../hooks/useModelGraph'
 import { useTheme } from '../hooks/useTheme'
+import { estimatedEdges } from '../lib/edgePlan'
 import { cycleSeconds, travelSeconds } from '../lib/flow'
 import { toFlow } from '../lib/graph'
 import { dotsFromRate, nodeBadge, summarize, trackPeak } from '../lib/liveFrame'
@@ -43,6 +44,8 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
   const { snapshot } = useLive(model)
   const feed = useFeedStatus()
   const agvMap = useQuery({ queryKey: ['agv-map', model], queryFn: () => api.agvMap(model), retry: false })
+  const bindingList = useQuery({ queryKey: ['bindings', model], queryFn: () => api.bindings(model) })
+  const estimated = useMemo(() => estimatedEdges(bindingList.data ?? []), [bindingList.data])
   const [panelOpen, setPanelOpen] = useState(true)
   const peak = useRef(0)
 
@@ -76,9 +79,10 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
         // Tốc độ hạt tăng chậm theo hệ số tốc độ của feed (nhanh hơn nữa là hạt nhoè), và không nhanh hơn 0,8 giây một vòng.
         cycleS: Math.max(0.8, cycleSeconds(travelSeconds(params)) / Math.sqrt(Math.max(1, speed / 4))),
         running,
+        estimated: estimated.has(e.id),
       },
     }
-  }), [flow.edges, snapshot, speed, running]) // eslint-disable-line react-hooks/exhaustive-deps
+  }), [flow.edges, snapshot, speed, running, estimated]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const incidentNodes: IncidentNode[] = useMemo(() => graph.nodes.map((n) => {
     const stock = (n.params?.stock ?? types[n.node_type]?.default_params.stock) as { material?: string }[] | undefined
@@ -109,7 +113,7 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
           <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-warn" /><b className="tabular-nums text-text">{summary.yellowStorages}</b> kho Vàng</span>
           <span><b className="tabular-nums text-text">{summary.downMachines}</b> máy hỏng</span>
           {summary.stale > 0 && <span className="text-warn"><b className="tabular-nums">{summary.stale}</b> thiết bị mất tín hiệu</span>}
-          <span className="text-faint">Chấm chạy dọc đường nối là hàng đang chảy thật; nhiều chấm là lưu lượng lớn.</span>
+          <span className="text-faint">Chấm chạy dọc đường nối là hàng đang chảy, nhiều chấm là lưu lượng lớn. Đường nét đứt là số ước lượng, không phải số đo.</span>
         </div>
       </div>
 

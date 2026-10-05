@@ -1,6 +1,6 @@
 import type {
   AgvMap, Binding, Frame, BindingInput, CoverageReport, DataSourceRow, SourceTestResult, CalibrationApplied, CalibrationResp, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
-  BandRow, CheckReport, EventRow, Graph, GraphEdge, GraphNode, InsightRow, Issue, Json, Material, MaterialDetail, MaterialUpdate, ModelSummary,
+  BandRow, CheckReport, EdgePlan, EventRow, Graph, GraphEdge, GraphNode, InsightRow, Issue, Json, Material, MaterialDetail, MaterialUpdate, ModelSummary,
   NewMaterial, NewNodeType, NewScenario, NodeType, NodeTypeDetail, NodeTypeUpdate, Run, RunDetail, RunRow, Scenario, ScenarioBody, ScenarioRow,
   SignalRow, VersionInfo,
 } from './types'
@@ -118,6 +118,7 @@ export const api = {
   deleteBinding: (key: string, id: number) => del(`/api/models/${encodeURIComponent(key)}/bindings/${id}`),
   deleteAllBindings: (key: string) => del(`/api/models/${encodeURIComponent(key)}/bindings`),
   liveCheck: (key: string) => req<CoverageReport>(`/api/models/${encodeURIComponent(key)}/live/check`),
+  edgePlan: (key: string) => req<EdgePlan>(`/api/models/${encodeURIComponent(key)}/live/edge-plan`),
   sources: (key: string) => req<{ sources: DataSourceRow[] }>(`/api/models/${encodeURIComponent(key)}/sources`).then((r) => r.sources),
   addSource: (key: string, body: { source: string; desc?: string; sample?: unknown }) =>
     post<{ source: string }>(`/api/models/${encodeURIComponent(key)}/sources`, body),

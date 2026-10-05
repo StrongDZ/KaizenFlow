@@ -12,7 +12,7 @@ export function KfEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition,
   const cycle = data?.cycleS ?? 3
   return (
     <>
-      <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} label={label} labelX={labelX} labelY={labelY} />
+      <BaseEdge id={id} path={path} markerEnd={markerEnd} style={data?.estimated ? { ...style, strokeDasharray: '6 4' } : style} label={label} labelX={labelX} labelY={labelY} />
       {Array.from({ length: dots }, (_, i) => {
         const at = (i + 0.5) / dots // đứng yên thì nằm giữa các khoảng, không dồn ở đầu đường
         const dotStyle = {

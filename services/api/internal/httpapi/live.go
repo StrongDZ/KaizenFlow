@@ -211,7 +211,7 @@ func fillHints(sv *subjectView, params map[string]any) {
 		}
 	case "PROCESS":
 		sv.CycleS = meanSeconds(params["cycle"])
-		sv.InQty, sv.OutQty = map[string]float64{}, map[string]float64{}
+		sv.InQty, sv.OutQty, sv.OutNGQty = map[string]float64{}, map[string]float64{}, map[string]float64{}
 		recipes := listAny(params["recipes"])
 		if len(recipes) == 0 {
 			return
@@ -227,9 +227,13 @@ func fillHints(sv *subjectView, params map[string]any) {
 		for _, raw := range listAny(r0["outputs"]) {
 			m, _ := raw.(map[string]any)
 			port, _ := m["port"].(string)
-			if code, _ := m["material"].(string); code != "" && port != "NG" {
+			if code, _ := m["material"].(string); code != "" {
 				q, _ := numOf(m["qty"])
-				sv.OutQty[code] = q
+				if port == "NG" {
+					sv.OutNGQty[code] = q
+				} else {
+					sv.OutQty[code] = q
+				}
 			}
 		}
 	}
@@ -293,6 +297,28 @@ func (h *handlers) liveCheck(w http.ResponseWriter, r *http.Request) {
 		rep.Problems = append(rep.Problems, *p)
 	}
 	writeJSON(w, 200, rep)
+}
+
+// edgePlan lập công thức tự tính cho mọi đường nối chưa có dữ liệu (kể cả đường rẽ nhánh): xem live.PlanEdges. Chỉ đề xuất, không lưu.
+func (h *handlers) edgePlan(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	key := chi.URLParam(r, "key")
+	g, types, err := h.modelGraph(ctx, key, false)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	subs, err := subjectsOf(g, types)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	bs, err := h.Store.ListBindings(ctx, key)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, live.PlanEdges(subs, bs))
 }
 
 func (h *handlers) liveSignals(w http.ResponseWriter, r *http.Request) {

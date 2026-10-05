@@ -48,6 +48,8 @@ type Derive struct {
 	Terms      []Term  `json:"terms,omitempty"`
 	Watch      *Ref    `json:"watch,omitempty"`
 	IdleAfterS float64 `json:"idle_after_s,omitempty"`
+	// Estimate đánh dấu công thức chỉ cho số ước lượng (chia đều, cân bằng kho) chứ không phải số đo; giao diện hiện nhãn "ước lượng".
+	Estimate bool `json:"estimate,omitempty"`
 }
 
 // Inputs trả các tín hiệu mà công thức đọc.

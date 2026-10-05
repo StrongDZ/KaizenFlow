@@ -15,6 +15,8 @@ export type BindingRow = {
   subjectName: string
   signalLabel: string
   how: 'Thiết bị' | 'Tự tính'
+  /** Tự tính nhưng chỉ cho số ước lượng (chia đều, cân bằng kho), không phải số đo. */
+  estimate: boolean
   /** Lấy từ nguồn nào, trường nào; hoặc câu công thức. */
   detail: string
   status: RowStatus
@@ -39,6 +41,7 @@ export function bindingRows(
       subjectName: s?.name ?? b.subject,
       signalLabel: sig?.label ?? b.signal,
       how: b.mode === 'derived' ? 'Tự tính' : 'Thiết bị',
+      estimate: b.mode === 'derived' && b.derive?.estimate === true,
       detail: describe(b),
       status: !b.enabled ? 'off' : s ? statusOf(b.subject, b.signal) ?? 'source' : 'broken',
       value: b.enabled ? valueOf(b.subject, b.signal) : undefined,

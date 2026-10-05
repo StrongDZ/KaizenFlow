@@ -43,6 +43,7 @@ describe('bindingRows', () => {
     expect(r.detail).toBe('plc/p|count_in')
     expect(r).toMatchObject({ subjectName: 'Máy dập', signalLabel: 'Số lượt đã nhận vật tư', how: 'Thiết bị', status: 'source', value: '188', orphan: false })
     expect(rows[2].how).toBe('Tự tính')
+    expect(rows.every((r) => r.estimate === false)).toBe(true)
     expect(rows[4]).toMatchObject({ orphan: true, subjectName: 'GONE' })
   })
   it('ghép nối đang tắt có trạng thái riêng, không hiện giá trị', () => {
@@ -71,5 +72,13 @@ describe('toggleInput', () => {
     expect(d).toMatchObject({ subject: 'A>P', signal: 'in_transit', mode: 'derived', enabled: false })
     expect(d.derive?.terms?.[0].factor).toBe(2)
     expect(d.source).toBeUndefined()
+  })
+})
+
+describe('bindingRows: ước lượng', () => {
+  it('đánh dấu ghép nối tự tính có cờ ước lượng', () => {
+    const est = b({ id: 6, subject: 'A>P', signal: 'moved', source: '', json_path: '', mode: 'derived', derive: { kind: 'sum', terms: [{ subject: 'P', signal: 'count_in', sign: 1 }], estimate: true } })
+    const rows = bindingRows([est], subjects, () => '', () => undefined, () => undefined)
+    expect(rows[0].estimate).toBe(true)
   })
 })

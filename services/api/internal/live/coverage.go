@@ -19,12 +19,13 @@ type Subject struct {
 	Dst       string      `json:"dst,omitempty"`
 	Signals   []SignalDef `json:"signals"`
 
-	Initial map[string]float64 `json:"-"` // Kho: tồn ban đầu theo vật tư
-	InQty   map[string]float64 `json:"-"` // Trạm: số đơn vị mỗi lượt dùng theo vật tư đầu vào
-	OutQty  map[string]float64 `json:"-"` // Trạm: số đơn vị mỗi lượt làm ra theo vật tư đầu ra đạt
-	CycleS  float64            `json:"-"` // Trạm: chu kỳ trung bình (giây)
-	Pool    string             `json:"-"` // Edge chạy bằng xe: đội xe
-	Lot     float64            `json:"-"` // Edge chạy bằng xe: số đơn vị mỗi chuyến
+	Initial  map[string]float64 `json:"-"` // Kho: tồn ban đầu theo vật tư
+	InQty    map[string]float64 `json:"-"` // Trạm: số đơn vị mỗi lượt dùng theo vật tư đầu vào
+	OutQty   map[string]float64 `json:"-"` // Trạm: số đơn vị mỗi lượt làm ra theo vật tư đầu ra đạt
+	OutNGQty map[string]float64 `json:"-"` // Trạm: số đơn vị mỗi lượt làm ra theo vật tư đầu ra lỗi (cổng NG)
+	CycleS   float64            `json:"-"` // Trạm: chu kỳ trung bình (giây)
+	Pool     string             `json:"-"` // Edge chạy bằng xe: đội xe
+	Lot      float64            `json:"-"` // Edge chạy bằng xe: số đơn vị mỗi chuyến
 }
 
 // Suggestion là một công thức tự tính được gợi ý, kèm một câu giải thích bằng tiếng Việt.

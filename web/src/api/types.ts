@@ -158,7 +158,11 @@ export type Frame = { dx: number; dy: number; rot_deg: number; scale: number; fl
 export type Transform = { scale?: number; offset?: number; enum?: Record<string, string>; fields?: Record<string, string>; frame?: Frame }
 /** Công thức tự tính: cộng trừ các tín hiệu khác (có hệ số nhân), hoặc trạng thái máy suy từ việc một bộ đếm còn tăng. */
 export type DeriveTerm = { subject: string; signal: string; sign: 1 | -1; factor?: number }
-export type Derive = { kind: 'sum' | 'activity'; const?: number; terms?: DeriveTerm[]; watch?: { subject: string; signal: string }; idle_after_s?: number }
+export type Derive = {
+  kind: 'sum' | 'activity'; const?: number; terms?: DeriveTerm[]; watch?: { subject: string; signal: string }; idle_after_s?: number
+  /** Số suy ra (chia đều, cân bằng kho) chứ không phải số đo. */
+  estimate?: boolean
+}
 export type Binding = {
   id: number; model_key: string; subject: string; signal: string; source: string; json_path: string; transform: Transform; enabled: boolean
   mode: 'source' | 'derived'; derive?: Derive | null
@@ -170,6 +174,10 @@ export type BindingInput = {
 /** Độ phủ ghép nối (GET /api/models/{key}/live/check). */
 export type CoverageStatus = 'source' | 'derived' | 'missing' | 'broken'
 export type DeriveSuggestion = { derive: Derive; note: string }
+/** Công thức tự tính `moved` cho một đường nối chưa có dữ liệu (GET /api/models/{key}/live/edge-plan). */
+export type PlannedEdge = { subject: string; signal: string; derive: Derive; note: string; estimate: boolean }
+export type SkippedEdge = { subject: string; signal: string; reason: string }
+export type EdgePlan = { items: PlannedEdge[]; skipped: SkippedEdge[] }
 export type SignalCoverage = {
   subject: string; signal: string; label: string; status: CoverageStatus; need: string[]; reason?: string; suggestions?: DeriveSuggestion[]
 }
