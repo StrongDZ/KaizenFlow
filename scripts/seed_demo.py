@@ -161,7 +161,15 @@ PLANT_SCENARIOS = [
 ]
 
 # Vật tư ngoài bộ mặc định của denso-mini.
-EXTRA_MATERIALS = [{"code": "RAW-02", "name": "RAW-02", "unit": "pcs"}]
+EXTRA_MATERIALS = [
+    {"code": "RAW-02", "name": "RAW-02", "unit": "pcs"},
+    {"code": "BIMBO-01", "name": "Bimbo SKU 01", "unit": "pcs"},
+    {"code": "BIMBO-02", "name": "Bimbo SKU 02", "unit": "pcs"},
+    {"code": "BIMBO-03", "name": "Bimbo SKU 03", "unit": "pcs"},
+    {"code": "CASE-01", "name": "Case SKU 01", "unit": "case"},
+    {"code": "CASE-02", "name": "Case SKU 02", "unit": "case"},
+    {"code": "CASE-03", "name": "Case SKU 03", "unit": "case"},
+]
 
 # Bản đồ AGV v2: toạ độ tính bằng mét (y hướng xuống), làn là đường gấp khúc (`path` là các điểm uốn giữa hai đầu), xe 1,2 m/s.
 # Hình dạng tự nhiên: hành lang trên chạy xiên xuống phía đông, hành lang dưới chạy lên phía tây, trạm máy thò xuống giữa hai hành lang,
@@ -212,6 +220,92 @@ PLANT_MAP = {
          ("S3", "SE"): [(98, 58)], ("SE", "B3"): [(80, 61)], ("B3", "B2"): [(59, 54)], ("B2", "B1"): [(37, 49)], ("B1", "KHO_B"): [(14, 50)],
          ("KHO_B", "KHO_A"): [(2, 31)], ("S1", "B1"): [(28, 36)], ("J2", "S2"): [(53, 20)], ("S2", "B2"): [(50, 40)],
          ("J3", "S4"): [(76, 31)], ("S4", "B3"): [(72, 49)]}),
+}
+
+FMCG_NODES = [
+    ("SUP_FMCG", "DOCK_IN", 0, 0, {"lots": [
+        {"material": "BIMBO-01", "qty": 480},
+        {"material": "BIMBO-02", "qty": 420},
+        {"material": "BIMBO-03", "qty": 400},
+    ]}, "Nhà cung cấp FMCG"),
+    ("DC_MAIN", "RACK_WAREHOUSE", 1, 0, {"stock": [
+        {"material": "BIMBO-01", "initial": 1200, "max": 4200},
+        {"material": "BIMBO-02", "initial": 950, "max": 3600},
+        {"material": "BIMBO-03", "initial": 900, "max": 3400},
+    ], "coverage_thresholds": {"red_h": 4, "yellow_low_h": 8, "yellow_high_h": 48}}, "Kho trung tâm FMCG"),
+    ("PACK_A", "PACKING", 2, -1, None, "Line đóng gói A"),
+    ("PACK_B", "PACKING", 2, 0, None, "Line đóng gói B"),
+    ("PACK_C", "PACKING", 2, 1, None, "Line đóng gói C"),
+    ("FG_A", "RACK_WAREHOUSE", 3, -1, {"stock": [{"material": "CASE-01", "initial": 180, "max": 1200}],
+                                        "coverage_thresholds": {"red_h": 2, "yellow_low_h": 6, "yellow_high_h": 36}}, "Kho thành phẩm A"),
+    ("FG_B", "RACK_WAREHOUSE", 3, 0, {"stock": [{"material": "CASE-02", "initial": 150, "max": 1000}],
+                                      "coverage_thresholds": {"red_h": 2, "yellow_low_h": 6, "yellow_high_h": 36}}, "Kho thành phẩm B"),
+    ("FG_C", "RACK_WAREHOUSE", 3, 1, {"stock": [{"material": "CASE-03", "initial": 140, "max": 900}],
+                                      "coverage_thresholds": {"red_h": 2, "yellow_low_h": 6, "yellow_high_h": 36}}, "Kho thành phẩm C"),
+    ("SHIP_A", "SHIP_DOCK", 4, -1, {"demand": [{"kind": "TAKT", "material": "CASE-01", "takt": {"dist": "exp", "mean": 360}}]}, "Depot A"),
+    ("SHIP_B", "SHIP_DOCK", 4, 0, {"demand": [{"kind": "TAKT", "material": "CASE-02", "takt": {"dist": "exp", "mean": 420}}]}, "Depot B"),
+    ("SHIP_C", "SHIP_DOCK", 4, 1, {"demand": [{"kind": "TAKT", "material": "CASE-03", "takt": {"dist": "exp", "mean": 480}}]}, "Depot C"),
+    ("TUG_FMCG_A", "TUGGER", 1, 2, {}, "Xe kéo FMCG A"),
+    ("OPS_FMCG_A", "HOOK_OPERATOR", 2, 2, {}, "Nhân sự bốc dỡ A"),
+    ("TUG_FMCG_B", "TUGGER", 3, 2, {}, "Xe kéo FMCG B"),
+    ("OPS_FMCG_B", "HOOK_OPERATOR", 4, 2, {}, "Nhân sự bốc dỡ B"),
+]
+
+FMCG_RECIPES = {
+    "PACK_A": ([("BIMBO-01", 12)], [("CASE-01", 1, "OK")]),
+    "PACK_B": ([("BIMBO-02", 10)], [("CASE-02", 1, "OK")]),
+    "PACK_C": ([("BIMBO-03", 8)], [("CASE-03", 1, "OK")]),
+}
+
+FMCG_TUG_A = {"mode": "POOL", "pool": "TUG_FMCG_A", "hook_pool": "OPS_FMCG_A", "lot": 12,
+              "travel": {"dist": "norm", "mean": 70, "sd": 10}}
+FMCG_TUG_B = {"mode": "POOL", "pool": "TUG_FMCG_B", "hook_pool": "OPS_FMCG_B", "lot": 10,
+              "travel": {"dist": "norm", "mean": 85, "sd": 12}}
+
+FMCG_EDGES = [
+    ("SUP_FMCG", "DC_MAIN", "BIMBO-01", {"lot": 480}),
+    ("SUP_FMCG", "DC_MAIN", "BIMBO-02", {"lot": 420}),
+    ("SUP_FMCG", "DC_MAIN", "BIMBO-03", {"lot": 400}),
+    ("DC_MAIN", "PACK_A", "BIMBO-01", FMCG_TUG_A),
+    ("DC_MAIN", "PACK_B", "BIMBO-02", FMCG_TUG_A),
+    ("DC_MAIN", "PACK_C", "BIMBO-03", FMCG_TUG_B),
+    ("PACK_A", "FG_A", "CASE-01", {}),
+    ("PACK_B", "FG_B", "CASE-02", {}),
+    ("PACK_C", "FG_C", "CASE-03", {}),
+    ("FG_A", "SHIP_A", "CASE-01", {}),
+    ("FG_B", "SHIP_B", "CASE-02", {}),
+    ("FG_C", "SHIP_C", "CASE-03", {}),
+]
+
+FMCG_SCENARIOS = [
+    {"name": "Baseline FMCG Cat A", "horizon_s": 86400, "replications": 20, "start_state": "WARMUP", "injections": [], "overrides": []},
+    {"name": "Tuần khuyến mãi Bimbo", "horizon_s": 86400, "replications": 20, "start_state": "WARMUP", "injections": [], "overrides": [
+        {"target": "SHIP_A", "path": "/demand/0/takt/mean", "value": 300},
+        {"target": "SHIP_B", "path": "/demand/0/takt/mean", "value": 360},
+        {"target": "SHIP_C", "path": "/demand/0/takt/mean", "value": 420},
+    ]},
+    {"name": "Depot B chỉ còn 1 xe kéo", "horizon_s": 86400, "replications": 20, "start_state": "WARMUP", "injections": [], "overrides": [
+        {"target": "TUG_FMCG_B", "path": "/count", "value": 1},
+    ]},
+]
+
+FMCG_MAP = {
+    "unit_m": 1.5, "speed_mps": 1.25,
+    "points": [_pt("DC", 5, 20, "station", "DC_MAIN"), _pt("J1", 25, 10), _pt("J2", 45, 10), _pt("J3", 65, 10), _pt("NE", 85, 10),
+               _pt("SE", 85, 35), _pt("B3", 65, 35), _pt("B2", 45, 35), _pt("B1", 25, 35), _pt("SW", 5, 35),
+               _pt("P1", 25, 22, "station", "PACK_A"), _pt("P2", 45, 22, "station", "PACK_B"), _pt("P3", 65, 22, "station", "PACK_C")],
+    "lanes": _lanes([("DC", "J1"), ("J1", "J2"), ("J2", "J3"), ("J3", "NE"), ("NE", "SE"), ("SE", "B3"), ("B3", "B2"), ("B2", "B1"),
+                     ("B1", "SW"), ("SW", "DC"), ("J1", "P1"), ("P1", "B1"), ("J2", "P2"), ("P2", "B2"), ("J3", "P3"), ("P3", "B3")]),
+}
+
+FMCG_MODEL = {
+    "key": "bimbo-fmcg",
+    "grid": (40, 230, 210, 140),
+    "nodes": FMCG_NODES,
+    "recipes": FMCG_RECIPES,
+    "edges": FMCG_EDGES,
+    "scenarios": FMCG_SCENARIOS,
+    "map": FMCG_MAP,
 }
 
 MODELS = [
@@ -274,6 +368,15 @@ def seed_model(api, model, existing):
     key = model["key"]
     if key in existing:
         m = existing[key]
+        if m["status"] == "DRAFT" and m["scenarios"] == 0:
+            vid = m["latest_version_id"]
+            call(api, "PUT", f"/api/versions/{vid}/graph", {"nodes": node_rows(model), "edges": edge_rows(model["edges"])})
+            call(api, "POST", f"/api/versions/{vid}/publish")
+            ids = [call(api, "POST", "/api/scenarios", {"model_version_id": vid, **sc})["id"] for sc in model["scenarios"]]
+            print(f"Đã hoàn tất lại '{key}' version {vid} (PUBLISHED), scenario {', '.join(map(str, ids))}.")
+            ensure_map(api, model)
+            print(f"Mở http://localhost:5173/versions/{vid}/scenarios rồi bấm Chạy.")
+            return
         print(f"'{key}' đã có: version {m['latest_version_id']} ({m['status']}) — bỏ qua.")
         print(f"Mở http://localhost:5173/versions/{m['latest_version_id']}/scenarios")
         ensure_map(api, model)
@@ -290,13 +393,16 @@ def seed_model(api, model, existing):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--api", default="http://localhost:8080")
-    api = ap.parse_args().api.rstrip("/")
+    ap.add_argument("--with-fmcg", action="store_true", help="Seed thêm model FMCG/Bimbo benchmark demo.")
+    args = ap.parse_args()
+    api = args.api.rstrip("/")
     have = {m["code"] for m in call(api, "GET", "/api/materials")}
     for mat in EXTRA_MATERIALS:
         if mat["code"] not in have:
             call(api, "POST", "/api/materials", mat)
     existing = {m["model_key"]: m for m in call(api, "GET", "/api/models")}
-    for model in MODELS:
+    models = MODELS + ([FMCG_MODEL] if args.with_fmcg else [])
+    for model in models:
         seed_model(api, model, existing)
 
 

@@ -20,6 +20,7 @@ import NodeTypeDetailPage from './pages/NodeTypeDetailPage'
 import NodeTypeEditPage from './pages/NodeTypeEditPage'
 import NodeTypeNewPage from './pages/NodeTypeNewPage'
 import NodeTypesPage from './pages/NodeTypesPage'
+import OperationsDashboardPage from './pages/OperationsDashboardPage'
 import OverviewPage from './pages/OverviewPage'
 import ReportPage from './pages/ReportPage'
 import RunRecommendationsPage from './pages/RunRecommendationsPage'
@@ -74,6 +75,8 @@ export default function App() {
             <Route path="/runs/:id/sensors" element={<RunSensorsPage />} />
             <Route path="/runs/:id/recommendations" element={<RunRecommendationsPage />} />
             <Route path="/runs/:id/report" element={<ReportPage />} />
+            <Route path="/reports/benchmarks" element={<ReportPage mode="benchmarks" />} />
+            <Route path="/reports/operations" element={<OperationsDashboardPage />} />
             <Route path="/compare" element={<ComparePage />} />
             <Route path="/library" element={<LibraryLayout />}>
               <Route index element={<Navigate to="node-types" replace />} />

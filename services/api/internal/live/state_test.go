@@ -54,6 +54,33 @@ func TestStateRateForMoved(t *testing.T) {
 	}
 }
 
+func TestStateSignalRateUsesRecentHistory(t *testing.T) {
+	s := NewState()
+	wall := time.Now()
+	points := []struct {
+		at time.Time
+		v  float64
+	}{
+		{t0, 10},
+		{t0.Add(2 * time.Hour), 34},
+		{t0.Add(4 * time.Hour), 58},
+		{t0.Add(6 * time.Hour), 82},
+	}
+	for _, p := range points {
+		s.Apply("m", []Reading{num("SHIP_A", "demand", p.at, p.v)}, wall)
+	}
+	rate, samples, spanH, ok := s.SignalRate("m", "SHIP_A", "demand", 6*time.Hour)
+	if !ok {
+		t.Fatal("SignalRate returned false")
+	}
+	if samples != 4 || spanH < 5.9 || spanH > 6.1 {
+		t.Fatalf("SignalRate window = samples:%d span:%v", samples, spanH)
+	}
+	if rate < 11.9 || rate > 12.1 {
+		t.Fatalf("SignalRate = %v, want 12/h", rate)
+	}
+}
+
 func TestStateCoverageFromLevelDrops(t *testing.T) {
 	s := NewState()
 	wall := time.Now()
@@ -87,10 +114,10 @@ func TestCoverageNeedsHistoryAndReportsNoUse(t *testing.T) {
 func TestStatePrunesHistoryToWindow(t *testing.T) {
 	s := NewState()
 	wall := time.Now()
-	for i := 0; i < 300; i++ {
+	for i := 0; i < 600; i++ {
 		s.Apply("m", []Reading{num("K", "level:X", t0.Add(time.Duration(i)*time.Minute), 1000-float64(i))}, wall)
 	}
-	if n := s.historyLen("m", "K", "level:X"); n > 130 {
+	if n := s.historyLen("m", "K", "level:X"); n > 380 {
 		t.Errorf("history not pruned: %d", n)
 	}
 }

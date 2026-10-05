@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/kaizenflow/api/internal/fmcg"
 	"github.com/kaizenflow/api/internal/livesvc"
 	"github.com/kaizenflow/api/internal/runs"
 	"github.com/kaizenflow/api/internal/simclient"
@@ -21,6 +22,7 @@ type Deps struct {
 	Hub       *ws.Hub
 	Validator *validate.Validator
 	Live      *livesvc.Service
+	FMCGNowcast fmcg.NowcastProvider
 	// FeedURL là địa chỉ feed service (bộ sinh dữ liệu giả lập); rỗng thì /api/feed/* trả 503.
 	FeedURL string
 }

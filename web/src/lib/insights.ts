@@ -8,6 +8,8 @@ export type Action = {
   duration_s?: number
   delta?: number
   rop?: number
+  qty?: number
+  material?: string
   from_rate?: number
   to_rate?: number
   from_slots?: number
@@ -47,6 +49,7 @@ export function describeAction(a: Action): string {
     case 'FLEET_SIZE':
       return `Thêm 1 xe cho ${a.target}`
     case 'REPLENISH':
+      if (typeof a.qty === 'number') return `Bù ${a.qty.toFixed(1).replace('.', ',')} ${a.material ?? ''} vào ${a.target}`.trim()
       return `Nâng điểm đặt hàng của ${a.target} lên ${a.rop ?? '?'}`
     case 'INCREASE_PROCESS_CAPACITY':
       return `Tăng năng lực ${a.target} thêm ${a.delta ?? 1} slot`

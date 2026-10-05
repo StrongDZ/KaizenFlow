@@ -25,6 +25,7 @@ describe('format', () => {
 describe('tables formatting', () => {
   it('shows a dash for missing dates and never Invalid Date', () => {
     expect(fmtDateTime(null)).toBe('—')
+    expect(fmtDateTime('0001-01-01T00:00:00Z')).toBe('—')
     expect(fmtDateTime('không phải ngày')).toBe('—')
     expect(fmtDateTime('2026-10-01T08:00:00Z')).not.toBe('—')
   })

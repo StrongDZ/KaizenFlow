@@ -27,6 +27,7 @@ export function fmtStep(ms: number): string {
 
 export function fmtDateTime(iso: string | null): string {
   if (!iso) return '—'
+  if (iso <= '0002') return '—'
   const t = Date.parse(iso)
   if (Number.isNaN(t)) return '—'
   return new Date(t).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })

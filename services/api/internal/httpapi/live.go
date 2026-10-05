@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/kaizenflow/api/internal/fmcg"
 	"github.com/kaizenflow/api/internal/live"
 	"github.com/kaizenflow/api/internal/livesvc"
 	"github.com/kaizenflow/api/internal/resolve"
@@ -626,6 +627,158 @@ const (
 	forecastReps = 20
 )
 
+func (h *handlers) fmcgObservations(model string, g *store.Graph, types map[string]store.NodeType) (map[string]fmcg.Observation, error) {
+	if model != fmcg.ModelKey {
+		return nil, nil
+	}
+	out := map[string]fmcg.Observation{}
+	for _, n := range g.Nodes {
+		t, ok := types[n.NodeType]
+		if !ok || t.Archetype != "SINK" {
+			continue
+		}
+		obs := fmcg.Observation{}
+		for _, signal := range []string{"demand", "fulfilled", "backorder"} {
+			rate, samples, spanH, ok := h.Live.State().SignalRate(model, n.Key, signal, 6*time.Hour)
+			if !ok || rate <= 0 {
+				continue
+			}
+			switch signal {
+			case "demand":
+				obs.DemandPerHour = rate
+			case "fulfilled":
+				obs.FulfilledPerHour = rate
+			case "backorder":
+				obs.BackorderPerHour = rate
+			}
+			if samples > obs.Samples {
+				obs.Samples = samples
+			}
+			if spanH > obs.WindowHours {
+				obs.WindowHours = spanH
+			}
+		}
+		if obs.DemandPerHour > 0 || obs.FulfilledPerHour > 0 || obs.BackorderPerHour > 0 {
+			out[n.Key] = obs
+		}
+	}
+	return out, nil
+}
+
+func toAnyMaps(v any) []map[string]any {
+	switch xs := v.(type) {
+	case []map[string]any:
+		return xs
+	case []any:
+		out := make([]map[string]any, 0, len(xs))
+		for _, x := range xs {
+			if m, ok := x.(map[string]any); ok {
+				out = append(out, m)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func severityValue(v any, def int) int {
+	switch x := v.(type) {
+	case int:
+		return x
+	case int64:
+		return int(x)
+	case float64:
+		return int(x)
+	default:
+		return def
+	}
+}
+
+func (h *handlers) insertFmcgRecommendations(ctx context.Context, runID int64, forecastMeta map[string]any) error {
+	if forecastMeta == nil {
+		return nil
+	}
+	wantKind := "RECOMMENDATION"
+	wantSource, _ := forecastMeta["provider"].(string)
+	if wantSource == "" {
+		wantSource = "FMCG_RUNTIME"
+	}
+	rows := toAnyMaps(forecastMeta["replenishment"])
+	insights := make([]store.Insight, 0, len(rows))
+	for _, row := range rows {
+		subject, _ := row["subject"].(string)
+		candidates := toAnyMaps(row["candidates"])
+		kind := wantKind
+		source := "FMCG_RUNTIME"
+		if named, _ := row["source"].(string); named != "" {
+			source = named
+		}
+		priority, _ := row["priority"].(string)
+		reason, _ := row["reason"].(string)
+		material, _ := row["material"].(string)
+		hasShortage, _ := row["has_shortage_signal"].(bool)
+		if len(candidates) == 0 {
+			if !hasShortage {
+				if priority == "" {
+					continue
+				}
+				if priority == "LOW" {
+					continue
+				}
+			}
+			kind = "RECOMMENDATION"
+		}
+		payload := map[string]any{
+			"source":               source,
+			"metric":               "replenishment",
+			"priority":             priority,
+			"reason":               reason,
+			"material":             material,
+			"live_basis":           row["live_basis"],
+			"target_stock":         row["target_stock"],
+			"current_stock":        row["stock"],
+			"recommended_replenish": row["recommended_replenish"],
+			"pre_coverage_hours":   row["pre_coverage_hours"],
+			"projected_coverage_h": row["projected_coverage_h"],
+			"coverage_pressure":    row["coverage_pressure"],
+			"backorder_per_hour":   row["backorder_per_hour"],
+			"upstream_sources":     row["upstream_sources"],
+			"upstream_label":       row["upstream_label"],
+			"upstream_node":        row["upstream_node"],
+			"planned_replenish_qty": row["planned_replenish_qty"],
+			"provider":             row["provider"],
+			"has_shortage_signal":  hasShortage,
+		}
+		if len(candidates) == 0 {
+			payload["kind"] = "shortage_alert"
+		} else {
+			payload["candidates"] = candidates
+		}
+		sev := severityValue(row["severity"], 3)
+		if len(candidates) == 0 {
+			if sev < 3 {
+				sev = 3
+			}
+		}
+		run := runID
+		subj := subject
+		insights = append(insights, store.Insight{
+			SimRunID:   &run,
+			Kind:       kind,
+			SubjectKey: &subj,
+			Severity:   &sev,
+			Payload:    payload,
+		})
+	}
+	for i := range insights {
+		if _, err := h.Store.InsertInsight(ctx, insights[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // liveForecast dựng scenario NOWCAST từ trạng thái live hiện tại (tồn kho, máy hỏng) rồi chạy nó, bắt đầu từ giờ nhà máy hiện tại.
 func (h *handlers) liveForecast(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -684,11 +837,47 @@ func (h *handlers) liveForecast(w http.ResponseWriter, r *http.Request) {
 	if injections == nil {
 		injections = []map[string]any{}
 	}
+	actionLive := map[string]any{"at": now, "notes": snap.Notes, "levels": snap.Levels, "down": snap.Down}
+	var forecastMeta map[string]any
+	if key == fmcg.ModelKey {
+		obs, err := h.fmcgObservations(key, g, types)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		provider := h.FMCGNowcast
+		if provider == nil {
+			provider = fmcg.DefaultNowcastProvider()
+		}
+		result, err := provider.BuildNowcast(ctx, fmcg.BuildRequest{
+			Graph:        g,
+			Types:        types,
+			Levels:       snap.Levels,
+			Observations: obs,
+			Now:          now,
+			HorizonS:     body.HorizonS,
+		})
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		if len(result.Overrides) > 0 {
+			overrides = append(overrides, result.Overrides...)
+		}
+		if result.Meta != nil {
+			if result.Meta["provider"] == nil {
+				result.Meta["provider"] = provider.Name()
+			}
+			forecastMeta = result.Meta
+			actionLive["forecast"] = result.Meta
+			actionLive["forecast_provider"] = provider.Name()
+		}
+	}
 	sc := store.Scenario{
 		ModelVersionID: g.VersionID, Origin: "NOWCAST", HorizonS: body.HorizonS, StartState: "LIVE_SNAPSHOT",
 		Name:      "Dự báo từ trạng thái live lúc " + now.In(time.FixedZone("", 7*3600)).Format("15:04 02/01"),
 		Overrides: overrides, Injections: injections, Replications: reps,
-		Action: map[string]any{"live_snapshot": map[string]any{"at": now, "notes": snap.Notes, "levels": snap.Levels, "down": snap.Down}},
+		Action: map[string]any{"live_snapshot": actionLive},
 	}
 	sid, err := h.Store.CreateScenario(ctx, sc)
 	if err != nil {
@@ -703,6 +892,12 @@ func (h *handlers) liveForecast(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.Store.SupersedeDrift(ctx, key); err != nil { // dự báo mới thay dự báo cũ
 		writeErr(w, err)
 		return
+	}
+	if key == fmcg.ModelKey {
+		if err := h.insertFmcgRecommendations(ctx, rid, forecastMeta); err != nil {
+			writeErr(w, err)
+			return
+		}
 	}
 	writeJSON(w, 202, map[string]any{"scenario_id": sid, "run_id": rid, "notes": snap.Notes, "at": now})
 }

@@ -61,7 +61,54 @@ export function ForecastDock({ model, snapshot, names, insetRight }: {
     (bands.data ?? []).map((b) => ({ t: Date.parse(b.t), p10: b.p10, p50: b.p50, p90: b.p90 })),
     startMs === undefined ? undefined : startMs - HISTORY_S * 1000,
   ), [actual.data, bands.data, startMs])
-  const notes = ((scenario.data?.action as { live_snapshot?: { notes?: string[] } } | null)?.live_snapshot?.notes) ?? []
+  const liveMeta = ((scenario.data?.action as {
+    live_snapshot?: {
+      notes?: string[]
+      forecast?: {
+        label?: string
+        method?: string
+        notes?: string[]
+        replenishment?: Array<{
+          subject: string
+          label?: string
+          material?: string
+          priority?: string
+          priority_score?: number
+          source?: string
+          stock?: number
+          target_stock?: number
+          recommended_replenish?: number
+          pre_coverage_hours?: number
+          projected_coverage_h?: number
+          coverage_pressure?: number
+          backorder_per_hour?: number
+          live_basis?: string
+          upstream_sources?: string[]
+          estimated_recovery_h?: number
+          reason?: string
+        }>
+        series?: Array<{
+          subject: string
+          label?: string
+          material?: string
+          source?: string
+          live_basis?: string
+          baseline_per_hour?: number
+          demand_per_hour?: number
+          fulfilled_per_hour?: number
+          backorder_per_hour?: number
+          recent_per_hour?: number
+          blend_per_hour?: number
+          pre_coverage_hours?: number
+          coverage_hours?: number
+          coverage_pressure?: number
+        }>
+      }
+    }
+  } | null)?.live_snapshot) ?? null
+  const notes = liveMeta?.notes ?? []
+  const forecastMeta = liveMeta?.forecast
+  const replenishment = forecastMeta?.replenishment ?? []
   const working = run && (run.status === 'QUEUED' || run.status === 'RUNNING')
 
   return (
@@ -116,10 +163,56 @@ export function ForecastDock({ model, snapshot, names, insetRight }: {
               <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted">
                 <span><i className="mr-1 inline-block h-0.5 w-4 bg-ok align-middle" />thực tế</span>
                 <span><i className="mr-1 inline-block h-2 w-4 bg-muted/40 align-middle" />dải dự báo (80% khả năng)</span>
+                {forecastMeta?.label && (
+                  <span className="rounded-full border border-line px-2 py-0.5 text-text">
+                    {forecastMeta.label}
+                  </span>
+                )}
+                {forecastMeta?.series?.map((s) => (
+                  <span key={s.subject} className="rounded-full border border-line px-2 py-0.5">
+                    {s.label ?? s.subject}: {Number(s.blend_per_hour ?? 0).toFixed(1)}/h
+                    {typeof s.demand_per_hour === 'number' ? `, demand ${Number(s.demand_per_hour).toFixed(1)}/h` : ''}
+                    {typeof s.fulfilled_per_hour === 'number' ? `, fulfill ${Number(s.fulfilled_per_hour).toFixed(1)}/h` : ''}
+                    {typeof s.backorder_per_hour === 'number' ? `, backorder ${Number(s.backorder_per_hour).toFixed(1)}/h` : ''}
+                    {typeof s.recent_per_hour === 'number' ? `, live ${Number(s.recent_per_hour).toFixed(1)}/h` : ''}
+                    {s.live_basis ? `, basis ${s.live_basis}` : ''}
+                    {typeof s.pre_coverage_hours === 'number' ? `, phủ trước boost ${Number(s.pre_coverage_hours).toFixed(1)}h` : ''}
+                    {typeof s.coverage_hours === 'number' ? `, phủ ${Number(s.coverage_hours).toFixed(1)}h` : ''}
+                    {typeof s.coverage_pressure === 'number' ? `, pressure ${Math.round(Number(s.coverage_pressure) * 100)}%` : ''}
+                  </span>
+                ))}
                 {notes.length > 0 && (
                   <details className="ml-auto">
                     <summary className="cursor-pointer">Điểm xuất phát của dự báo</summary>
                     <ul className="mt-1 max-h-24 list-disc space-y-0.5 overflow-y-auto pl-4">{notes.map((n) => <li key={n}>{n}</li>)}</ul>
+                  </details>
+                )}
+                {forecastMeta?.notes && forecastMeta.notes.length > 0 && (
+                  <details>
+                    <summary className="cursor-pointer">Booster FMCG</summary>
+                    <ul className="mt-1 max-h-24 list-disc space-y-0.5 overflow-y-auto pl-4">{forecastMeta.notes.map((n) => <li key={n}>{n}</li>)}</ul>
+                  </details>
+                )}
+                {replenishment.length > 0 && (
+                  <details>
+                    <summary className="cursor-pointer">Ưu tiên bù hàng ({replenishment.length})</summary>
+                    <ul className="mt-1 max-h-28 space-y-1 overflow-y-auto">
+                      {replenishment.map((r) => (
+                        <li key={`${r.subject}-${r.material}`} className="rounded-lg border border-line px-2 py-1">
+                          <div className="font-medium text-text">
+                            {r.label ?? r.subject} - {r.priority} - bù {Number(r.recommended_replenish ?? 0).toFixed(1)} {r.material}
+                          </div>
+                          <div>
+                            tồn {Number(r.stock ?? 0).toFixed(1)}, mục tiêu {Number(r.target_stock ?? 0).toFixed(1)},
+                            phủ trước boost {Number(r.pre_coverage_hours ?? 0).toFixed(1)}h,
+                            pressure {Math.round(Number(r.coverage_pressure ?? 0) * 100)}%
+                            {typeof r.backorder_per_hour === 'number' ? `, backorder ${Number(r.backorder_per_hour).toFixed(1)}/h` : ''}
+                            {typeof r.estimated_recovery_h === 'number' ? `, hồi phục ${Number(r.estimated_recovery_h).toFixed(1)}h` : ''}
+                          </div>
+                          {r.reason && <div>{r.reason}</div>}
+                        </li>
+                      ))}
+                    </ul>
                   </details>
                 )}
               </div>
@@ -130,4 +223,3 @@ export function ForecastDock({ model, snapshot, names, insetRight }: {
     </div>
   )
 }
-
