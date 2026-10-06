@@ -15,11 +15,11 @@ import { BandChart, axisLine, axisTick, tooltipProps } from '../components/Chart
 import { ScenarioTimeline } from '../components/scenario/ScenarioTimeline'
 import { DataTable, type Column } from '../components/table/DataTable'
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, Tag, btn, btnPrimary } from '../components/ui'
-import { candidatesOf, describeAction, describeInsight, kpiP50 } from '../lib/insights'
+import { candidatesOf, describeAction, describeInsight, evidenceRows, kpiBand, tradeOffRows, type Candidate } from '../lib/insights'
 import { fmtDelta } from '../lib/format'
 import { byCode, thresholdsFor } from '../lib/model'
 import { clip, indexBands, series } from '../lib/replay'
-import { describeInjection, describeOverride, formatScenarioDuration } from '../lib/scenarioView'
+import { FULL_DETAIL_MAX_HORIZON_S, describeInjection, describeOverride, formatScenarioDuration, scenarioWarmupSeconds, startStateLabel } from '../lib/scenarioView'
 
 type ReportMode = 'run' | 'benchmarks'
 
@@ -78,6 +78,66 @@ type PerSkuRow = {
   baseline_old_HW_acc: number
   hybrid_final_acc: number
   best_method: string
+}
+
+const CANDIDATE_METRICS = [
+  { key: 'throughput', label: 'Sản lượng', scale: 1, suffix: '' },
+  { key: 'red_minutes', label: 'Phút Đỏ', scale: 1, suffix: ' phút' },
+  { key: 'backorder', label: 'Đơn thiếu', scale: 1, suffix: '' },
+  { key: 'blocked_s', label: 'Blocked', scale: 1 / 60, suffix: ' phút' },
+  { key: 'starved_s', label: 'Starved', scale: 1 / 60, suffix: ' phút' },
+  { key: 'wip_peak', label: 'Đỉnh WIP', scale: 1, suffix: '' },
+]
+
+const metricNumber = (value: unknown, scale = 1) => typeof value === 'number' && Number.isFinite(value) ? value * scale : undefined
+const metricText = (value: number | undefined, suffix = '', signed = false) => value === undefined
+  ? '—'
+  : `${signed && value > 0 ? '+' : ''}${value.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}${suffix}`
+
+function CandidateReport({ candidate }: { candidate: Candidate }) {
+  const baseline = candidate.expected_impact?.baseline ?? {}
+  const changed = candidate.expected_impact?.candidate ?? {}
+  const delta = candidate.expected_impact?.delta ?? {}
+  const metrics = CANDIDATE_METRICS.map((metric) => ({
+    ...metric,
+    baseline: metricNumber(baseline[metric.key], metric.scale),
+    candidate: metricNumber(changed[metric.key], metric.scale),
+    delta: metricNumber(delta[metric.key], metric.scale),
+  })).filter((metric) => metric.baseline !== undefined || metric.candidate !== undefined || metric.delta !== undefined)
+  const evidence = evidenceRows(candidate.evidence)
+  const tradeOffs = tradeOffRows(candidate)
+  return (
+    <div className="break-inside-avoid rounded border p-3">
+      <div className="flex items-start gap-3">
+        <b className="text-sm">#{candidate.rank} · {describeAction(candidate.action)}</b>
+        {candidate.score_v2 !== undefined && <span className="ml-auto text-xs text-muted">Điểm xếp hạng {candidate.score_v2.toFixed(3)}</span>}
+      </div>
+      {candidate.reason && <p className="mt-1 text-xs text-muted"><b>Vì sao:</b> {candidate.reason}</p>}
+      {evidence.length > 0 && (
+        <div className="mt-2 text-xs">
+          <b>Bằng chứng:</b> {evidence.map((row) => `${row.label}: ${row.value}`).join(' · ')}
+        </div>
+      )}
+      {metrics.length > 0 && (
+        <table className="mt-2 w-full text-xs">
+          <thead className="text-muted"><tr><th className="text-left">KPI trung bình</th><th className="text-right">Baseline</th><th className="text-right">Candidate</th><th className="text-right">Delta</th></tr></thead>
+          <tbody>
+            {metrics.map((metric) => (
+              <tr key={metric.key} className="border-t">
+                <td className="py-1">{metric.label}</td>
+                <td className="text-right">{metricText(metric.baseline, metric.suffix)}</td>
+                <td className="text-right">{metricText(metric.candidate, metric.suffix)}</td>
+                <td className="text-right font-medium">{metricText(metric.delta, metric.suffix, true)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="mt-2 text-xs">
+        <b>Đánh đổi:</b> {tradeOffs.length > 0 ? tradeOffs.map((row) => `${row.label}: ${row.value}`).join(' · ') : 'Không phát hiện KPI bảo vệ nào xấu đi trong kết quả mô phỏng.'}
+      </div>
+    </div>
+  )
 }
 
 async function loadJson<T>(path: string): Promise<T> {
@@ -295,8 +355,19 @@ function RunReportPage() {
   const risky = r.insights.filter((i) => i.kind === 'RED_RISK').map((i) => i.subject_key ?? '')
   const storages = graph.data.nodes.filter((n) => risky.includes(n.key))
   const candidates = r.insights.filter((i) => i.kind === 'RECOMMENDATION').flatMap((i) => candidatesOf(i))
-  const kpi = (k: string) => kpiP50(r.kpis, k)?.toFixed(1) ?? '—'
-  const serviceLevel = kpiP50(r.kpis, 'service_level')
+  const kpiRows = [
+    { key: 'throughput', label: 'Sản lượng xuất', percent: false },
+    { key: 'red_minutes', label: 'Tổng phút Đỏ', percent: false },
+    { key: 'backorder_end', label: 'Nợ đơn cuối kỳ', percent: false },
+    { key: 'service_level', label: 'Mức phục vụ', percent: true },
+  ].map((row) => ({ ...row, band: kpiBand(r.kpis, row.key) }))
+  const fullDetail = scenario.data.horizon_s <= FULL_DETAIL_MAX_HORIZON_S
+  const warmupS = scenarioWarmupSeconds(scenario.data.start_state, graph.data.settings)
+  const totalPerReplicationS = scenario.data.horizon_s + warmupS
+  const effectiveSeed = scenario.data.seed ?? r.id
+  const bandText = (value: number | undefined, percent: boolean) => value === undefined
+    ? '—'
+    : percent ? `${(value * 100).toFixed(1)}%` : value.toLocaleString('vi-VN', { maximumFractionDigits: 1 })
   return (
     <div data-theme="light" className="min-h-full bg-bg text-text">
       <div className="mx-auto max-w-4xl space-y-5 p-8 print:p-0">
@@ -313,16 +384,19 @@ function RunReportPage() {
 
         <section>
           <h2 className="mb-2 font-semibold">1. Thiết lập scenario</h2>
-          <div className="grid grid-cols-3 gap-3 text-sm">
-            <div className="rounded border p-2"><div className="text-xs text-muted">Thời lượng</div><b>{formatScenarioDuration(scenario.data.horizon_s)}</b></div>
+          <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-3">
+            <div className="rounded border p-2"><div className="text-xs text-muted">Horizon tính KPI</div><b>{formatScenarioDuration(scenario.data.horizon_s)}</b></div>
+            <div className="rounded border p-2"><div className="text-xs text-muted">Warm-up ngoài KPI</div><b>{warmupS > 0 ? formatScenarioDuration(warmupS) : 'Không dùng'}</b></div>
+            <div className="rounded border p-2"><div className="text-xs text-muted">Tổng mỗi lần chạy</div><b>{formatScenarioDuration(totalPerReplicationS)}</b></div>
             <div className="rounded border p-2"><div className="text-xs text-muted">Lần lặp</div><b>{scenario.data.replications}</b></div>
-            <div className="rounded border p-2"><div className="text-xs text-muted">Khởi đầu</div><b>{scenario.data.start_state}</b></div>
+            <div className="rounded border p-2"><div className="text-xs text-muted">Khởi đầu</div><b>{startStateLabel(scenario.data.start_state)}</b></div>
+            <div className="rounded border p-2"><div className="text-xs text-muted">Seed hiệu lực</div><b>{effectiveSeed}</b></div>
           </div>
           <div className="mt-3 break-inside-avoid rounded border p-3">
             <ScenarioTimeline
               horizonS={scenario.data.horizon_s}
               events={scenario.data.injections.map((i) => describeInjection(i))}
-              startLabel={scenario.data.start_state}
+              startLabel={startStateLabel(scenario.data.start_state)}
             />
           </div>
           {scenario.data.overrides.length > 0 && (
@@ -339,15 +413,21 @@ function RunReportPage() {
         </section>
 
         <section>
-          <h2 className="mb-2 font-semibold">2. Chỉ số chính (trung vị)</h2>
+          <h2 className="mb-2 font-semibold">2. Chỉ số chính và độ bất định Monte Carlo</h2>
           <table className="w-full text-sm">
+            <thead className="text-xs text-muted"><tr><th className="py-1 text-left">KPI</th><th className="text-right">P10</th><th className="text-right">P50 · trung vị</th><th className="text-right">P90</th></tr></thead>
             <tbody>
-              <tr className="border-t"><td className="py-1">Sản lượng xuất</td><td className="text-right">{kpi('throughput')}</td></tr>
-              <tr className="border-t"><td className="py-1">Tổng phút Đỏ</td><td className="text-right">{kpi('red_minutes')}</td></tr>
-              <tr className="border-t"><td className="py-1">Nợ đơn cuối kỳ</td><td className="text-right">{kpi('backorder_end')}</td></tr>
-              <tr className="border-t"><td className="py-1">Mức phục vụ</td><td className="text-right">{serviceLevel === undefined ? '—' : `${(serviceLevel * 100).toFixed(1)}%`}</td></tr>
+              {kpiRows.map((row) => (
+                <tr key={row.key} className="border-t">
+                  <td className="py-1">{row.label}</td>
+                  <td className="text-right">{bandText(row.band?.p10, row.percent)}</td>
+                  <td className="text-right font-medium">{bandText(row.band?.p50, row.percent)}</td>
+                  <td className="text-right">{bandText(row.band?.p90, row.percent)}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
+          <p className="mt-1 text-xs text-muted">P10–P90 thể hiện độ phân tán giữa các lần lặp; không nên ra quyết định chỉ từ P50.</p>
         </section>
 
         <section>
@@ -364,20 +444,12 @@ function RunReportPage() {
         </section>
 
         <section>
-          <h2 className="mb-2 font-semibold">4. Hành động đề xuất (đã kiểm chứng bằng mô phỏng)</h2>
-          {candidates.length === 0 && <div className="text-sm text-muted">Không có hành động nào cải thiện được kết quả.</div>}
-          <table className="w-full text-sm">
-            <tbody>
-              {candidates.map((c) => (
-                <tr key={c.rank} className="border-t align-top">
-                  <td className="py-1">#{c.rank}</td>
-                  <td className="py-1"><b>{describeAction(c.action)}</b>{c.reason && <span className="mt-0.5 block text-xs text-muted">{c.reason}</span>}</td>
-                  <td className="text-right">−{c.delta_kpi.red_minutes.toFixed(1)} phút Đỏ</td>
-                  <td className="text-right">{c.delta_kpi.throughput >= 0 ? '+' : ''}{c.delta_kpi.throughput.toFixed(1)} sản lượng</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <h2 className="mb-2 font-semibold">4. Hành động đề xuất được đánh giá bằng mô phỏng</h2>
+          {!fullDetail && (
+            <Notice>Recommendation không được chạy vì scenario dài hơn 12 giờ. Đây không có nghĩa là hệ thống đã đánh giá và không tìm thấy hành động phù hợp.</Notice>
+          )}
+          {fullDetail && candidates.length === 0 && <div className="text-sm text-muted">Không có hành động nào cải thiện được kết quả.</div>}
+          {fullDetail && candidates.length > 0 && <div className="space-y-3">{candidates.map((candidate) => <CandidateReport key={candidate.rank} candidate={candidate} />)}</div>}
         </section>
 
         <section className="text-xs text-faint">
