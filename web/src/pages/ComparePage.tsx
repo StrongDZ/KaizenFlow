@@ -4,7 +4,7 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import { useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
 import { axisLine, axisTick, fmtTime, tooltipProps } from '../components/Charts'
-import { Card, Loading } from '../components/ui'
+import { Card, Loading, Notice } from '../components/ui'
 import { kpiP50 } from '../lib/insights'
 import { byCode, thresholdsFor } from '../lib/model'
 import { clip, indexBands, NO_USE_COVERAGE, series } from '../lib/replay'
@@ -56,6 +56,14 @@ export default function ComparePage() {
   const scenarioRows = scenarios.map((s) => s.data!)
   const nodeTypes = byCode(types.data)
   const baseline = runRows[0]
+  const effectiveSeeds = runRows.map((run, index) => scenarioRows[index].seed ?? run.id)
+  const comparisonIssues: string[] = []
+  if (effectiveSeeds.some((seed) => seed !== effectiveSeeds[0])) comparisonIssues.push(`seed hiệu lực khác nhau (${effectiveSeeds.join(', ')})`)
+  if (scenarioRows.some((scenario) => scenario.horizon_s !== scenarioRows[0].horizon_s)) comparisonIssues.push('horizon khác nhau')
+  if (scenarioRows.some((scenario) => scenario.replications !== scenarioRows[0].replications)) comparisonIssues.push('số lần lặp khác nhau')
+  if (scenarioRows.some((scenario) => scenario.start_state !== scenarioRows[0].start_state)) comparisonIssues.push('trạng thái khởi đầu khác nhau')
+  if (scenarioRows.some((scenario) => scenario.model_version_id !== scenarioRows[0].model_version_id)) comparisonIssues.push('phiên bản mô hình khác nhau')
+  if (runRows.some((run) => run.sim_start !== runRows[0].sim_start)) comparisonIssues.push('mốc bắt đầu mô phỏng khác nhau')
   const bandIndexes = bands.map((x) => indexBands(x.data!))
   const subjects = [...bandIndexes[0].keys()]
   const subject = focus || baseline.insights.find((i) => i.kind === 'RED_RISK')?.subject_key || subjects[0] || ''
@@ -88,6 +96,11 @@ export default function ComparePage() {
       <h1 className="text-lg font-semibold">
         So sánh nhiều phương án: Run #{baseline.id} làm gốc, {runRows.slice(1).map((r) => `#${r.id}`).join(', ')} là phương án thử
       </h1>
+      {comparisonIssues.length > 0 ? (
+        <Notice tone="lock">So sánh chưa hoàn toàn cùng điều kiện: {comparisonIssues.join('; ')}. Chênh lệch có thể đến từ cấu hình hoặc ngẫu nhiên, không chỉ từ action.</Notice>
+      ) : (
+        <Notice>Các run dùng cùng seed {effectiveSeeds[0]}, phiên bản mô hình, mốc bắt đầu, horizon, số lần lặp và trạng thái khởi đầu; chênh lệch phù hợp để quy cho thay đổi phương án.</Notice>
+      )}
       <Card title="Chỉ số (trung vị)">
         <div className="mb-3 rounded-lg border border-line bg-panel-2 px-3 py-2 text-xs text-text-2">
           Ngoài KPI mô phỏng gốc, bảng này có thêm `Giờ thiếu hàng` và `Giờ tồn dư`. Đây là tổng thời lượng cộng trên toàn bộ các kho storage, suy ra từ `coverage_h`: dưới ngưỡng đỏ là thiếu hàng, trên ngưỡng `yellow_high` là tồn dư.
