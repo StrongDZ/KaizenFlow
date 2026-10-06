@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package denso.gauge.v1;
+
+option go_package = "gauge-twin/gen/go/denso/gauge/v1;gaugev1";
+
+// Status is the edge heartbeat published retained every 30 s on
+// denso/{plant}/{line}/{machine}/status. The MQTT last will is the same
+// message with STATE_OFFLINE; a clean shutdown publishes STATE_OFFLINE before
+// disconnecting.
+message Status {
+  string edge_id = 1;
+  // One edge serves several machines.
+  repeated string machine_ids = 2;
+  // Time the message was built. The last will is registered at connect time,
+  // so its ts_ms is the connect time: consumers must use the receive time as
+  // the moment the edge went offline.
+  int64 ts_ms = 3;
+  State state = 4;
+  string sw_version = 5;
+  uint32 config_version = 6;
+  string model_version = 7;
+  float fps_actual = 8;
+  // GPU utilisation in [0, 1].
+  float gpu_util = 9;
+  uint64 ram_bytes = 10;
+  optional float temperature_c = 11;
+  // Size of the offline buffer.
+  uint64 buffer_bytes = 12;
+  uint64 buffer_msgs = 13;
+}
+
+enum State {
+  STATE_UNSPECIFIED = 0;
+  STATE_ONLINE = 1;
+  STATE_OFFLINE = 2;
+}

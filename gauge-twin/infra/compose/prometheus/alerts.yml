@@ -1,0 +1,48 @@
+groups:
+  - name: mqtt-bridge
+    rules:
+      # With no bridge subscribed, the broker still acknowledges the edges and
+      # only queues for sessions it already knows: data is at risk.
+      - alert: MqttBridgeNoSubscriber
+        expr: sum(bridge_mqtt_connected) == 0 or absent(bridge_mqtt_connected)
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: No mqtt-bridge replica is subscribed to $share/bridge
+      - alert: MqttBridgeReplicaDown
+        expr: sum(bridge_mqtt_connected) < 2
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Fewer than 2 mqtt-bridge replicas are subscribed; messages queue for the missing one
+      - alert: MqttBridgeProduceErrors
+        expr: increase(bridge_kafka_produce_errors_total[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: mqtt-bridge could not produce to Kafka
+  - name: ingest
+    rules:
+      # From ingest itself: committed offset against the partition end, read
+      # from the broker every 10 s.
+      - alert: IngestLagHigh
+        expr: sum(kafka_consumer_lag) > 5000
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: ingest is more than 5000 messages behind for 2 minutes (slow database or too few replicas)
+      # Backup from the broker's own metrics: still fires when ingest is down
+      # or cannot report.
+      - alert: IngestLagHighBrokerView
+        expr: >
+          sum(max by (redpanda_partition) (redpanda_kafka_max_offset{redpanda_namespace="kafka", redpanda_topic="gauge.telemetry"}))
+          - sum(max by (redpanda_partition) (redpanda_kafka_consumer_group_committed_offset{redpanda_group="ingest", redpanda_topic="gauge.telemetry"}))
+          > 5000
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: The ingest consumer group is more than 5000 messages behind according to the broker

@@ -1,0 +1,10 @@
+# Overlay of server.yml for load-test scenario 6: ingest talks to the
+# database through Toxiproxy.
+x-ingest-db: &ingest-db
+  DATABASE_URL: postgres://toxiproxy:5432/${POSTGRES_DB:-gauge}?sslmode=disable
+
+services:
+  ingest-1:
+    environment: *ingest-db
+  ingest-2:
+    environment: *ingest-db

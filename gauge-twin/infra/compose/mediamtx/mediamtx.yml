@@ -1,0 +1,27 @@
+# Only the settings that differ from the MediaMTX defaults.
+api: yes
+apiAddress: :9997
+metrics: yes
+metricsAddress: :9998
+
+authInternalUsers:
+  # Development simulator: anyone may publish and read streams. Metrics are
+  # opened to the Docker network for Prometheus (port 9998 is not published).
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: publish
+      - action: read
+      - action: playback
+      - action: metrics
+  # The control API stays local to the container.
+  - user: any
+    pass:
+    ips: ["127.0.0.1", "::1"]
+    permissions:
+      - action: api
+
+paths:
+  # Accept any stream name; the simulator publishes one path per machine.
+  all_others:

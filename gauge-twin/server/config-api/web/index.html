@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commissioning trạm</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Commissioning trạm</h1>
+  <div class="row">
+    <label>Máy <input id="machine" placeholder="machine_001" size="14"></label>
+    <button id="load">Tải config</button>
+    <label>Plant <input id="plant" size="6"></label>
+    <label>Line <input id="line" size="6"></label>
+    <label>Camera <input id="url" placeholder="rtsp://..." size="38"></label>
+    <label>FPS <input id="fps" type="number" min="1" max="30" value="2" size="3"></label>
+    <button id="grab">Lấy frame</button>
+  </div>
+  <div id="status" class="status"></div>
+</header>
+
+<main>
+  <section class="frame">
+    <p class="hint" id="frame-hint">Chọn một đồng hồ rồi kéo chuột trên ảnh để khoanh vùng; kéo 4 góc để chỉnh khi mặt đồng hồ nghiêng (TL, TR, BR, BL).</p>
+    <canvas id="frame"></canvas>
+  </section>
+
+  <aside>
+    <h2>Đồng hồ</h2>
+    <div class="row">
+      <input id="new-id" placeholder="OIL_TEMP" size="12">
+      <select id="new-type">
+        <option value="analog_dial">analog_dial</option>
+        <option value="seg7">seg7</option>
+        <option value="timer_mmss">timer_mmss</option>
+        <option value="rolling_counter">rolling_counter</option>
+      </select>
+      <button id="add">Thêm</button>
+    </div>
+    <ul id="gauges"></ul>
+
+    <div id="editor" hidden>
+      <h3 id="editor-title"></h3>
+      <div class="row"><label>Đơn vị <input data-f="unit" size="8"></label>
+        <button id="remove" class="danger">Xóa đồng hồ</button></div>
+
+      <fieldset data-for="analog_dial">
+        <legend>Kim (tọa độ trong ảnh đã chỉnh thẳng)</legend>
+        <div class="row">
+          <button id="rectify">Mở ảnh chỉnh thẳng</button>
+          <span>Chấm:</span>
+          <button class="pick" data-pick="center">Tâm</button>
+          <button class="pick" data-pick="min_pt">Vạch min</button>
+          <button class="pick" data-pick="max_pt">Vạch max</button>
+        </div>
+        <canvas id="rect" width="256" height="256"></canvas>
+        <div class="row">
+          <label>Giá trị min <input data-c="min_val" type="number" step="any" size="6"></label>
+          <label>Giá trị max <input data-c="max_val" type="number" step="any" size="6"></label>
+          <label>Chiều quét <select data-c="sweep"><option>cw</option><option>ccw</option></select></label>
+        </div>
+      </fieldset>
+
+      <fieldset data-for="seg7 timer_mmss rolling_counter">
+        <legend>Chữ số</legend>
+        <div class="row">
+          <label>Số chữ số <input data-c="digits" type="number" min="1" max="8" size="3"></label>
+          <label data-for="seg7">Vị trí dấu chấm <input data-c="decimal_pos" type="number" min="0" size="3"></label>
+          <label data-for="seg7">Màu <select data-c="color"><option>red_led</option><option>green_led</option><option>lcd</option></select></label>
+          <label data-for="rolling_counter">Số chữ số thập phân <input data-c="decimal_digits" type="number" min="0" size="3"></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Dải đo và ràng buộc</legend>
+        <div class="row">
+          <label>Min <input data-r="min" type="number" step="any" size="6"></label>
+          <label>Max <input data-r="max" type="number" step="any" size="6"></label>
+          <label>Tốc độ tối đa /s <input data-r="max_rate_per_s" type="number" step="any" size="6"></label>
+          <label><input data-r="monotonic" type="checkbox"> Đơn điệu tăng</label>
+        </div>
+      </fieldset>
+    </div>
+
+    <h2>Xem trước</h2>
+    <div class="row">
+      <button id="preview">Đọc frame này</button>
+      <label><input id="live" type="checkbox"> Trực tiếp (frame mới mỗi 2 s)</label>
+    </div>
+    <table id="readings"><thead><tr><th>Đồng hồ</th><th>Giá trị</th><th>Quality</th><th>Flag / lỗi</th></tr></thead><tbody></tbody></table>
+
+    <h2>Nghiệm thu</h2>
+    <p class="hint">Đứng trước đồng hồ đang chọn, nhập giá trị đang thấy rồi bấm ghi. Hệ thống lấy một frame mới, đọc bằng
+      đúng bộ giải mã của edge và so với giá trị đã nhập. Lấy mẫu ở các giá trị khác nhau nếu có thể.</p>
+    <div class="row">
+      <label>Giá trị thật <input id="truth" type="number" step="any" size="8"></label>
+      <button id="accept" class="primary">Ghi mẫu nghiệm thu</button>
+      <button id="accept-clear" class="danger">Xóa mẫu của đồng hồ này</button>
+    </div>
+    <p class="hint" id="accept-rule"></p>
+    <table id="acceptance"><thead><tr><th>Đồng hồ</th><th>Kết luận</th><th>Đạt</th><th>Sai</th><th>Ghi chú</th></tr></thead><tbody></tbody></table>
+    <details id="samples-box"><summary>Các mẫu của đồng hồ đang chọn</summary>
+      <table id="samples"><thead><tr><th>Lúc</th><th>Thật</th><th>Đọc</th><th>Lệch</th><th>Quality</th><th></th></tr></thead><tbody></tbody></table>
+    </details>
+
+    <div class="row save"><button id="save" class="primary">Lưu config</button></div>
+    <details><summary>JSON</summary><pre id="json"></pre></details>
+  </aside>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

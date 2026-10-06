@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package denso.gauge.v1;
+
+option go_package = "gauge-twin/gen/go/denso/gauge/v1;gaugev1";
+
+// FrameResult is the internal ds-pipeline -> edge-agent message sent over
+// ZeroMQ. It carries raw model output only; all business logic lives in
+// edge-agent.
+message FrameResult {
+  string camera_id = 1;
+  // Capture timestamp of the frame, not the send time.
+  int64 frame_ts_ms = 2;
+  repeated RoiResult rois = 3;
+}
+
+message RoiResult {
+  string gauge_id = 1;
+  // dial_pose output, in order: center, start, end, mid, tip, in pixels of
+  // the original camera frame. edge-agent applies the homography of the
+  // gauge quad itself.
+  repeated Keypoint keypoints = 2;
+  // Confidence per keypoint, same order as keypoints.
+  repeated float kp_conf = 3;
+  // digit_cls output: one entry per digit slot, left to right.
+  repeated SlotProbs slot_probs = 4;
+  // Laplacian variance of the ROI.
+  float sharpness = 5;
+  // Fraction of saturated pixels in the ROI, in [0, 1].
+  float glare_ratio = 6;
+  // True when the periodic check found the ROI displaced from its reference
+  // image by more than the configured threshold.
+  bool roi_drift = 7;
+  // Displacement measured by that check, in pixels; 0 when not measured yet.
+  float drift_px = 8;
+}
+
+// Keypoint is a point in camera frame pixel coordinates.
+message Keypoint {
+  float x = 1;
+  float y = 2;
+}
+
+// SlotProbs holds the class probabilities of one digit slot:
+// indices 0-9 are digits, 10 is blank, 11 is transition.
+message SlotProbs {
+  repeated float probs = 1;
+}

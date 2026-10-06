@@ -1,0 +1,37 @@
+:root { --fg: #1d2330; --muted: #5b6475; --line: #d5d9e2; --bg: #f6f7f9; --accent: #1a6ed8; --bad: #c2382f; --ok: #1d8a4a; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.4 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+header { padding: 10px 16px; background: #fff; border-bottom: 1px solid var(--line); }
+h1 { font-size: 18px; margin: 0 0 8px; }
+h2 { font-size: 15px; margin: 16px 0 6px; }
+h3 { font-size: 14px; margin: 12px 0 6px; }
+.row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 4px 0; }
+input, select, button { font: inherit; padding: 3px 6px; }
+button { border: 1px solid var(--line); background: #fff; border-radius: 4px; cursor: pointer; }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+button.danger { color: var(--bad); }
+button.active { outline: 2px solid var(--accent); }
+.status { min-height: 1.4em; color: var(--muted); }
+.status.error { color: var(--bad); }
+.status.ok { color: var(--ok); }
+main { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 12px; padding: 12px 16px; }
+@media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+.frame canvas { width: 100%; background: #222; cursor: crosshair; display: block; }
+.hint { color: var(--muted); margin: 0 0 6px; }
+aside { background: #fff; border: 1px solid var(--line); padding: 8px 12px; border-radius: 6px; }
+#gauges { list-style: none; padding: 0; margin: 0; }
+#gauges li { padding: 4px 6px; border-radius: 4px; cursor: pointer; }
+#gauges li.selected { background: #e6effc; }
+fieldset { border: 1px solid var(--line); border-radius: 4px; margin: 8px 0; }
+#rect { background: #222; cursor: crosshair; width: 256px; height: 256px; }
+table { width: 100%; border-collapse: collapse; }
+td, th { text-align: left; padding: 3px 4px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+td.bad { color: var(--bad); }
+pre { max-height: 300px; overflow: auto; background: var(--bg); padding: 6px; font-size: 12px; }
+.save { margin-top: 12px; }
+.verdict { font-weight: 600; }
+.verdict.accepted { color: var(--ok); }
+.verdict.rejected { color: var(--bad); }
+.verdict.incomplete { color: var(--muted); }
+td.ok { color: var(--ok); }
+#samples a { color: var(--accent); }

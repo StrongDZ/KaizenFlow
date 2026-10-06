@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package denso.gauge.v1;
+
+option go_package = "gauge-twin/gen/go/denso/gauge/v1;gaugev1";
+
+// Telemetry is the edge -> server payload published on
+// denso/{plant}/{line}/{machine}/telemetry. One message carries exactly one
+// machine and one aggregation window.
+message Telemetry {
+  uint32 schema_version = 1;
+  string edge_id = 2;
+  // Monotonically increasing per edge; used for dedup and gap detection.
+  uint64 seq = 3;
+  string machine_id = 4;
+  int64 window_start_ms = 5;
+  int64 window_end_ms = 6;
+  uint32 config_version = 7;
+  string model_version = 8;
+  repeated Measurement measurements = 9;
+  // True when the message was drained from the offline buffer.
+  bool replayed = 10;
+}
+
+// Measurement is the aggregated reading of one gauge within the window.
+message Measurement {
+  string gauge_id = 1;
+  // Unset means the gauge could not be read; flags explain why.
+  // Timers report seconds.
+  optional double value = 2;
+  double v_min = 3;
+  double v_max = 4;
+  // Number of valid frames in the window.
+  uint32 n_frames = 5;
+  uint32 n_rejected = 6;
+  // Quality score in [0, 1].
+  float quality = 7;
+  repeated Flag flags = 8;
+  string unit = 9;
+}
+
+// Flag explains why a reading is missing or degraded. The numeric values are
+// persisted in gauge_reading.flags (smallint[]) and must never be reused.
+enum Flag {
+  FLAG_UNSPECIFIED = 0;
+  FLAG_BLUR = 1;
+  FLAG_GLARE = 2;
+  FLAG_OCCLUDED = 3;
+  FLAG_OUT_OF_RANGE = 4;
+  FLAG_RATE_LIMIT = 5;
+  FLAG_NON_MONOTONIC = 6;
+  FLAG_FORMAT_INVALID = 7;
+  FLAG_ROI_DRIFT = 8;
+  FLAG_STALE = 9;
+  // Set by ingest: the window timestamps are more than 5 minutes away from
+  // the server clock.
+  FLAG_CLOCK_SKEW = 10;
+  // Set by ingest: the machine has no config in config-api, so no range
+  // check could be applied.
+  FLAG_NO_CONFIG = 11;
+}

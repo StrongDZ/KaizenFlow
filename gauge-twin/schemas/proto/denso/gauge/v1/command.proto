@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package denso.gauge.v1;
+
+option go_package = "gauge-twin/gen/go/denso/gauge/v1;gaugev1";
+
+// Command is sent by edge-agent to the video pipeline (ds-pipeline or ds-sim)
+// over a dedicated ZeroMQ request/reply socket. Every command is answered by
+// exactly one CommandReply carrying the same command_id.
+message Command {
+  // Chosen by the sender; echoed in the reply.
+  uint64 command_id = 1;
+  CommandType type = 2;
+  // RELOAD_CONFIG: the config version the pipeline must load from the shared
+  // config directory. edge-agent reports this version in its heartbeat only
+  // after the pipeline answered ok.
+  uint32 config_version = 3;
+  // RELOAD_CONFIG: the machine (camera) whose config changed.
+  string machine_id = 4;
+}
+
+enum CommandType {
+  COMMAND_TYPE_UNSPECIFIED = 0;
+  // Load the station config written by edge-agent and rebuild what depends on it.
+  COMMAND_TYPE_RELOAD_CONFIG = 1;
+  // Exit so the container supervisor starts a fresh pipeline.
+  COMMAND_TYPE_RESTART = 2;
+}
+
+message CommandReply {
+  uint64 command_id = 1;
+  bool ok = 2;
+  // Human-readable reason when ok is false.
+  string error = 3;
+}

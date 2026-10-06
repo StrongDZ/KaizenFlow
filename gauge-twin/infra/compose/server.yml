@@ -1,0 +1,176 @@
+# gauge-twin server services. Needs the stack of dev.yml (`make up`).
+# Start with `make server-up`.
+name: gauge-twin-server
+
+# Only the first replica of a service declares the build; the second reuses
+# the image (two services building the same tag in parallel collide).
+x-mqtt-bridge: &mqtt-bridge
+  image: gauge-twin-mqtt-bridge:local
+  restart: unless-stopped
+  networks:
+    gauge-twin:
+      # Shared alias: Prometheus discovers every replica through DNS.
+      aliases: [mqtt-bridge]
+
+x-mqtt-bridge-env: &mqtt-bridge-env
+  TRACE_SEQ: ${BRIDGE_TRACE_SEQ:-false}
+  MQTT_BROKER: emqx:1883
+  KAFKA_BROKERS: redpanda:9092
+  MQTT_SESSION_EXPIRY: ${BRIDGE_SESSION_EXPIRY:-2h}
+
+services:
+  # Two replicas with stable client IDs (the equivalent of a StatefulSet
+  # ordinal): the broker keeps a session per client ID, and a restarted
+  # replica must come back under the same ID to pick up its queue.
+  mqtt-bridge-1:
+    <<: *mqtt-bridge
+    build:
+      context: ../..
+      dockerfile: server/Dockerfile
+      args:
+        SERVICE: mqtt-bridge
+    environment:
+      <<: *mqtt-bridge-env
+      MQTT_CLIENT_ID: mqtt-bridge-1
+
+  mqtt-bridge-2:
+    <<: *mqtt-bridge
+    pull_policy: never
+    depends_on: [mqtt-bridge-1]
+    environment:
+      <<: *mqtt-bridge-env
+      MQTT_CLIENT_ID: mqtt-bridge-2
+
+  # Two replicas: the version counter lives in the database, and publishing
+  # is reconciled from it, so they need no coordination.
+  # The server images run as an unprivileged user: make the acceptance volume writable for it.
+  acceptance-init:
+    image: gauge-twin-preview-svc:local
+    pull_policy: never
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c", "chown 65534:65534 /acceptance"]
+    depends_on: [preview-svc]
+    volumes:
+      - ${ACCEPTANCE_DATA_DIR:-acceptance}:/acceptance
+
+  config-api-1:
+    image: gauge-twin-config-api:local
+    build:
+      context: ../..
+      dockerfile: server/Dockerfile
+      args:
+        SERVICE: config-api
+    restart: unless-stopped
+    environment: &config-api-env
+      # User and password travel apart from the URL, in the variables libpq and pgx read.
+      DATABASE_URL: postgres://timescaledb:5432/${POSTGRES_DB:-gauge}?sslmode=disable
+      PGUSER: ${POSTGRES_USER:-gauge}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?}
+      MQTT_BROKER: emqx:1883
+      PREVIEW_URL: http://preview-svc:8080
+      ACCEPTANCE_DIR: /acceptance
+    depends_on:
+      acceptance-init:
+        condition: service_completed_successfully
+    volumes: &config-api-volumes
+      # Acceptance samples of commissioning (frames and records), shared by both replicas.
+      - ${ACCEPTANCE_DATA_DIR:-acceptance}:/acceptance
+    ports:
+      - "${CONFIG_API_PORT:-8090}:8080"
+    networks: &config-api-net
+      gauge-twin:
+        aliases: [config-api]
+
+  config-api-2:
+    image: gauge-twin-config-api:local
+    pull_policy: never
+    depends_on:
+      config-api-1:
+        condition: service_started
+      acceptance-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    environment: *config-api-env
+    volumes: *config-api-volumes
+    ports:
+      - "${CONFIG_API_PORT_2:-8091}:8080"
+    networks: *config-api-net
+
+  # Commissioning helper of config-api: runs the models of ds-sim on single
+  # frames. Internal only, no host port.
+  preview-svc:
+    image: gauge-twin-preview-svc:local
+    build:
+      context: ../..
+      dockerfile: sim/ds-sim/Dockerfile
+    entrypoint: ["python", "-m", "ds_sim.preview"]
+    restart: unless-stopped
+    environment:
+      MODEL_DIR: /models
+      HTTP_ADDR: ":8080"
+    volumes:
+      - ${PREVIEW_MODEL_DIR:-../../data/ml-runs/onnx}:/models:ro
+    cpus: ${PREVIEW_CPUS:-2}
+    networks:
+      gauge-twin:
+        aliases: [preview-svc]
+
+  # Replicas share the consumer group; Kafka spreads the 24 partitions.
+  ingest-1:
+    image: gauge-twin-ingest:local
+    build:
+      context: ../..
+      dockerfile: server/Dockerfile
+      args:
+        SERVICE: ingest
+    restart: unless-stopped
+    depends_on: [config-api-1]
+    environment: &ingest-env
+      KAFKA_BROKERS: redpanda:9092
+      # User and password travel apart from the URL, in the variables libpq and pgx read.
+      DATABASE_URL: postgres://timescaledb:5432/${POSTGRES_DB:-gauge}?sslmode=disable
+      PGUSER: ${POSTGRES_USER:-gauge}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?}
+      REDIS_ADDR: redis:6379
+      CONFIG_API_URL: http://config-api:8080
+    networks: &ingest-net
+      gauge-twin:
+        aliases: [ingest]
+
+  ingest-2:
+    image: gauge-twin-ingest:local
+    pull_policy: never
+    restart: unless-stopped
+    depends_on: [ingest-1]
+    environment: *ingest-env
+    networks: *ingest-net
+
+  state:
+    image: gauge-twin-state:local
+    build:
+      context: ../..
+      dockerfile: server/Dockerfile
+      args:
+        SERVICE: state
+    restart: unless-stopped
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      # User and password travel apart from the URL, in the variables libpq and pgx read.
+      DATABASE_URL: postgres://timescaledb:5432/${POSTGRES_DB:-gauge}?sslmode=disable
+      PGUSER: ${POSTGRES_USER:-gauge}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?}
+      REDIS_ADDR: redis:6379
+      MQTT_BROKER: emqx:1883
+      RESEND_ENABLED: ${STATE_RESEND_ENABLED:-true}
+      RESEND_AFTER: ${STATE_RESEND_AFTER:-1m}
+      SEQ_GAP_GRACE: ${STATE_SEQ_GAP_GRACE:-10m}
+    networks:
+      gauge-twin:
+        aliases: [state]
+
+networks:
+  gauge-twin:
+    external: true
+
+volumes:
+  acceptance:

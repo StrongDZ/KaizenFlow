@@ -1,0 +1,43 @@
+# Overlay for load tests on a shared server (SPEC section 8): no port is
+# published on the host, every container has CPU and memory limits and is
+# pinned to the cores in INFRA_CPUSET, away from the load generator
+# (EDGE_SIM_CPUSET). Use with:
+#   export INFRA_CPUSET=8-31 EDGE_SIM_CPUSET=0-7
+#   export LOADTEST_OVERRIDES="-f infra/compose/loadtest/shared-server.infra.yml"
+#   export LOADTEST_SERVER_OVERRIDES="-f infra/compose/loadtest/shared-server.server.yml"
+#   export LOADTEST_EDGE_OVERRIDES="-f infra/compose/loadtest/shared-server.edge.yml"
+services:
+  mqtt-bridge-1:
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 2
+    mem_limit: 1g
+  mqtt-bridge-2:
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 2
+    mem_limit: 1g
+  config-api-1:
+    ports: !reset []
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 1
+    mem_limit: 512m
+  config-api-2:
+    ports: !reset []
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 1
+    mem_limit: 512m
+  ingest-1:
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 4
+    mem_limit: 1g
+  ingest-2:
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 4
+    mem_limit: 1g
+  state:
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 2
+    mem_limit: 1g
+  preview-svc:
+    cpuset: "${INFRA_CPUSET:-8-31}"
+    cpus: 2
+    mem_limit: 1g
