@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeOverride } from './scenarioView'
+import { describeInjection, describeOverride, formatScenarioDuration } from './scenarioView'
 
 describe('describeOverride', () => {
   it('số lượng: nhãn tiếng Việt và một dòng giá trị', () => {
@@ -27,5 +27,22 @@ describe('describeOverride', () => {
 
   it('số thập phân dùng dấu phẩy', () => {
     expect(describeOverride({ target: 'M1', path: '/params/rate', value: 1.5 }).lines).toEqual(['1,5'])
+  })
+})
+
+describe('scenario setup formatting', () => {
+  it('giữ phần phút khi thời lượng không tròn giờ', () => {
+    expect(formatScenarioDuration(30 * 60)).toBe('30 phút')
+    expect(formatScenarioDuration(4.5 * 3600)).toBe('4 giờ 30 phút')
+    expect(formatScenarioDuration(8 * 3600)).toBe('8 giờ')
+  })
+
+  it('mô tả failure và planned stop cho timeline', () => {
+    expect(describeInjection({ target: 'STAMP_3', failure: 'bearing_wear', at_s: 7200 })).toEqual({
+      atS: 7200, label: 'STAMP_3', detail: 'Lỗi bearing_wear',
+    })
+    expect(describeInjection({ target: 'A', kind: 'planned_stop', at_s: 900, duration_s: 1800 })).toEqual({
+      atS: 900, label: 'A', detail: 'Dừng có kế hoạch trong 30 phút',
+    })
   })
 })
