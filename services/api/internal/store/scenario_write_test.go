@@ -3,6 +3,7 @@ package store_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/kaizenflow/api/internal/store"
 	"github.com/kaizenflow/api/internal/testfix"
@@ -68,6 +69,12 @@ func TestCloneScenarioCopiesSpecButNotLineage(t *testing.T) {
 	bid, _ := st.CloneScenario(ctx, blank)
 	if b, _ := st.GetScenario(ctx, bid); b.Name == "" || b.Name == " (bản sao)" {
 		t.Fatalf("blank-name clone = %q", b.Name)
+	}
+	fromRun, _ := st.CreateScenario(ctx, store.Scenario{ModelVersionID: vid, Name: "seed từ run", HorizonS: 60})
+	runID, _ := st.InsertRun(ctx, fromRun, time.Now(), "FORECAST")
+	fromRunClone, _ := st.CloneScenario(ctx, fromRun)
+	if cloned, _ := st.GetScenario(ctx, fromRunClone); cloned.Seed == nil || *cloned.Seed != runID {
+		t.Fatalf("clone seed = %v, want effective seed from latest run %d", cloned.Seed, runID)
 	}
 	if _, err := st.CloneScenario(ctx, 999999); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("unknown: %v", err)
