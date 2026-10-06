@@ -24,14 +24,27 @@ export default function ScenarioNewPage() {
       navigate(`/scenarios/${r.id}`)
     },
   })
+  const createAndRun = useMutation({
+    mutationFn: async (b: ScenarioBody) => {
+      const scenario = await api.createScenario({ model_version_id: vid, ...b })
+      const run = await api.startRun(scenario.id)
+      return { runId: run.run_id }
+    },
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: ['scenarios', vid] })
+      navigate(`/runs/${r.runId}`)
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: ['scenarios', vid] }),
+  })
   if (!graph.data || !types.data || !existing.data) return <Loading />
   return (
     <PageBody>
       <PageHeader title="Tạo scenario" subtitle={`${graph.data.model_key} v${graph.data.version}`} />
       <ScenarioFormView
         graph={graph.data} types={typeMap} initial={{ ...EMPTY_FORM, name: nextName('Kịch bản', existing.data.map((s) => s.name)) }} submitLabel="Tạo scenario"
-        pending={create.isPending} error={create.error} cancelTo={`/versions/${vid}/scenarios`}
+        pending={create.isPending || createAndRun.isPending} error={create.error ?? createAndRun.error} cancelTo={`/versions/${vid}/scenarios`}
         onSubmit={(b) => create.mutate(b)}
+        onSubmitAndRun={(b) => createAndRun.mutate(b)}
       />
     </PageBody>
   )
