@@ -1,4 +1,4 @@
-import type { Binding, SourceSnap, SubjectView, Transform } from '../api/types'
+import type { Binding, SubjectView, Transform } from '../api/types'
 import { leafPaths } from './livePath'
 
 /** Từ trạng thái thường gặp của PLC về trạng thái chuẩn của hệ thống. */
@@ -9,6 +9,9 @@ export const STATE_ENUM: Record<string, string> = {
   WAIT_OUT: 'BLOCKED', BLOCKED: 'BLOCKED',
   ALARM: 'DOWN', FAULT: 'DOWN', ERROR: 'DOWN', STOP: 'DOWN', DOWN: 'DOWN',
 }
+
+/** Phần của một nguồn mà gợi ý cần: tên, mô tả và bản tin mẫu (bản tin mới nhất hoặc mẫu người dùng dán). */
+export type SourceLike = { source: string; desc: string; last: unknown }
 
 export type Suggestion = {
   subject: string
@@ -87,7 +90,7 @@ function isFleetPayload(v: unknown): boolean {
  * Gợi ý ghép tự động: nguồn nào hợp với node/edge nào (theo tên mô tả), trường nào ứng với tín hiệu chuẩn nào.
  * Chỉ dùng được khi thiết bị mô tả mình đủ rõ; thiết bị thật thì người dùng ghép tay. Bỏ qua cái đã ghép.
  */
-export function suggestMapping(sources: SourceSnap[], subjects: SubjectView[], existing: Binding[]): { suggestions: Suggestion[]; unmatched: string[] } {
+export function suggestMapping(sources: SourceLike[], subjects: SubjectView[], existing: Binding[]): { suggestions: Suggestion[]; unmatched: string[] } {
   const taken = new Set(existing.map((b) => `${b.subject}|${b.signal}`))
   const seen = new Set<string>()
   const suggestions: Suggestion[] = []

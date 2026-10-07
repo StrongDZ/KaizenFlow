@@ -2,10 +2,11 @@ from datetime import timedelta
 
 import pytest
 
-from helpers import SIM_START, load_request
+from helpers import SIM_START, load_request, make_request
 from sim_service.detect import active_period_shares, active_periods, detect
 from sim_service.engine import RepResult
 from sim_service.montecarlo import run_many
+from sim_service.recommend import candidate_request, generate, rank
 
 
 def fake_rep(first_red=None, red_s=0.0, hook_wait=0.0, intervals=None):
@@ -26,6 +27,30 @@ def test_active_period_shares_picks_longest_active():
     shares = active_period_shares({"A": [(0, 100)], "B": [(0, 50), (60, 100)]}, horizon=100, step=10)
     assert shares["A"] == pytest.approx(1.0)
     assert "B" not in shares
+
+
+def test_active_period_shares_splits_exact_and_near_ties():
+    exact = active_period_shares({"A": [(0, 100)], "B": [(0, 100)]}, horizon=100, step=10)
+    assert exact == pytest.approx({"A": 0.5, "B": 0.5})
+
+    near = active_period_shares({"A": [(0, 100)], "B": [(0, 100.0000005)]}, horizon=100, step=10)
+    assert near == pytest.approx({"A": 0.5, "B": 0.5})
+
+
+def test_detect_marks_shared_bottleneck_ambiguous_and_generates_no_action():
+    def process(key):
+        return {"key": key, "archetype": "PROCESS", "params": {
+            "cycle": 10, "recipes": [{"inputs": [], "outputs": [{"material": "X", "qty": 1}]}]}}
+
+    req = make_request([process("A"), process("B")], horizon_s=100)
+    rep = RepResult(0, {"processes": {}, "storages": {}, "edges": {}}, {}, {
+        "A": [("RUNNING", 0, 100)], "B": [("RUNNING", 0, 100)],
+    }, {}, [], [])
+    bottleneck = next(i for i in detect(req, [rep]) if i["kind"] == "BOTTLENECK")
+    assert bottleneck["payload"]["ambiguous"] is True
+    assert bottleneck["payload"]["co_bottlenecks"] == ["A", "B"]
+    assert bottleneck["probability"] == pytest.approx(0.5)
+    assert generate(req, [bottleneck]) == []
 
 
 def test_red_risk_probability_eta_and_severity():
@@ -51,3 +76,39 @@ def test_detect_on_real_run_finds_process_bottleneck():
     ins = detect(req, run_many(req))
     procs = {n.key for n in req.nodes if n.archetype == "PROCESS"}
     assert any(i["kind"] == "BOTTLENECK" and i["subject_key"] in procs for i in ins)
+
+
+def test_capacity_line_identifies_slowest_process_with_evidence():
+    def process(key, rate):
+        return {"key": key, "archetype": "PROCESS", "params": {
+            "cycle": 3600 / rate, "in_buffer": 4, "out_buffer": 4,
+            "recipes": [{"inputs": [{"material": "X", "qty": 1}],
+                         "outputs": [{"material": "X", "qty": 1}]}]}}
+
+    nodes = [{"key": "SRC", "archetype": "SOURCE", "params": {
+        "arrivals": {"interarrival": 20}, "lots": [{"material": "X", "qty": 1}]}}]
+    nodes += [process("A", 100), process("B", 70), process("C", 90), process("D", 100)]
+    nodes += [{"key": "OUT", "archetype": "SINK", "params": {}}]
+    keys = ["SRC", "A", "B", "C", "D", "OUT"]
+    edges = [{"key": f"{a}>{b}", "src": a, "dst": b, "material": "X"} for a, b in zip(keys, keys[1:])]
+    req = make_request(nodes, edges, horizon_s=4 * 3600, replications=2, raw_reps=(), sample_s=60)
+    reps = run_many(req)
+    bottleneck = next(i for i in detect(req, reps) if i["kind"] == "BOTTLENECK")
+    assert bottleneck["subject_key"] == "B"
+    assert bottleneck["payload"]["ambiguous"] is False
+    assert bottleneck["payload"]["co_bottlenecks"] == ["B"]
+    evidence = bottleneck["payload"]["evidence"]
+    assert evidence["nominal_rate"] == pytest.approx(70)
+    assert 0 <= evidence["utilization"] <= 1
+    assert evidence["upstream_wip_growth"] > 0
+    assert evidence["capacity_gap"] == pytest.approx(30)
+
+    candidates = generate(req, [bottleneck])
+    kinds = {c.action["type"] for c in candidates}
+    assert {"INCREASE_PROCESS_CAPACITY", "REDUCE_MACHINE_RATE"} <= kinds
+    for candidate in candidates:
+        rerun = run_many(candidate_request(req, candidate))
+        assert rerun[0].kpis["processes"]
+    ranked = rank(req, reps, candidates)
+    assert ranked
+    assert all(c["action"]["type"] in kinds and c["expected_impact"]["delta"] for c in ranked)

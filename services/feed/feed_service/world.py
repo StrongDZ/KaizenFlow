@@ -8,6 +8,7 @@ from sim_service.engine import build
 from sim_service.transport import Transfer
 
 from feed_service.agv import Fleet
+from feed_service.frame import ControllerFrame
 from feed_service.mapgraph import MapGraph
 from feed_service.scale import Truth, apply_truth
 
@@ -31,6 +32,7 @@ class World:
                     outputs={"raw_reps": [], "sample_s": 3600.0, "sensors": False})
         self.req = RunRequest.model_validate(data)
         agv = blueprint.get("agv_map")
+        self.frame: ControllerFrame | None = None  # hệ toạ độ hãng xe giả lập; None = phát thẳng toạ độ bản đồ
         self.fleet: Fleet | None = Fleet(MapGraph(agv), seed=seed) if agv and agv.get("lanes") else None
         self.ctx = build(self.req, 0, self.fleet.make_edge if self.fleet else Transfer)
         for obj in self.ctx.objects():

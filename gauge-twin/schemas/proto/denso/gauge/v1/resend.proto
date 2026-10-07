@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package denso.gauge.v1;
+
+option go_package = "gauge-twin/gen/go/denso/gauge/v1;gaugev1";
+
+// ResendRequest asks an edge to publish a range of its telemetry again. It is
+// published by the server on denso/{plant}/edge/{edge_id}/cmd/resend; the
+// topic is per edge because sequence numbers are counted per edge.
+message ResendRequest {
+  string edge_id = 1;
+  // Both bounds are inclusive; a request covers at most 10000 sequence numbers.
+  uint64 from_seq = 2;
+  uint64 to_seq = 3;
+  // Chosen by the requester; echoed in the ack.
+  uint64 request_id = 4;
+}
+
+// ResendAck is the edge's answer on denso/{plant}/edge/{edge_id}/cmd/resend/ack.
+// Resent telemetry carries replayed = true; the database deduplicates it.
+message ResendAck {
+  string edge_id = 1;
+  uint64 request_id = 2;
+  // Number of messages published again.
+  uint32 resent = 3;
+  // Requested ranges the edge no longer holds (the 500 MB limit may evict
+  // messages before the 24 h retention ends). The server records them as
+  // lost and must not ask for them again.
+  repeated SeqRange missing = 4;
+  // Set when the request itself was rejected, e.g. a range that is too large.
+  string error = 5;
+}
+
+// SeqRange is an inclusive range of sequence numbers.
+message SeqRange {
+  uint64 from_seq = 1;
+  uint64 to_seq = 2;
+}

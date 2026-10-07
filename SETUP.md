@@ -66,10 +66,10 @@ API tự chạy migration khi khởi động và tự nạp 14 loại node mẫu
 
 ### Thử ngay phần Live twin
 
-1. Mở mô hình `denso-plant`, vào tab **Kết nối dữ liệu**.
-2. Bấm **Bắt đầu phát dữ liệu giả lập** (chọn ×60 cho nhanh), rồi **Gợi ý ghép tự động** và **Áp dụng**.
+1. Mở mô hình `denso-plant`; đầu trang **Phiên bản** có danh sách Thiết lập cho biết bước nào đã xong. Vào tab **Nguồn dữ liệu**.
+2. Bấm **Bắt đầu phát dữ liệu giả lập** (chọn ×60 cho nhanh) ở tab **Nguồn dữ liệu** để thấy các thiết bị hiện ra, rồi sang **Kết nối dữ liệu**: **Gợi ý ghép tự động** và **Áp dụng**.
 3. Sang tab **Trực tiếp**: workflow chạy theo dữ liệu thật; bấm **Dự báo từ bây giờ**; thử bơm sự cố.
-4. Tab **Bản đồ AGV**: xe chạy, bấm một làn để chặn.
+4. Tab **Bản đồ AGV**: xe chạy, bấm một làn để chặn. Thử khung toạ độ: Đặt lại feed, tick **Hãng xe báo toạ độ riêng** rồi bắt đầu; xe sẽ "ngoài đường" cho tới khi bạn mở thẻ **Khung toạ độ xe** → Chỉnh khung → chọn một xe đang đứng yên và điểm nó đang đỗ (làm 2–3 cặp) → Tính khung → Lưu khung. Muốn quay lại feed thường thì Lưu khung "Về không đổi". Bản đồ cũ (đơn vị vẽ × `unit_m`) tự đổi sang mét khi đọc.
 
 Kịch bản demo đầy đủ nằm trong `README.md`.
 
@@ -118,7 +118,7 @@ cd services/feed && ../sim/.venv/bin/python -m pytest
 cd web && npx vitest run && npx tsc -b && npm run build
 ```
 
-Kết quả mong đợi tại thời điểm viết: sim 84 test, feed 48 test, web 354 test, Go tất cả gói `ok`. Con số có thể tăng khi thêm test; điều quan trọng là không có test nào đỏ.
+Kết quả mong đợi tại thời điểm viết: sim 84 test, feed 50 test, web 491 test, Go tất cả gói `ok`. Con số có thể tăng khi thêm test; điều quan trọng là không có test nào đỏ.
 
 Test đơn vị của web chỉ phủ phần logic thuần (thư mục `web/src/lib`). Giao diện được kiểm bằng cách mở trình duyệt.
 

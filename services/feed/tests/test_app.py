@@ -81,3 +81,11 @@ def test_start_clears_old_live_data_first_because_virtual_time_restarts(env):
     assert client.cleared == ["denso-mini"]
     c.post("/start", json={"model": "denso-mini"})
     assert client.cleared == ["denso-mini", "denso-mini"]
+
+
+def test_start_with_controller_frame_is_reported_in_status(env):
+    c, _, _ = env
+    assert c.post("/start", json={"model": "denso-mini"}).json()["frame"] is None
+    r = c.post("/start", json={"model": "denso-mini", "frame": {"dx": -4, "dy": 52, "rot_deg": 90, "scale": 0.001}}).json()
+    assert r["frame"] == {"dx": -4, "dy": 52, "rot_deg": 90, "scale": 0.001, "flip_y": False, "noise_m": 0.05}
+    assert c.post("/start", json={"model": "denso-mini", "frame": {"scale": 0}}).status_code == 422

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { api } from '../../api/client'
 import type { Incident, IncidentInput, MapLane } from '../../api/types'
 import { fmtFactoryTime } from '../../lib/liveFormat'
-import { ErrorBox, btn, btnPrimary, input } from '../ui'
+import { ErrorBox, btn, btnWarn, input } from '../ui'
 
 export type IncidentNode = { key: string; name: string; archetype: string; materials: string[] }
 
@@ -76,7 +76,7 @@ export function IncidentPanel({ nodes, lanes, incidents, ready }: { nodes: Incid
           {DURATIONS.map((d) => <option key={d} value={d}>{d >= 60 ? `${d / 60} giờ` : `${d} phút`} (giờ nhà máy)</option>)}
         </select>
       )}
-      <button className={`${btnPrimary} w-full justify-center`} disabled={!canGo || add.isPending} onClick={go}>Bơm sự cố</button>
+      <button className={`${btnWarn} w-full justify-center`} disabled={!canGo || add.isPending} onClick={go}>Bơm sự cố</button>
       {!ready && <p className="text-[11px] text-faint">Bật feed để bơm sự cố.</p>}
       <ErrorBox error={add.error ?? clear.error} />
       {active.length > 0 && (

@@ -148,6 +148,8 @@ func (h *handlers) createModel(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ModelKey string         `json:"model_key"`
 		Settings map[string]any `json:"settings"`
+		// CopyFrom: khoá một mô hình có sẵn; mô hình mới bắt đầu từ bản sao sơ đồ mới nhất của nó (thay vì sơ đồ trống).
+		CopyFrom string `json:"copy_from"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -156,10 +158,33 @@ func (h *handlers) createModel(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 422, issues(validate.Issue{Key: "model_key", Message: "required"}))
 		return
 	}
-	id, err := h.Store.CreateModel(r.Context(), body.ModelKey, body.Settings)
+	ctx := r.Context()
+	var src *store.Graph
+	if body.CopyFrom != "" {
+		g, _, err := h.modelGraph(ctx, body.CopyFrom, false)
+		if errors.Is(err, store.ErrNotFound) {
+			writeJSON(w, 422, issues(validate.Issue{Key: "copy_from", Message: "Không có mô hình '" + body.CopyFrom + "' để sao chép. Chọn một mô hình có trong danh sách."}))
+			return
+		} else if err != nil {
+			writeErr(w, err)
+			return
+		}
+		src = g
+		if body.Settings == nil {
+			body.Settings = g.Settings
+		}
+	}
+	id, err := h.Store.CreateModel(ctx, body.ModelKey, body.Settings)
 	if err != nil {
 		writeErr(w, err)
 		return
+	}
+	if src != nil {
+		if err := h.Store.ReplaceGraph(ctx, id, src.Nodes, src.Edges, src.Settings); err != nil {
+			_ = h.Store.DeleteModel(ctx, body.ModelKey, true) // không để lại mô hình rỗng khi sao chép lỗi
+			writeErr(w, err)
+			return
+		}
 	}
 	writeJSON(w, 201, map[string]int64{"version_id": id})
 }
@@ -221,28 +246,13 @@ func (h *handlers) publish(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, store.ErrNotDraft)
 		return
 	}
-	types, err := h.Store.NodeTypes(ctx)
+	rep, err := h.graphReport(ctx, g, true)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	if list := h.Validator.Graph(g, types); len(list) > 0 {
-		writeJSON(w, 422, issues(list...))
-		return
-	}
-	mats, err := h.Store.MaterialCodes(ctx)
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	probe := &store.Scenario{Origin: "RECOMMENDER", HorizonS: 60, StartState: "EMPTY", Replications: 1}
-	req, err := resolve.Build(ctx, g, types, mats, probe, 0, time.Now(), nil, resolve.Options{ForValidation: true})
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	if err := h.Sim.Validate(ctx, req); err != nil {
-		writeErr(w, err)
+	if !rep.OK {
+		writeJSON(w, 422, issues(errorsOf(rep)...))
 		return
 	}
 	if err := h.Store.Publish(ctx, id); err != nil {

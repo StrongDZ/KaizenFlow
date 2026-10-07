@@ -1,44 +1,109 @@
 import { describe, expect, it } from 'vitest'
 import type { AgvMap, Vehicle } from '../api/types'
-import { addLane, addPoint, bounds, laneGeometry, laneLengthM, movePoint, occupancy, removeLane, removePoint, setLaneCapacity, laneTone } from './mapGeom'
+import {
+  addLane, addPoint, bounds, insertWaypoint, laneLengthM, laneShape, lanePolyline, laneTone, midpointOf, moveWaypoint, movePoint, occupancy, offsetPolyline,
+  polylineD, polylineLength, projectOnPolyline, removeLane, removePoint, removeWaypoint, setLaneCapacity,
+} from './mapGeom'
 
 const map = (): AgvMap => ({
-  unit_m: 2, speed_mps: 1.2,
+  v: 2, speed_mps: 1.2,
   points: [
     { id: 'A', x: 0, y: 0, kind: 'station', node_key: 'KHO' },
-    { id: 'B', x: 30, y: 40, kind: 'junction' },
-    { id: 'C', x: 60, y: 0, kind: 'station', node_key: 'MAY' },
+    { id: 'B', x: 60, y: 80, kind: 'junction' },
+    { id: 'C', x: 120, y: 0, kind: 'station', node_key: 'MAY' },
   ],
   lanes: [{ id: 'L01', from: 'A', to: 'B', capacity: 2 }, { id: 'L02', from: 'B', to: 'A', capacity: 1 }, { id: 'L03', from: 'B', to: 'C', capacity: 2 }],
 })
-const veh = (id: string, lane: string, state: string): Vehicle => ({ id, x: 0, y: 0, state, lane, load: 0, ts: '', age_ms: 0 })
+const veh = (id: string, lane: string, state: string): Vehicle => ({ id, x: 0, y: 0, raw_x: 0, raw_y: 0, state, lane, s: 0, off_map: false, load: 0, ts: '', age_ms: 0 })
 
 describe('bounds', () => {
   it('bao mọi điểm kèm lề; bản đồ rỗng vẫn có khung', () => {
-    expect(bounds(map(), 10)).toEqual({ x: -10, y: -10, w: 80, h: 60 })
-    const empty = bounds({ unit_m: 1, speed_mps: 1, points: [], lanes: [] }, 10)
+    expect(bounds(map(), 10)).toEqual({ x: -10, y: -10, w: 140, h: 100 })
+    const empty = bounds({ v: 2, speed_mps: 1, points: [], lanes: [] }, 10)
     expect(empty.w).toBeGreaterThan(0)
     expect(empty.h).toBeGreaterThan(0)
   })
 })
 
-describe('laneGeometry', () => {
+describe('bounds với điểm uốn', () => {
+  it('khung bao cả các điểm uốn của làn', () => {
+    const m = map()
+    m.lanes[0] = { ...m.lanes[0], path: [{ x: -30, y: 150 }] }
+    expect(bounds(m, 0)).toEqual({ x: -30, y: 0, w: 150, h: 150 })
+  })
+})
+
+describe('đường gấp khúc của làn', () => {
+  it('polyline gồm điểm đầu, điểm uốn, điểm cuối; độ dài theo mét', () => {
+    const m = map()
+    expect(lanePolyline(m, m.lanes[0])).toEqual([{ x: 0, y: 0 }, { x: 60, y: 80 }])
+    expect(laneLengthM(m, m.lanes[0])).toBe(100)
+    const bent = { ...m.lanes[0], path: [{ x: 0, y: 80 }] }
+    expect(lanePolyline(m, bent)).toHaveLength(3)
+    expect(laneLengthM(m, bent)).toBe(140) // 80 xuống rồi 60 sang
+    expect(polylineLength([])).toBe(0)
+  })
+  it('làn tới điểm không tồn tại thì không có polyline', () => {
+    expect(lanePolyline(map(), { id: 'X', from: 'A', to: 'ZZ', capacity: 1 })).toBeUndefined()
+    expect(laneShape(map(), { id: 'X', from: 'A', to: 'ZZ', capacity: 1 }, 0)).toBeUndefined()
+  })
   it('làn ngược chiều lệch về hai phía để không chồng lên nhau', () => {
     const m = map()
-    const ab = laneGeometry(m, m.lanes[0], 1.5)!
-    const ba = laneGeometry(m, m.lanes[1], 1.5)!
-    // vuông góc với hướng (30,40) → (0.8,-0.6) hoặc ngược lại; hai làn ngược dấu
-    expect(ab.x1 - 0).toBeCloseTo(-ba.x2 + 0, 5)
-    expect(Math.hypot(ab.x1 - m.points[0].x, ab.y1 - m.points[0].y)).toBeCloseTo(1.5, 5)
-    expect(ab.x1 * ba.x2 + ab.y1 * ba.y2).toBeLessThan(0.0001 + 0)  // hai đầu về hai phía đối diện điểm A
-    expect(ab.length).toBeCloseTo(50, 5)
+    const ab = laneShape(m, m.lanes[0], 1.5)!
+    const ba = laneShape(m, m.lanes[1], 1.5)!
+    expect(ab.length).toBeCloseTo(100, 5)
+    // pháp tuyến bên phải của (0.6, 0.8) là (-0.8, 0.6): điểm đầu AB lệch đúng 1,5 m về phía đó
+    expect(ab.pts[0].x).toBeCloseTo(-1.2, 5)
+    expect(ab.pts[0].y).toBeCloseTo(0.9, 5)
+    // BA đi ngược lại nên cùng khoảng cách nhưng về phía đối diện của đường nối
+    expect(ba.pts[ba.pts.length - 1].x).toBeCloseTo(1.2, 5)
+    expect(ba.pts[ba.pts.length - 1].y).toBeCloseTo(-0.9, 5)
   })
-  it('làn tới điểm không tồn tại thì bỏ qua', () => {
-    expect(laneGeometry(map(), { id: 'X', from: 'A', to: 'ZZ', capacity: 1 }, 0)).toBeUndefined()
-  })
-  it('độ dài theo mét = khoảng cách bản đồ × unit_m', () => {
+  it('inset rút ngắn hai đầu để mũi tên không đè lên điểm', () => {
     const m = map()
-    expect(laneLengthM(m, m.lanes[0])).toBe(100)
+    const g = laneShape(m, m.lanes[0], 0, 5)!
+    expect(Math.hypot(g.pts[0].x, g.pts[0].y)).toBeCloseTo(5, 5)
+    expect(Math.hypot(g.pts[g.pts.length - 1].x - 60, g.pts[g.pts.length - 1].y - 80)).toBeCloseTo(5, 5)
+  })
+  it('offset trên đường gấp khúc giữ khoảng cách đều ở khúc cua (miter)', () => {
+    const out = offsetPolyline([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }], 1)
+    expect(out[0]).toEqual({ x: 0, y: 1 }) // phải của hướng +x là +y (y hướng xuống)
+    expect(out[1].x).toBeCloseTo(9, 5)
+    expect(out[1].y).toBeCloseTo(1, 5)
+    expect(out[2].x).toBeCloseTo(9, 5)
+    expect(out[2].y).toBeCloseTo(10, 5)
+  })
+  it('polylineD viết path SVG; midpointOf là điểm giữa theo độ dài', () => {
+    expect(polylineD([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }])).toBe('M0 0L10 0L10 10')
+    expect(midpointOf([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }])).toEqual({ x: 10, y: 0 })
+    expect(midpointOf([{ x: 0, y: 0 }, { x: 10, y: 0 }])).toEqual({ x: 5, y: 0 })
+  })
+  it('chiếu một điểm lên đường gấp khúc: s dọc làn, dist tới làn, kẹp ở hai đầu', () => {
+    const p = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }]
+    expect(projectOnPolyline(p, 5, 2)).toMatchObject({ s: 5, dist: 2 })
+    expect(projectOnPolyline(p, 12, 6)).toMatchObject({ s: 16, dist: 2 })
+    expect(projectOnPolyline(p, -5, 0)).toMatchObject({ s: 0, dist: 5 })
+    expect(projectOnPolyline([{ x: 1, y: 1 }, { x: 1, y: 1 }], 4, 5)).toMatchObject({ s: 0, dist: 5 })
+  })
+})
+
+describe('sửa điểm uốn (thuần)', () => {
+  const withPath = (): AgvMap => { const m = map(); m.lanes[0] = { ...m.lanes[0], path: [{ x: 10, y: 10 }, { x: 20, y: 20 }] }; return m }
+  it('thêm điểm uốn vào đúng vị trí, dời, xoá', () => {
+    const m = withPath()
+    const added = insertWaypoint(m, 'L01', 1, { x: 15, y: 15 })
+    expect(added.lanes[0].path).toEqual([{ x: 10, y: 10 }, { x: 15, y: 15 }, { x: 20, y: 20 }])
+    expect(m.lanes[0].path).toHaveLength(2)
+    expect(moveWaypoint(m, 'L01', 0, 1, 2).lanes[0].path![0]).toEqual({ x: 1, y: 2 })
+    expect(removeWaypoint(m, 'L01', 0).lanes[0].path).toEqual([{ x: 20, y: 20 }])
+    expect(removeWaypoint(removeWaypoint(m, 'L01', 0), 'L01', 0).lanes[0].path).toBeUndefined() // hết điểm uốn thì bỏ trường path
+  })
+  it('vẽ làn qua nhiều điểm uốn; hai chiều thì làn ngược đi lại đúng đường đó', () => {
+    const out = addLane(map(), 'A', 'C', true, [{ x: 30, y: 30 }, { x: 90, y: 30 }])
+    const fwd = out.lanes.find((l) => l.from === 'A' && l.to === 'C')!
+    const back = out.lanes.find((l) => l.from === 'C' && l.to === 'A')!
+    expect(fwd.path).toEqual([{ x: 30, y: 30 }, { x: 90, y: 30 }])
+    expect(back.path).toEqual([{ x: 90, y: 30 }, { x: 30, y: 30 }])
   })
 })
 

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from sim_service.contract import ENGINE_VERSION, RunRequest, validate_refs
 from sim_service.detect import detect
+from sim_service.impact import failure_impacts
 from sim_service.montecarlo import aggregate_kpis, bands, run_many
 from sim_service.recommend import recommend
 
@@ -28,7 +29,18 @@ def execute(req: RunRequest, workers: int = 1) -> RunResult:
     reps = run_many(req, workers)
     insights = detect(req, reps)
     if req.recommend:
-        rec = recommend(req, reps, insights, workers)
+        impacts = []
+        active_injections = [i for i in req.injections if i.at_s < req.horizon_s]
+        if active_injections:
+            reference = None
+            if len({i.target for i in active_injections}) == 1:
+                reference_req = req.model_copy(update={
+                    "injections": [], "recommend": False, "replications": min(req.replications, 20),
+                    "outputs": req.outputs.model_copy(update={"raw_reps": []}),
+                })
+                reference = run_many(reference_req, workers)
+            impacts = failure_impacts(req, reps[:min(req.replications, 20)], reference)
+        rec = recommend(req, reps, insights, workers, impacts)
         if rec is not None:
             insights.append(rec)
     signals = sorted(({"time": t, "run_id": req.run_id, "rep": r.rep, "subject": s, "name": n, "value": v}

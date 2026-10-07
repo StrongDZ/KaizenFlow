@@ -171,10 +171,18 @@ EXTRA_MATERIALS = [
     {"code": "CASE-03", "name": "Case SKU 03", "unit": "case"},
 ]
 
-# Bản đồ AGV (đơn vị bản đồ × unit_m = mét; xe 1,2 m/s). Mạng vòng một chiều nên xe không tự kẹt cứng:
-# hành lang trên chạy tây→đông, hành lang dưới đông→tây, các trạm máy thò xuống giữa hai hành lang.
-def _lanes(pairs, capacity=2):
-    return [{"id": f"L{i + 1:02d}", "from": a, "to": b, "capacity": capacity} for i, (a, b) in enumerate(pairs)]
+# Bản đồ AGV v2: toạ độ tính bằng mét (y hướng xuống), làn là đường gấp khúc (`path` là các điểm uốn giữa hai đầu), xe 1,2 m/s.
+# Hình dạng tự nhiên: hành lang trên chạy xiên xuống phía đông, hành lang dưới chạy lên phía tây, trạm máy thò xuống giữa hai hành lang,
+# đầu đông phình ra. Topology là mạng vòng một chiều nên xe không tự kẹt cứng.
+def _lanes(pairs, paths=None, capacity=2):
+    paths = paths or {}
+    out = []
+    for i, (a, b) in enumerate(pairs):
+        lane = {"id": f"L{i + 1:02d}", "from": a, "to": b, "capacity": capacity}
+        if (a, b) in paths:
+            lane["path"] = [{"x": x, "y": y} for x, y in paths[(a, b)]]
+        out.append(lane)
+    return out
 
 
 def _pt(pid, x, y, kind="junction", node=None):
@@ -185,24 +193,33 @@ def _pt(pid, x, y, kind="junction", node=None):
 
 
 MINI_MAP = {
-    "unit_m": 1.5, "speed_mps": 1.2,
-    "points": [_pt("KHO", 5, 10, "station", "KHO_NVL"), _pt("J1", 25, 10), _pt("J2", 45, 10), _pt("J3", 65, 10), _pt("NE", 85, 10),
-               _pt("SE", 85, 40), _pt("B3", 65, 40), _pt("B2", 45, 40), _pt("B1", 25, 40), _pt("SW", 5, 40),
-               _pt("S1", 25, 25, "station", "STAMP_1"), _pt("S2", 45, 25, "station", "STAMP_2"), _pt("S3", 65, 25, "station", "STAMP_3")],
-    "lanes": _lanes([("KHO", "J1"), ("J1", "J2"), ("J2", "J3"), ("J3", "NE"), ("NE", "SE"), ("SE", "B3"), ("B3", "B2"), ("B2", "B1"),
-                     ("B1", "SW"), ("SW", "KHO"), ("J1", "S1"), ("S1", "B1"), ("J2", "S2"), ("S2", "B2"), ("J3", "S3"), ("S3", "B3")]),
+    "v": 2, "speed_mps": 1.2,
+    "points": [_pt("KHO", 8, 12, "station", "KHO_NVL"), _pt("J1", 30, 8), _pt("J2", 54, 13), _pt("J3", 78, 22), _pt("NE", 96, 34),
+               _pt("SE", 92, 56), _pt("B3", 72, 56), _pt("B2", 50, 50), _pt("B1", 28, 46), _pt("SW", 8, 48),
+               _pt("S1", 30, 27, "station", "STAMP_1"), _pt("S2", 53, 31, "station", "STAMP_2"), _pt("S3", 76, 40, "station", "STAMP_3")],
+    "lanes": _lanes(
+        [("KHO", "J1"), ("J1", "J2"), ("J2", "J3"), ("J3", "NE"), ("NE", "SE"), ("SE", "B3"), ("B3", "B2"), ("B2", "B1"),
+         ("B1", "SW"), ("SW", "KHO"), ("J1", "S1"), ("S1", "B1"), ("J2", "S2"), ("S2", "B2"), ("J3", "S3"), ("S3", "B3")],
+        {("KHO", "J1"): [(19, 9)], ("J1", "J2"): [(42, 9)], ("J2", "J3"): [(66, 16)], ("J3", "NE"): [(88, 27)], ("NE", "SE"): [(98, 46)],
+         ("SE", "B3"): [(82, 58)], ("B3", "B2"): [(61, 54)], ("B2", "B1"): [(39, 49)], ("B1", "SW"): [(18, 48)], ("SW", "KHO"): [(4, 30)],
+         ("S1", "B1"): [(29, 37)], ("S2", "B2"): [(51, 41)], ("S3", "B3"): [(75, 48)]}),
 }
 
 PLANT_MAP = {
-    "unit_m": 1.5, "speed_mps": 1.2,
-    "points": [_pt("KHO_A", 5, 10, "station", "KHO_A"), _pt("KHO_B", 5, 40, "station", "KHO_B"),
-               _pt("J1", 25, 10), _pt("J2", 45, 10), _pt("J3", 65, 10), _pt("NE", 85, 10), _pt("SE", 85, 40),
-               _pt("B3", 65, 40), _pt("B2", 45, 40), _pt("B1", 25, 40),
-               _pt("S1", 25, 25, "station", "STAMP_1"), _pt("S2", 45, 25, "station", "STAMP_2"),
-               _pt("S4", 65, 25, "station", "STAMP_4"), _pt("S3", 85, 25, "station", "STAMP_3")],
-    "lanes": _lanes([("KHO_A", "J1"), ("J1", "J2"), ("J2", "J3"), ("J3", "NE"), ("NE", "S3"), ("S3", "SE"), ("SE", "B3"),
-                     ("B3", "B2"), ("B2", "B1"), ("B1", "KHO_B"), ("KHO_B", "KHO_A"),
-                     ("J1", "S1"), ("S1", "B1"), ("J2", "S2"), ("S2", "B2"), ("J3", "S4"), ("S4", "B3")]),
+    "v": 2, "speed_mps": 1.2,
+    "points": [_pt("KHO_A", 8, 10, "station", "KHO_A"), _pt("KHO_B", 6, 52, "station", "KHO_B"),
+               _pt("J1", 30, 6), _pt("J2", 54, 12), _pt("J3", 76, 22), _pt("NE", 94, 36), _pt("SE", 90, 62),
+               _pt("B3", 70, 56), _pt("B2", 48, 48), _pt("B1", 26, 46),
+               _pt("S1", 32, 27, "station", "STAMP_1"), _pt("S2", 52, 29, "station", "STAMP_2"),
+               _pt("S4", 75, 40, "station", "STAMP_4"), _pt("S3", 100, 50, "station", "STAMP_3")],
+    "lanes": _lanes(
+        [("KHO_A", "J1"), ("J1", "J2"), ("J2", "J3"), ("J3", "NE"), ("NE", "S3"), ("S3", "SE"), ("SE", "B3"),
+         ("B3", "B2"), ("B2", "B1"), ("B1", "KHO_B"), ("KHO_B", "KHO_A"),
+         ("J1", "S1"), ("S1", "B1"), ("J2", "S2"), ("S2", "B2"), ("J3", "S4"), ("S4", "B3")],
+        {("KHO_A", "J1"): [(18, 6)], ("J1", "J2"): [(42, 7)], ("J2", "J3"): [(66, 14)], ("J3", "NE"): [(86, 28)], ("NE", "S3"): [(98, 41)],
+         ("S3", "SE"): [(98, 58)], ("SE", "B3"): [(80, 61)], ("B3", "B2"): [(59, 54)], ("B2", "B1"): [(37, 49)], ("B1", "KHO_B"): [(14, 50)],
+         ("KHO_B", "KHO_A"): [(2, 31)], ("S1", "B1"): [(28, 36)], ("J2", "S2"): [(53, 20)], ("S2", "B2"): [(50, 40)],
+         ("J3", "S4"): [(76, 31)], ("S4", "B3"): [(72, 49)]}),
 }
 
 FMCG_NODES = [

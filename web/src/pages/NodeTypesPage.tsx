@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Archetype, NodeType } from '../api/types'
 import { ARCHETYPE_LABEL } from '../components/KfNode'
+import { NodeTypeDetail } from '../components/detail/NodeTypeDetail'
 import { NodeIcon } from '../components/nodeIcons'
+import { PeekHost, usePeekParam } from '../components/SidePeek'
 import { DataTable, type Column } from '../components/table/DataTable'
 import { EmptyState, ErrorBox, FilterChip, Loading, PageBody, PageHeader, SearchBox, Tag, btnPrimary } from '../components/ui'
 import { usedIn } from '../lib/format'
@@ -27,8 +29,8 @@ const COLUMNS: Column<NodeType>[] = [
 ]
 
 export default function NodeTypesPage() {
-  const navigate = useNavigate()
   const types = useQuery({ queryKey: ['node-types'], queryFn: api.nodeTypes })
+  const [peek, setPeek] = usePeekParam()
   const [q, setQ] = useState('')
   const [arch, setArch] = useState<Archetype | 'ALL'>('ALL')
   const all = useMemo(() => types.data ?? [], [types.data])
@@ -36,6 +38,7 @@ export default function NodeTypesPage() {
   if (types.isLoading) return <Loading />
   const count = (a: Archetype) => all.filter((t) => t.archetype === a).length
   return (
+    <PeekHost onClose={() => setPeek(null)} peek={peek ? <NodeTypeDetail key={peek} code={peek} variant="peek" onClose={() => setPeek(null)} /> : null}>
     <PageBody>
       <PageHeader title="Loại node" subtitle={`${all.length} loại`} actions={<Link className={btnPrimary} to="/library/node-types/new">Tạo loại node</Link>} />
       <div className="flex flex-wrap items-center gap-2">
@@ -50,9 +53,11 @@ export default function NodeTypesPage() {
         rows={rows}
         columns={COLUMNS}
         rowKey={(t) => t.code}
-        onRowClick={(t) => navigate(`/library/node-types/${encodeURIComponent(t.code)}`)}
+        onRowClick={(t) => setPeek(t.code)}
+        selected={(t) => t.code === peek}
         empty={<EmptyState title="Không có loại node khớp">Thử từ khoá hoặc bộ lọc khác, hoặc bấm "Tạo loại node".</EmptyState>}
       />
     </PageBody>
+    </PeekHost>
   )
 }

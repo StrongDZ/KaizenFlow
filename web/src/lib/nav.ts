@@ -1,6 +1,6 @@
-export type Section = 'overview' | 'models' | 'runs' | 'library'
+export type Section = 'overview' | 'models' | 'runs' | 'alerts' | 'library'
 export type Crumb = { label: string; to?: string; picker?: boolean }
-export type Tab = { label: string; to: string; end?: boolean; also?: string[] }
+export type Tab = { label: string; to: string; end?: boolean; also?: string[]; group?: string }
 export type NavCtx = {
   modelKey?: string
   version?: number
@@ -11,6 +11,7 @@ export type NavCtx = {
 }
 
 export function sectionOf(path: string): Section {
+  if (path.startsWith('/alerts')) return 'alerts'
   if (path.startsWith('/reports')) return 'overview'
   if (path.startsWith('/runs') || path.startsWith('/compare')) return 'runs'
   if (path.startsWith('/library')) return 'library'
@@ -18,7 +19,7 @@ export function sectionOf(path: string): Section {
   return 'overview'
 }
 
-const inModelWorkspace = (path: string) => /^\/(versions|scenarios)\//.test(path) || /^\/models\/[^/]+\/(versions|live|connect|map)/.test(path)
+const inModelWorkspace = (path: string) => /^\/(versions|scenarios)\//.test(path) || /^\/models\/[^/]+\/(versions|live|sources|connect|map)/.test(path)
 
 export function tabsFor(path: string, ctx: NavCtx): Tab[] {
   const run = path.match(/^\/runs\/(\d+)/)
@@ -32,25 +33,40 @@ export function tabsFor(path: string, ctx: NavCtx): Tab[] {
     ]
   }
   if (!inModelWorkspace(path)) return []
-  const tabs: Tab[] = []
+  // Ba nhóm theo việc người dùng đang làm: dựng mô hình, chạy thử trên mô phỏng, vận hành với dữ liệu thật.
+  const design: Tab[] = []
+  const simulate: Tab[] = []
+  const operate: Tab[] = []
   const vid = ctx.versionId ?? ctx.latestVersionId
+  const base = ctx.modelKey ? `/models/${encodeURIComponent(ctx.modelKey)}` : undefined
+  if (vid !== undefined) design.push({ label: 'Sơ đồ', to: `/versions/${vid}`, end: true, group: 'Thiết kế' })
+  if (base) design.push({ label: 'Phiên bản', to: `${base}/versions`, group: 'Thiết kế' })
   if (vid !== undefined) {
-    tabs.push(
-      { label: 'Sơ đồ', to: `/versions/${vid}`, end: true },
-      { label: 'Scenario', to: `/versions/${vid}/scenarios`, also: ['/scenarios/'] },
-      { label: 'Lần chạy', to: `/versions/${vid}/runs` },
+    simulate.push(
+      { label: 'Scenario', to: `/versions/${vid}/scenarios`, also: ['/scenarios/'], group: 'Mô phỏng' },
+      { label: 'Lần chạy', to: `/versions/${vid}/runs`, group: 'Mô phỏng' },
     )
   }
-  if (ctx.modelKey) {
-    const base = `/models/${encodeURIComponent(ctx.modelKey)}`
-    tabs.push(
-      { label: 'Phiên bản', to: `${base}/versions` },
-      { label: 'Trực tiếp', to: `${base}/live` },
-      { label: 'Kết nối dữ liệu', to: `${base}/connect` },
-      { label: 'Bản đồ AGV', to: `${base}/map` },
+  if (base) {
+    operate.push(
+      { label: 'Trực tiếp', to: `${base}/live`, group: 'Vận hành thật' },
+      { label: 'Nguồn dữ liệu', to: `${base}/sources`, group: 'Vận hành thật' },
+      { label: 'Kết nối dữ liệu', to: `${base}/connect`, group: 'Vận hành thật' },
+      { label: 'Bản đồ AGV', to: `${base}/map`, group: 'Vận hành thật' },
     )
   }
-  return tabs
+  return [...design, ...simulate, ...operate]
+}
+
+/** Tab liền nhau cùng nhóm thì gộp lại (để vẽ chung một khung và một nhãn nhóm). Tab không có nhóm thành một nhóm không tên. */
+export function groupTabs(tabs: Tab[]): { title: string | undefined; tabs: Tab[] }[] {
+  const out: { title: string | undefined; tabs: Tab[] }[] = []
+  for (const t of tabs) {
+    const last = out[out.length - 1]
+    if (last && last.title === t.group) last.tabs.push(t)
+    else out.push({ title: t.group, tabs: [t] })
+  }
+  return out
 }
 
 export function isTabActive(tab: Tab, path: string): boolean {
@@ -65,6 +81,7 @@ export function crumbsFor(path: string, ctx: NavCtx): Crumb[] {
   const modelTo = model ? `/models/${encodeURIComponent(model)}/versions` : undefined
 
   if (path === '/') return [{ label: 'Tổng quan' }]
+  if (path === '/alerts') return [{ label: 'Cảnh báo' }]
   if (path === '/reports/benchmarks') return [{ label: 'Tổng quan', to: '/' }, { label: 'Benchmark FMCG' }]
   if (path === '/reports/operations') return [{ label: 'Tổng quan', to: '/' }, { label: 'Dashboard vận hành' }]
   if (path === '/reports/warehouse') return [{ label: 'Tổng quan', to: '/' }, { label: 'Điều khiển kho' }]
@@ -72,9 +89,9 @@ export function crumbsFor(path: string, ctx: NavCtx): Crumb[] {
   if (/^\/models\/[^/]+\/versions/.test(path)) {
     return [{ label: 'Mô hình', to: '/models' }, { label: model ?? '…' }, { label: 'Phiên bản' }]
   }
-  const live = path.match(/^\/models\/[^/]+\/(live|connect|map)/)
+  const live = path.match(/^\/models\/[^/]+\/(live|sources|connect|map)/)
   if (live) {
-    const label = { live: 'Trực tiếp', connect: 'Kết nối dữ liệu', map: 'Bản đồ AGV' }[live[1] as 'live' | 'connect' | 'map']
+    const label = { live: 'Trực tiếp', sources: 'Nguồn dữ liệu', connect: 'Kết nối dữ liệu', map: 'Bản đồ AGV' }[live[1] as 'live' | 'sources' | 'connect' | 'map']
     return [{ label: 'Mô hình', to: '/models' }, { label: model ?? '…', to: modelTo }, { label }]
   }
   if (/^\/(versions|scenarios)\//.test(path)) {

@@ -3,11 +3,13 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Json, NodeTypeDetail } from '../api/types'
+import { FailureModesEditor } from '../components/library/FailureModesEditor'
 import { IconPicker } from '../components/library/IconPicker'
 import { ParamForm } from '../components/library/ParamForm'
+import { SignalsEditor } from '../components/library/SignalsEditor'
 import { Card, ErrorBox, Loading, Notice, PageBody, PageHeader, Tag, btn, btnPrimary, input } from '../components/ui'
 import { withIcon } from '../lib/iconChoices'
-import { parseJsonArray } from '../lib/jsonText'
+import { failureProblems, signalProblems } from '../lib/sensorsEdit'
 import { nodeTypeRules } from '../lib/rules'
 
 export default function NodeTypeEditPage() {
@@ -36,14 +38,14 @@ function NodeTypeEditForm({ d, schema, banner }: { d: NodeTypeDetail; schema?: J
   const [name, setName] = useState(d.name)
   const [icon, setIcon] = useState<string | undefined>(typeof d.ui?.icon === 'string' ? d.ui.icon : undefined)
   const [params, setParams] = useState<Json>(d.default_params)
-  const [signals, setSignals] = useState(JSON.stringify(d.signals, null, 2))
-  const [modes, setModes] = useState(JSON.stringify(d.failure_modes, null, 2))
-  const sigParsed = parseJsonArray(signals)
-  const modeParsed = parseJsonArray(modes)
+  const [signals, setSignals] = useState<Json[]>((d.signals ?? []) as Json[])
+  const [modes, setModes] = useState<Json[]>((d.failure_modes ?? []) as Json[])
+  const sensorNames = signals.map((s) => String(s.name ?? '').trim()).filter((n) => n !== '')
+  const problems = [...signalProblems(signals), ...failureProblems(modes, sensorNames)]
   const update = useMutation({
     mutationFn: () => api.updateNodeType(d.code, {
       name: name.trim(), default_params: params, ui: withIcon(d.ui, icon),
-      signals: sigParsed.ok ? sigParsed.value : undefined, failure_modes: modeParsed.ok ? modeParsed.value : undefined,
+      signals, failure_modes: modes,
     }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['node-type', d.code] })
@@ -51,8 +53,8 @@ function NodeTypeEditForm({ d, schema, banner }: { d: NodeTypeDetail; schema?: J
       navigate(`/library/node-types/${encodeURIComponent(d.code)}`)
     },
   })
-  const invalid = !name.trim() || !sigParsed.ok || !modeParsed.ok
-  const area = `${input} h-40 w-full font-mono`
+  const invalid = !name.trim() || problems.length > 0
+  const hasSensors = d.archetype === 'PROCESS' || signals.length > 0 || modes.length > 0
   return (
     <PageBody>
       <PageHeader title="Sửa loại node" subtitle={<Tag>{d.code}</Tag>} />
@@ -68,16 +70,20 @@ function NodeTypeEditForm({ d, schema, banner }: { d: NodeTypeDetail; schema?: J
           {schema ? <ParamForm schema={schema} value={params} onChange={setParams} /> : <p className="text-xs text-muted">Chưa có schema cho loại này.</p>}
         </div>
       </Card>
-      <div className="grid grid-cols-2 gap-4">
-        <Card title="Cảm biến (JSON)">
-          <textarea className={area} aria-label="Cảm biến (JSON)" value={signals} onChange={(e) => setSignals(e.target.value)} spellCheck={false} />
-          {!sigParsed.ok && <p role="alert" className="mt-1 text-xs text-bad-text">{sigParsed.error}</p>}
-        </Card>
-        <Card title="Chế độ hỏng (JSON)">
-          <textarea className={area} aria-label="Chế độ hỏng (JSON)" value={modes} onChange={(e) => setModes(e.target.value)} spellCheck={false} />
-          {!modeParsed.ok && <p role="alert" className="mt-1 text-xs text-bad-text">{modeParsed.error}</p>}
-        </Card>
-      </div>
+      {hasSensors ? (
+        <>
+          <Card title={`Cảm biến (${signals.length})`}><SignalsEditor value={signals} onChange={setSignals} /></Card>
+          <Card title={`Chế độ hỏng (${modes.length})`}><FailureModesEditor value={modes} onChange={setModes} sensors={sensorNames} /></Card>
+        </>
+      ) : (
+        <Notice>Loại node này không có cảm biến và chế độ hỏng. Chỉ Trạm xử lý (máy) mới có hai phần này.</Notice>
+      )}
+      {problems.length > 0 && (
+        <Notice tone="lock">
+          <div className="font-medium">Sửa các chỗ sau trước khi lưu:</div>
+          <ul className="mt-1 list-disc pl-5">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
+        </Notice>
+      )}
       <ErrorBox error={update.error} />
       <div className="flex gap-2">
         <button className={btnPrimary} disabled={update.isPending || invalid} onClick={() => update.mutate()}>Lưu thay đổi</button>

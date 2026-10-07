@@ -95,7 +95,11 @@ export type RunDetail = Run & { insights: Insight[] }
 export type BandRow = { subject: string; metric: string; t: string; p10: number; p50: number; p90: number }
 export type EventRow = { t: string; rep: number; subject: string; type: string; payload: Json }
 export type SignalRow = { t: string; rep: number; subject: string; name: string; value: number }
-export type Issue = { key: string; message: string }
+export type Issue = { key: string; message: string; severity?: 'error' | 'warning'; code?: string }
+export type CheckIssue = Issue
+/** Thông số không đặt ở node nhưng có giá trị thay thế (mặc định loại node, mặc định ngầm của sim, hoặc gợi ý từ bản đồ AGV). */
+export type CheckInferred = { key: string; param: string; value: string; source: 'node_type_default' | 'sim_default' | 'agv_map'; message: string }
+export type CheckReport = { ok: boolean; issues: CheckIssue[]; inferred: CheckInferred[] }
 
 export type ScenarioRow = Scenario & { runs: number; last_run_status: RunStatus | null }
 
@@ -149,16 +153,49 @@ export type SubjectView = {
   signals: SignalDef[]
 }
 export type Subjects = { model: string; version_id: number; version: number; status: string; subjects: SubjectView[] }
-export type Transform = { scale?: number; offset?: number; enum?: Record<string, string>; fields?: Record<string, string> }
+/** Khung toạ độ của đội xe: từ toạ độ hãng xe báo sang toạ độ bản đồ (mét): lật Y → nhân scale → xoay → dịch. Cùng nghĩa với Frame của API. */
+export type Frame = { dx: number; dy: number; rot_deg: number; scale: number; flip_y: boolean }
+export type Transform = { scale?: number; offset?: number; enum?: Record<string, string>; fields?: Record<string, string>; frame?: Frame }
+/** Công thức tự tính: cộng trừ các tín hiệu khác (có hệ số nhân), hoặc trạng thái máy suy từ việc một bộ đếm còn tăng. */
+export type DeriveTerm = { subject: string; signal: string; sign: 1 | -1; factor?: number }
+export type Derive = { kind: 'sum' | 'activity'; const?: number; terms?: DeriveTerm[]; watch?: { subject: string; signal: string }; idle_after_s?: number }
 export type Binding = {
   id: number; model_key: string; subject: string; signal: string; source: string; json_path: string; transform: Transform; enabled: boolean
+  mode: 'source' | 'derived'; derive?: Derive | null
 }
-export type BindingInput = { subject: string; signal: string; source: string; json_path: string; transform?: Transform; enabled?: boolean }
+export type BindingInput = {
+  subject: string; signal: string; source?: string; json_path?: string; transform?: Transform; enabled?: boolean; mode?: 'source' | 'derived'; derive?: Derive
+}
+
+/** Độ phủ ghép nối (GET /api/models/{key}/live/check). */
+export type CoverageStatus = 'source' | 'derived' | 'missing' | 'broken'
+export type DeriveSuggestion = { derive: Derive; note: string }
+export type SignalCoverage = {
+  subject: string; signal: string; label: string; status: CoverageStatus; need: string[]; reason?: string; suggestions?: DeriveSuggestion[]
+}
+export type Readiness = { feature: string; ok: boolean; missing: { subject: string; signal: string }[] }
+export type CoverageReport = {
+  summary: { signals: number; source: number; derived: number; missing: number; broken: number }
+  readiness: Readiness[]
+  signals: SignalCoverage[]
+  problems: { subject: string; signal: string; severity: string; message: string }[]
+}
 
 export type SigVal = { v: number; ts: string }
 export type SubjectSnap = { state?: string; state_ts?: string; signals: Record<string, SigVal>; age_ms: number; rate?: number }
-export type Vehicle = { id: string; x: number; y: number; state: string; lane: string; load: number; ts: string; age_ms: number }
+/** x, y: toạ độ bản đồ (mét) sau khi đổi khung; raw_x, raw_y: toạ độ hãng xe báo; s: mét dọc làn; off_map: xe không nằm trên làn nào. */
+export type Vehicle = {
+  id: string; x: number; y: number; raw_x: number; raw_y: number; heading?: number; state: string; lane: string; s: number; off_map: boolean
+  load: number; ts: string; age_ms: number
+}
 export type SourceSnap = { source: string; desc: string; last_ts: string; age_ms: number; count: number; last: unknown; bound: boolean }
+/** Một nguồn dữ liệu đã đăng ký của mô hình (GET /api/models/{key}/sources). */
+export type SourceBindingRef = { subject: string; signal: string }
+export type DataSourceRow = {
+  source: string; desc: string; origin: 'feed' | 'manual'; first_seen: string; last_seen: string; count: number
+  sample: unknown; live: boolean; age_ms: number; per_min: number; bindings: SourceBindingRef[]
+}
+export type SourceTestResult = { matched: number; readings: { subject: string; signal: string; value?: number; text?: string }[]; errors: string[] }
 export type BindingError = { message: string; count: number; last: string }
 export type LiveSnapshot = {
   model: string
@@ -172,8 +209,11 @@ export type LiveSnapshot = {
 export type LiveMsg = { type: 'live'; model: string; now: string; subjects: Record<string, SubjectSnap>; fleet: Record<string, Vehicle[]>; sources: number }
 
 export type MapPoint = { id: string; x: number; y: number; kind: 'junction' | 'station' | 'charger'; node_key?: string }
-export type MapLane = { id: string; from: string; to: string; capacity: number }
-export type AgvMap = { unit_m: number; speed_mps: number; points: MapPoint[]; lanes: MapLane[] }
+export type Pt = { x: number; y: number }
+/** path: các điểm uốn giữa hai đầu (không gồm hai đầu); bỏ trống là đoạn thẳng. */
+export type MapLane = { id: string; from: string; to: string; capacity: number; path?: Pt[] }
+/** Bản đồ v2: toạ độ tính bằng mét. */
+export type AgvMap = { v?: number; speed_mps: number; points: MapPoint[]; lanes: MapLane[] }
 
 export type Incident = {
   id: number; kind: 'machine_down' | 'lane_block' | 'stock_drain'; target: string; started: string; until: string; active: boolean
@@ -192,6 +232,8 @@ export type FeedStatus = {
   vehicles: number
   deadlock_breaks: number
   has_map: boolean
+  /** Hệ toạ độ hãng xe mà feed đang giả lập (null: phát thẳng toạ độ bản đồ). */
+  frame: (Frame & { noise_m: number }) | null
   incidents: Incident[]
 }
 export type IncidentInput = { kind: Incident['kind']; target: string; duration_s?: number; material?: string; fraction?: number }

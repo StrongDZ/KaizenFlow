@@ -5,14 +5,14 @@ import { mergeLive } from './liveMerge'
 const base = (over: Partial<LiveSnapshot> = {}): LiveSnapshot => ({
   model: 'm', now: '2026-10-01T08:00:00Z', bindings: 3, errors: [{ message: 'x', count: 2, last: '' }],
   subjects: { A: { signals: {}, age_ms: 1000, state: 'IDLE' } },
-  fleet: { TUG: [{ id: 'T1', x: 0, y: 0, state: 'IDLE', lane: '', load: 0, ts: '', age_ms: 1000 }] },
+  fleet: { TUG: [{ id: 'T1', x: 0, y: 0, raw_x: 0, raw_y: 0, state: 'IDLE', lane: '', s: 0, off_map: false, load: 0, ts: '', age_ms: 1000 }] },
   sources: [{ source: 's', desc: 'd', last_ts: '', age_ms: 0, count: 1, last: {}, bound: true }],
   ...over,
 })
 const push = (over: Partial<LiveMsg> = {}): LiveMsg => ({
   type: 'live', model: 'm', now: '2026-10-01T08:00:05Z', sources: 1,
   subjects: { A: { signals: {}, age_ms: 10, state: 'RUNNING' } },
-  fleet: { TUG: [{ id: 'T1', x: 9, y: 9, state: 'MOVING', lane: 'L1', load: 1, ts: '', age_ms: 10 }] },
+  fleet: { TUG: [{ id: 'T1', x: 9, y: 9, raw_x: 9, raw_y: 9, state: 'MOVING', lane: 'L1', s: 0, off_map: false, load: 1, ts: '', age_ms: 10 }] },
   ...over,
 })
 

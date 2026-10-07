@@ -3,6 +3,7 @@ package livesvc
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"strings"
 	"sync"
@@ -16,7 +17,16 @@ import (
 type Store interface {
 	AllBindings(ctx context.Context) ([]live.Binding, error)
 	InsertLive(ctx context.Context, sigs []store.LiveSignal, evs []store.LiveEvent) error
+	UpsertSources(ctx context.Context, list []store.DataSource) error
 }
+
+// mapSource: store thật có thể đọc bản đồ AGV; bản giả trong test thì không (khi đó không khớp vị trí vào làn).
+type mapSource interface {
+	GetAgvMap(ctx context.Context, modelKey string) (json.RawMessage, error)
+}
+
+// mapTTL: bản đồ trong bộ nhớ được nạp lại sau khoảng này (giờ thật), phòng sửa bản đồ mà không qua API của tiến trình này.
+const mapTTL = 20 * time.Second
 
 type Broadcaster interface{ Broadcast(v any) }
 
@@ -27,6 +37,9 @@ const (
 	// một mình không đủ: mọi tín hiệu sẽ được ghi ở mọi lần phát và bảng signal phình ra hàng triệu dòng mỗi giờ.
 	persistWallGap = time.Second
 	maxErrors      = 20
+	// sourceWriteGap: khoảng nghỉ tối thiểu (giờ thật) giữa hai lần ghi DB của cùng một nguồn dữ liệu.
+	sourceWriteGap = 10 * time.Second
+	maxSourceAgg   = 10000
 )
 
 // alwaysPersist: tín hiệu rời rạc (mỗi mẫu là một chuyến xe) không được bỏ mẫu nào, vì hiệu chỉnh cần đủ mẫu.
@@ -43,6 +56,8 @@ type IngestResult struct {
 	Rejected int `json:"rejected"`
 	Readings int `json:"readings"`
 	Errors   int `json:"errors"`
+	// Derived: số giá trị tự tính được sinh ra từ lô này (ngoài Readings lấy thẳng từ bản tin).
+	Derived int `json:"derived"`
 }
 
 // LiveMsg là bản tin WebSocket: trạng thái một mô hình, không kèm danh sách nguồn (chỉ đếm).
@@ -63,6 +78,7 @@ type Service struct {
 
 	mu          sync.Mutex
 	byModel     map[string][]live.Binding
+	derived     map[string][]live.Binding // ghép nối tự tính của từng mô hình, đã sắp theo thứ tự tính (live.Plan)
 	pendingSigs []store.LiveSignal
 	pendingEvs  []store.LiveEvent
 	lastPersist map[string]time.Time
@@ -70,15 +86,73 @@ type Service struct {
 	lastState   map[string]string
 	dirty       map[string]bool
 	errs        map[string][]ErrCount
+	srcAgg      map[string]*srcAgg   // "mô hình|nguồn" → số bản tin và mẫu chưa ghi
+	srcFlushed  map[string]time.Time // lần ghi DB gần nhất của từng nguồn
+	mapLoaded   map[string]time.Time // lần nạp bản đồ AGV gần nhất của từng mô hình
+}
+
+// srcAgg gom các bản tin của một nguồn giữa hai lần ghi DB.
+type srcAgg struct {
+	model, source, desc string
+	first, last         time.Time
+	count               int64
+	sample              any
 }
 
 func New(st Store, hub Broadcaster) *Service {
 	return &Service{st: st, hub: hub, state: live.NewState(), now: time.Now,
-		byModel: map[string][]live.Binding{}, lastPersist: map[string]time.Time{}, lastWall: map[string]time.Time{}, lastState: map[string]string{},
-		dirty: map[string]bool{}, errs: map[string][]ErrCount{}}
+		byModel: map[string][]live.Binding{}, derived: map[string][]live.Binding{}, lastPersist: map[string]time.Time{}, lastWall: map[string]time.Time{}, lastState: map[string]string{},
+		dirty: map[string]bool{}, errs: map[string][]ErrCount{}, srcAgg: map[string]*srcAgg{}, srcFlushed: map[string]time.Time{}, mapLoaded: map[string]time.Time{}}
 }
 
 func (s *Service) State() *live.State { return s.state }
+
+// InvalidateMap bắt buộc nạp lại bản đồ AGV của mô hình ở lần ingest kế (gọi sau khi sửa bản đồ).
+func (s *Service) InvalidateMap(model string) {
+	s.mu.Lock()
+	delete(s.mapLoaded, model)
+	s.mu.Unlock()
+}
+
+// refreshMaps nạp bản đồ AGV (nếu cũ hoặc chưa có) cho các mô hình có ghép nối đội xe, để State khớp vị trí xe vào làn.
+func (s *Service) refreshMaps(byModel map[string][]live.Binding, wall time.Time) {
+	ms, ok := s.st.(mapSource)
+	if !ok {
+		return
+	}
+	for model, bs := range byModel {
+		fleet := false
+		for _, b := range bs {
+			if b.Enabled && b.Signal == live.SignalFleet {
+				fleet = true
+				break
+			}
+		}
+		if !fleet {
+			continue
+		}
+		s.mu.Lock()
+		at, seen := s.mapLoaded[model]
+		fresh := seen && wall.Sub(at) < mapTTL
+		if !fresh {
+			s.mapLoaded[model] = wall // đặt trước để lỗi đọc DB không bị thử lại ở mọi lô
+		}
+		s.mu.Unlock()
+		if fresh {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		raw, err := ms.GetAgvMap(ctx, model)
+		cancel()
+		if err != nil {
+			s.state.SetMap(model, nil) // chưa có bản đồ (hoặc đã xoá)
+			continue
+		}
+		if m, err := live.ParseMap(raw); err == nil {
+			s.state.SetMap(model, m)
+		}
+	}
+}
 
 // ReloadBindings nạp lại mapping từ DB (gọi sau mỗi lần sửa mapping).
 func (s *Service) ReloadBindings(ctx context.Context) error {
@@ -90,8 +164,14 @@ func (s *Service) ReloadBindings(ctx context.Context) error {
 	for _, b := range all {
 		by[b.ModelKey] = append(by[b.ModelKey], b)
 	}
+	der := map[string][]live.Binding{}
+	for m, bs := range by {
+		if plan := live.Plan(bs); len(plan) > 0 {
+			der[m] = plan
+		}
+	}
 	s.mu.Lock()
-	s.byModel = by
+	s.byModel, s.derived = by, der
 	s.mu.Unlock()
 	return nil
 }
@@ -102,8 +182,12 @@ func (s *Service) bindingsOf(model string) []live.Binding {
 	return s.byModel[model]
 }
 
-// Ingest chuẩn hoá một lô bản tin. Bản tin hỏng bị đếm và bỏ, không làm hỏng cả lô.
-func (s *Service) Ingest(msgs []live.Message) IngestResult {
+// Ingest chuẩn hoá một lô bản tin không nói rõ của mô hình nào: nguồn được ghi nhận cho những mô hình có ghép nối khớp nó.
+func (s *Service) Ingest(msgs []live.Message) IngestResult { return s.IngestFor("", msgs) }
+
+// IngestFor chuẩn hoá một lô bản tin. model (nếu có, do feed gửi kèm) là mô hình mà các nguồn trong lô thuộc về.
+// Bản tin hỏng bị đếm và bỏ, không làm hỏng cả lô.
+func (s *Service) IngestFor(model string, msgs []live.Message) IngestResult {
 	var res IngestResult
 	wall := s.now()
 	s.mu.Lock()
@@ -111,7 +195,13 @@ func (s *Service) Ingest(msgs []live.Message) IngestResult {
 	for k, v := range s.byModel {
 		byModel[k] = v
 	}
+	derived := make(map[string][]live.Binding, len(s.derived))
+	for k, v := range s.derived {
+		derived[k] = v
+	}
 	s.mu.Unlock()
+	s.refreshMaps(byModel, wall)
+	touched := map[string]map[live.Ref]bool{} // mô hình → tín hiệu vừa nhận giá trị mới trong lô này
 	for _, msg := range msgs {
 		if msg.Source == "" || msg.TS.IsZero() {
 			res.Rejected++
@@ -119,6 +209,7 @@ func (s *Service) Ingest(msgs []live.Message) IngestResult {
 		}
 		res.Accepted++
 		s.state.NoteSource(msg, wall)
+		s.noteSource(model, byModel, msg, wall)
 		for model, bs := range byModel {
 			rs, errs := live.Normalize(model, bs, msg)
 			res.Readings += len(rs)
@@ -126,13 +217,100 @@ func (s *Service) Ingest(msgs []live.Message) IngestResult {
 			if len(rs) > 0 {
 				s.state.Apply(model, rs, wall)
 				s.queue(model, rs, wall)
+				if touched[model] == nil {
+					touched[model] = map[live.Ref]bool{}
+				}
+				for _, r := range rs {
+					if r.Fleet == nil {
+						touched[model][live.Ref{Subject: r.Subject, Signal: r.Signal}] = true
+					}
+				}
 			}
 			for _, e := range errs {
 				s.noteError(model, e.Error(), msg.TS)
 			}
 		}
 	}
+	for model, refs := range touched {
+		res.Derived += s.runDerived(model, derived[model], refs, wall)
+	}
 	return res
+}
+
+// runDerived tính các tín hiệu tự tính của một mô hình sau một lô bản tin, theo thứ tự phụ thuộc, và đưa kết quả vào cùng đường
+// với dữ liệu thật (trạng thái live, lưu DB, dự báo). Công thức cộng trừ chỉ tính lại khi một đầu vào vừa có giá trị mới,
+// để giá trị tự tính không trông "tươi" khi đầu vào đã mất tín hiệu; công thức hoạt động phụ thuộc vào thời gian nên tính lại mỗi lô.
+func (s *Service) runDerived(model string, plan []live.Binding, touched map[live.Ref]bool, wall time.Time) int {
+	if len(plan) == 0 {
+		return 0
+	}
+	now := s.state.Now(model)
+	read := func(r live.Ref) (live.SigVal, bool) { return s.state.Value(model, r) }
+	n := 0
+	for _, b := range plan {
+		stale := b.Derive.Kind != live.KindActivity
+		if stale {
+			for _, in := range b.Derive.Inputs() {
+				if touched[in] {
+					stale = false
+					break
+				}
+			}
+			if stale {
+				continue
+			}
+		}
+		target := live.Ref{Subject: b.Subject, Signal: b.Signal}
+		r, ok := live.Eval(*b.Derive, target, read, now)
+		if !ok {
+			continue
+		}
+		r.Model = model
+		s.state.Apply(model, []live.Reading{r}, wall)
+		s.queue(model, []live.Reading{r}, wall)
+		touched[target] = true
+		n++
+	}
+	return n
+}
+
+// noteSource ghi nhận nguồn của một bản tin để Flush ghi xuống bảng data_source.
+func (s *Service) noteSource(model string, byModel map[string][]live.Binding, msg live.Message, wall time.Time) {
+	var owners []string
+	if model != "" {
+		owners = []string{model}
+	} else {
+		for m, bs := range byModel {
+			for _, b := range bs {
+				if b.Enabled && live.MatchSource(b.Source, msg.Source) {
+					owners = append(owners, m)
+					break
+				}
+			}
+		}
+	}
+	if len(owners) == 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, m := range owners {
+		k := m + "|" + msg.Source
+		a := s.srcAgg[k]
+		if a == nil {
+			if len(s.srcAgg) >= maxSourceAgg {
+				continue
+			}
+			a = &srcAgg{model: m, source: msg.Source, first: wall}
+			s.srcAgg[k] = a
+		}
+		a.last = wall
+		a.count++
+		if msg.Desc != "" {
+			a.desc = msg.Desc
+		}
+		a.sample = msg.Payload
+	}
 }
 
 func (s *Service) noteError(model, msg string, at time.Time) {
@@ -196,7 +374,55 @@ func (s *Service) Flush(ctx context.Context) error {
 	sigs, evs := s.pendingSigs, s.pendingEvs
 	s.pendingSigs, s.pendingEvs = nil, nil
 	s.mu.Unlock()
-	return s.st.InsertLive(ctx, sigs, evs)
+	if err := s.st.InsertLive(ctx, sigs, evs); err != nil {
+		return err
+	}
+	return s.flushSources(ctx)
+}
+
+// flushSources ghi các nguồn có bản tin mới, mỗi nguồn tối đa một lần mỗi sourceWriteGap. Ghi lỗi thì trả lại số đếm để lần sau ghi bù.
+func (s *Service) flushSources(ctx context.Context) error {
+	now := s.now()
+	type sent struct {
+		key   string
+		count int64
+	}
+	var out []store.DataSource
+	var done []sent
+	s.mu.Lock()
+	for k, a := range s.srcAgg {
+		if a.count == 0 {
+			continue
+		}
+		if last, ok := s.srcFlushed[k]; ok && now.Sub(last) < sourceWriteGap {
+			continue
+		}
+		var sample json.RawMessage
+		if a.sample != nil {
+			sample, _ = json.Marshal(a.sample)
+		}
+		out = append(out, store.DataSource{ModelKey: a.model, Source: a.source, Desc: a.desc, Origin: "feed",
+			FirstSeen: a.first, LastSeen: a.last, Count: a.count, Sample: sample})
+		done = append(done, sent{k, a.count})
+		a.count = 0
+		s.srcFlushed[k] = now
+	}
+	s.mu.Unlock()
+	if len(out) == 0 {
+		return nil
+	}
+	err := s.st.UpsertSources(ctx, out)
+	if err != nil {
+		s.mu.Lock()
+		for _, d := range done {
+			if a := s.srcAgg[d.key]; a != nil {
+				a.count += d.count
+			}
+			delete(s.srcFlushed, d.key)
+		}
+		s.mu.Unlock()
+	}
+	return err
 }
 
 // Snapshot chụp trạng thái live của một mô hình.

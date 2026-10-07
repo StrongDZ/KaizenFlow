@@ -4,12 +4,33 @@ import type { Issue, RunStatus } from '../api/types'
 import { friendlyMessage } from '../lib/errors'
 import { statusLabel } from '../lib/format'
 
-export const btn =
-  'inline-flex items-center gap-1.5 rounded-lg border border-line-2 px-3 py-1.5 text-xs font-medium text-text-2 hover:bg-panel hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
-export const btnPrimary =
-  'inline-flex items-center gap-1.5 rounded-lg bg-text px-3 py-1.5 text-xs font-semibold text-bg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50'
-export const btnDanger =
-  'inline-flex items-center gap-1.5 rounded-lg bg-bad px-3 py-1.5 text-xs font-semibold text-bg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50'
+/**
+ * Hệ màu nút (spec 2026-10-01 §3.6): hai trục, tông và độ nổi. Mỗi vùng chỉ một nút đặc; nút lặp trong bảng và nút phá huỷ
+ * dùng kiểu viền; đỏ đặc chỉ dành cho bước xác nhận trong hộp thoại. Màu không phải tín hiệu duy nhất: nút luôn có chữ.
+ */
+const base = 'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50'
+/** Trung tính, viền: Huỷ, Sửa, Nhân bản, Tạm dừng… */
+export const btn = `${base} border border-line-2 font-medium text-text-2 hover:bg-panel hover:text-text`
+/** Hành động chính của vùng: Lưu, Tạo, Áp dụng, Chạy. */
+export const btnPrimary = `${base} bg-accent font-semibold text-on-accent hover:opacity-90`
+/** Đưa vào dùng: Publish, Bắt đầu phát, Tiếp tục. */
+export const btnOk = `${base} bg-ok-solid font-semibold text-on-ok hover:opacity-90`
+/** Thao tác cố ý gây rối của demo (Bơm sự cố, Chặn làn), khác với phá huỷ thật. */
+export const btnWarn = `${base} bg-warn font-semibold text-on-warn hover:opacity-90`
+/** Đỏ đặc: chỉ nút xác nhận phá huỷ trong ConfirmDialog. */
+export const btnDanger = `${base} bg-bad font-semibold text-bg hover:opacity-90`
+/** Đỏ viền: nút phá huỷ ở chỗ kích hoạt (Xoá, Đặt lại, Xoá mọi ghép nối). */
+export const btnDangerOutline = `${base} border border-bad/60 font-medium text-bad-text hover:bg-bad-bg`
+/** Xanh dương viền: hành động chính lặp lại trong bảng (Chạy ở mỗi dòng). */
+export const btnAccentOutline = `${base} border border-accent/60 font-medium text-accent hover:bg-panel`
+/** Xanh lá viền: Publish ở mỗi dòng phiên bản. */
+export const btnOkOutline = `${base} border border-ok-solid/60 font-medium text-ok-solid hover:bg-panel`
+/** Nút biểu tượng không viền (đóng panel, đổi giao diện). */
+export const btnGhost = 'inline-flex items-center justify-center rounded-md p-1.5 text-muted hover:bg-panel hover:text-text disabled:cursor-not-allowed disabled:opacity-50'
+/** Liên kết chữ xanh nhỏ trong form ("Tạo vật tư RAW01 trong Thư viện"). */
+export const btnLinkAccent = 'mt-1 block text-[11px] text-accent underline decoration-dotted hover:opacity-80'
+/** Chữ đỏ nhỏ trong form, cho thao tác bỏ một dòng (không phải xoá dữ liệu). */
+export const btnLinkDanger = 'text-xs text-bad-text underline decoration-dotted hover:opacity-80 disabled:opacity-50'
 export const input =
   'rounded-lg border border-line-2 bg-panel-2 px-2.5 py-1.5 text-xs text-text placeholder:text-faint'
 

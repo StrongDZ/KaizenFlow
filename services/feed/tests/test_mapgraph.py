@@ -1,5 +1,7 @@
 import math
 
+import pytest
+
 from feed_service.mapgraph import MapGraph
 
 MAP = {
@@ -59,3 +61,32 @@ def test_bad_map_is_rejected_with_a_clear_message():
     with pytest.raises(ValueError, match="lane XX"):
         MapGraph({"speed_mps": 1, "points": [{"id": "A", "x": 0, "y": 0, "kind": "junction"}],
                   "lanes": [{"id": "XX", "from": "A", "to": "Z", "capacity": 1}]})
+
+
+def test_v2_lane_is_a_polyline_with_arc_length_pose():
+    import math
+    g = MapGraph({"v": 2, "speed_mps": 1.0,
+                  "points": [{"id": "A", "x": 0, "y": 0, "kind": "junction"}, {"id": "B", "x": 10, "y": 0, "kind": "junction"}],
+                  "lanes": [{"id": "L", "from": "A", "to": "B", "capacity": 1, "path": [{"x": 5, "y": 5}]}]})
+    assert g.lanes["L"].length_m == pytest.approx(2 * math.hypot(5, 5))
+    x, y, th = g.pose_on_lane("L", 0.5)
+    assert (x, y) == pytest.approx((5, 5))
+    assert g.pose_on_lane("L", 0.25)[2] == pytest.approx(45)
+    assert g.pose_on_lane("L", 0.75)[2] == pytest.approx(315)  # đi xuống-phải rồi lên-phải: 45° rồi -45°, chuẩn hoá về [0,360)
+    assert g.xy_on_lane("L", 1.0) == pytest.approx((10, 0))
+    assert g.pose_on_lane("L", 5.0)[:2] == pytest.approx((10, 0))  # ngoài [0,1] bị kẹp
+
+
+def test_v1_map_is_converted_to_meters_on_load():
+    g = MapGraph({"unit_m": 2.0, "speed_mps": 1.0,
+                  "points": [{"id": "A", "x": 0, "y": 0, "kind": "junction"}, {"id": "B", "x": 10, "y": 5, "kind": "junction"}],
+                  "lanes": [{"id": "L", "from": "A", "to": "B", "capacity": 1}]})
+    assert g.xy_of("B") == pytest.approx((20, 10))
+    assert g.lanes["L"].length_m == pytest.approx((20 ** 2 + 10 ** 2) ** 0.5)
+
+
+def test_zero_length_lane_has_a_pose():
+    g = MapGraph({"v": 2, "speed_mps": 1.0,
+                  "points": [{"id": "A", "x": 3, "y": 4, "kind": "junction"}, {"id": "B", "x": 3, "y": 4, "kind": "junction"}],
+                  "lanes": [{"id": "L", "from": "A", "to": "B", "capacity": 1}]})
+    assert g.pose_on_lane("L", 0.5)[:2] == pytest.approx((3, 4))

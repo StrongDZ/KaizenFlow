@@ -33,3 +33,20 @@ export function formToScenarioBody(f: ScenarioForm): ScenarioBody {
     overrides: [...f.ovr.map((o) => ({ target: o.target, path: '/count', value: o.count })), ...f.extra],
   }
 }
+
+/** Những chỗ chưa hợp lệ của form scenario, bằng tiếng Việt, nói rõ sửa gì. Rỗng là có thể lưu. */
+export function formProblems(f: ScenarioForm): string[] {
+  const out: string[] = []
+  if (f.name.trim() === '') out.push('Scenario cần một tên.')
+  if (!(f.hours > 0)) out.push('Thời lượng phải lớn hơn 0 giờ.')
+  if (!(f.reps >= 1) || f.reps > 200) out.push('Số lần lặp Monte Carlo phải từ 1 đến 200.')
+  const horizonMin = f.hours * 60
+  f.inj.forEach((r, i) => {
+    const n = i + 1
+    if (r.failure === '') out.push(`Lỗi tiêm ở dòng ${n}: chọn loại lỗi.`)
+    if (r.at_min < 0) out.push(`Lỗi tiêm ở dòng ${n}: số phút không được âm.`)
+    else if (f.hours > 0 && r.at_min > horizonMin) out.push(`Lỗi tiêm ở dòng ${n}: phút ${r.at_min} nằm sau khi scenario kết thúc (thời lượng ${Math.round(horizonMin)} phút). Chọn số phút nhỏ hơn.`)
+  })
+  f.ovr.forEach((r, i) => { if (!(r.count >= 1)) out.push(`Thay đổi nguồn lực ở dòng ${i + 1}: số lượng phải ít nhất 1.`) })
+  return out
+}

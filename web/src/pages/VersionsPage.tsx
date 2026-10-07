@@ -3,8 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { VersionInfo } from '../api/types'
 import { DeleteAction } from '../components/DeleteAction'
+import { SetupChecklist } from '../components/SetupChecklist'
 import { DataTable, type Column } from '../components/table/DataTable'
-import { EmptyState, ErrorBox, Loading, PageBody, PageHeader, Tag, btn } from '../components/ui'
+import { EmptyState, ErrorBox, Loading, PageBody, PageHeader, Tag, btn, btnOkOutline } from '../components/ui'
 import { fmtDateTime, versionStatusLabel } from '../lib/format'
 
 export default function VersionsPage() {
@@ -34,7 +35,7 @@ export default function VersionsPage() {
       cell: (v) => (
         <div className="flex justify-end gap-2" onClick={stop}>
           <button className={btn} disabled={clone.isPending} onClick={() => clone.mutate(v.id)}>Nhân bản</button>
-          {v.status === 'DRAFT' && <button className={btn} disabled={publish.isPending} onClick={() => publish.mutate(v.id)}>Publish</button>}
+          {v.status === 'DRAFT' && <button className={btnOkOutline} disabled={publish.isPending} onClick={() => publish.mutate(v.id)}>Publish</button>}
           <DeleteAction what={`phiên bản v${v.version}`} run={(cascade) => api.deleteVersion(v.id, cascade)} onDone={refresh} />
         </div>
       ),
@@ -43,6 +44,7 @@ export default function VersionsPage() {
   return (
     <PageBody>
       <PageHeader title="Phiên bản" subtitle={key} />
+      <SetupChecklist model={key} versions={versions.data ?? []} />
       <ErrorBox error={versions.error ?? clone.error ?? publish.error} />
       <DataTable
         rows={rows}

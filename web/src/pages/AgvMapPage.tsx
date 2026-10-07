@@ -1,19 +1,27 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Ban, Spline, Trash2, Unlock, X } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
-import type { AgvMap, MapPoint } from '../api/types'
+import type { AgvMap, Frame, MapPoint, Pt } from '../api/types'
 import { CalibrationCard } from '../components/live/CalibrationCard'
-import { AgvMapCanvas, type MapSelection, type RingTone } from '../components/live/AgvMapCanvas'
+import { AgvMapCanvas, type CanvasHandle, type MapSelection, type RingTone } from '../components/live/AgvMapCanvas'
+import { FloatingPanel, PanelSection } from '../components/FloatingPanel'
+import { HeaderActions } from '../components/shell/ShellContext'
+import { MapToolbar, type MapTool } from '../components/live/MapToolbar'
 import { FeedControl } from '../components/live/FeedControl'
-import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, Tag, btn, btnPrimary, input } from '../components/ui'
+import { FrameCard } from '../components/live/FrameCard'
+import { MapTables } from '../components/live/MapTables'
+import { PeekHost, SidePeek } from '../components/SidePeek'
+import { EmptyState, ErrorBox, Loading, PageBody, PageHeader, Tag, btn, btnPrimary, input } from '../components/ui'
 import { useFeedStatus, useLive } from '../hooks/useLive'
+import { applyFrame } from '../lib/frame'
 import { useModelGraph } from '../hooks/useModelGraph'
 import { nodeBadge } from '../lib/liveFrame'
-import { addLane, addPoint, laneLengthM, laneTone, movePoint, occupancy, removeLane, removePoint, setLaneCapacity } from '../lib/mapGeom'
+import {
+  addLane, addPoint, insertWaypoint, laneLengthM, laneTone, movePoint, moveWaypoint, occupancy, removeLane, removePoint, removeWaypoint, setLaneCapacity,
+} from '../lib/mapGeom'
 import { poolCount, thresholdsFor } from '../lib/model'
-
-type Tool = 'select' | 'junction' | 'station' | 'connect'
 
 const STATE_LABEL: Record<string, string> = { MOVING: 'đang chạy', WAITING: 'chờ vào làn', LOADING: 'bốc dỡ hàng', IDLE: 'nghỉ' }
 const TONE_LABEL = { ok: 'thông thoáng', busy: 'đầy chỗ', jam: 'có xe chờ' } as const
@@ -30,15 +38,27 @@ export default function AgvMapPage() {
   })
   const [draft, setDraft] = useState<AgvMap | null>(null)
   const [selected, setSelected] = useState<MapSelection>(null)
-  const [tool, setTool] = useState<Tool>('select')
+  const [tool, setTool] = useState<MapTool>('select')
   const [linkFrom, setLinkFrom] = useState<string | null>(null)
+  const canvasRef = useRef<CanvasHandle>(null)
+  const [panelOpen, setPanelOpen] = useState(true)
+  const [tableOpen, setTableOpen] = useState(false)
+  const [tableTab, setTableTab] = useState<'map' | 'cal'>('map')
+  const [frameDraft, setFrameDraft] = useState<Frame | null>(null)  // khung toạ độ xe đang chỉnh (xem trước bằng chấm nét đứt)
+  const [via, setVia] = useState<Pt[]>([])  // điểm uốn đã bấm của làn đang vẽ dở
   const [bothWays, setBothWays] = useState(true)
   const editing = draft !== null
+  useEffect(() => {
+    if (linkFrom === null) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setLinkFrom(null); setVia([]) } }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [linkFrom])
   const map = draft ?? saved.data ?? null
 
   const save = useMutation({
     mutationFn: (m: AgvMap) => api.saveAgvMap(model, m),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['agv-map', model] }); setDraft(null); setSelected(null); setTool('select'); setLinkFrom(null) },
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['agv-map', model] }); setDraft(null); setSelected(null); setTool('select'); setLinkFrom(null); setVia([]) },
   })
   const refreshFeed = () => void qc.invalidateQueries({ queryKey: ['feed-status'] })
   const block = useMutation({ mutationFn: (lane: string) => api.feed.addIncident({ kind: 'lane_block', target: lane, duration_s: 1800 }), onSuccess: refreshFeed })
@@ -70,171 +90,201 @@ export default function AgvMapPage() {
   const blockedIds = useMemo(() => new Set(laneBlocks.keys()), [laneBlocks])
   const fleets = useMemo(() => Object.values(snapshot?.fleet ?? {}), [snapshot])
   const occ = useMemo(() => (map ? occupancy(map, fleets) : new Map()), [map, fleets])
+  const ghosts = useMemo(
+    () => (frameDraft ? fleets.flat().map((v) => { const [x, y] = applyFrame(frameDraft, v.raw_x, v.raw_y); return { id: v.id, x, y } }) : undefined),
+    [frameDraft, fleets],
+  )
 
   if (saved.isLoading || g.status === 'loading') return <Loading />
   if (saved.error) return <PageBody><PageHeader title="Bản đồ AGV" subtitle={model} /><ErrorBox error={saved.error} /></PageBody>
 
-  const startEdit = () => setDraft(saved.data ?? { unit_m: 1.5, speed_mps: 1.2, points: [], lanes: [] })
-  const cancelEdit = () => { setDraft(null); setSelected(null); setTool('select'); setLinkFrom(null) }
+  const startEdit = () => setDraft(saved.data ?? { v: 2, speed_mps: 1.2, points: [], lanes: [] })
+  const cancelEdit = () => { setDraft(null); setSelected(null); setTool('select'); setLinkFrom(null); setVia([]) }
   const apply = (f: (m: AgvMap) => AgvMap) => setDraft((d) => (d ? f(d) : d))
   const running = feed.data?.state === 'running' && feed.data.model === model
 
   const onPointClick = (id: string) => {
     if (!editing || tool !== 'connect') return
-    if (linkFrom === null) { setLinkFrom(id); return }
-    apply((m) => addLane(m, linkFrom, id, bothWays))
+    if (linkFrom === null) { setLinkFrom(id); setVia([]); return }
+    if (id !== linkFrom) apply((m) => addLane(m, linkFrom, id, bothWays, via))
     setLinkFrom(null)
+    setVia([])
   }
-  const onBackground = (at: { x: number; y: number }) => {
-    if (editing && (tool === 'junction' || tool === 'station')) apply((m) => addPoint(m, at, tool))
+  const onBackground = (at: Pt) => {
+    if (!editing) return
+    if (tool === 'junction' || tool === 'station') apply((m) => addPoint(m, at, tool))
+    else if (tool === 'connect' && linkFrom !== null) setVia((v) => [...v, at])  // chỗ trống khi đang vẽ làn = thêm một điểm uốn
   }
 
   const selPoint = map && selected?.kind === 'point' ? map.points.find((p) => p.id === selected.id) : undefined
   const selLane = map && selected?.kind === 'lane' ? map.lanes.find((l) => l.id === selected.id) : undefined
   const nodeOptions = graph?.nodes ?? []
 
+  const peek = selPoint ? (
+    <SidePeek
+      title="Chi tiết điểm" heading={selPoint.id} onClose={() => setSelected(null)}
+      subtitle={<Tag>{selPoint.kind === 'station' ? 'Trạm' : selPoint.kind === 'charger' ? 'Chỗ sạc' : 'Ngã tư'}</Tag>}
+      summary={selPoint.kind === 'station' ? <p>Gắn với node {selPoint.node_key ? names[selPoint.node_key] ?? selPoint.node_key : '(chưa gắn)'}.</p> : undefined}
+      menu={editing ? [{ key: 'delete', label: 'Xoá điểm và các làn nối vào nó', icon: Trash2, danger: true, onSelect: () => { apply((m) => removePoint(m, selPoint.id)); setSelected(null) } }] : undefined}
+    >
+      {editing && <PointEditor point={selPoint} nodes={nodeOptions.map((n) => ({ key: n.key, name: names[n.key] ?? n.key }))}
+        onChange={(p) => apply((m) => ({ ...m, points: m.points.map((q) => (q.id === p.id ? p : q)) }))} />}
+    </SidePeek>
+  ) : selLane ? (
+    <SidePeek
+      title="Chi tiết làn" heading={selLane.id} onClose={() => setSelected(null)}
+      subtitle={<Tag>{selLane.from} → {selLane.to}</Tag>}
+      summary={<p>Dài {Math.round(laneLengthM(map!, selLane))} m{(selLane.path?.length ?? 0) > 0 ? `, ${selLane.path!.length} điểm uốn` : ''}, chứa tối đa {selLane.capacity} xe.</p>}
+      menu={editing
+        ? [
+            ...((selLane.path?.length ?? 0) > 0 ? [{ key: 'straight', label: 'Làm thẳng làn', icon: Spline, onSelect: () => apply((m) => ({ ...m, lanes: m.lanes.map((l) => (l.id === selLane.id ? { ...l, path: undefined } : l)) })) }] : []),
+            { key: 'delete', label: 'Xoá làn', icon: Trash2, danger: true, onSelect: () => { apply((m) => removeLane(m, selLane.id)); setSelected(null) } },
+          ]
+        : laneBlocks.has(selLane.id)
+          ? [{ key: 'unblock', label: 'Gỡ chặn', icon: Unlock, disabled: unblock.isPending, onSelect: () => unblock.mutate(laneBlocks.get(selLane.id)!.id) }]
+          : [{ key: 'block', label: 'Chặn làn này 30 phút', icon: Ban, disabled: !running || block.isPending, hint: 'Bật feed để bơm sự cố chặn làn.', onSelect: () => block.mutate(selLane.id) }]}
+    >
+      <div className="space-y-2 text-xs text-text-2">
+        {!editing && occ.get(selLane.id) && (
+          <p>Đang có <b className="text-text">{occ.get(selLane.id)!.holding}</b> xe, <b className="text-text">{occ.get(selLane.id)!.waiting}</b> chờ vào làn kế: {TONE_LABEL[laneTone(occ.get(selLane.id)!)]}.</p>
+        )}
+        {editing && (
+          <label className="block space-y-1"><span className="block">Sức chứa</span>
+            <input type="number" min={1} className={`${input} w-20`} value={selLane.capacity} onChange={(e) => apply((m) => setLaneCapacity(m, selLane.id, Number(e.target.value)))} /></label>
+        )}
+        {!editing && laneBlocks.has(selLane.id) && <p className="text-bad-text">Đang bị chặn (sự cố bơm từ bảng demo).</p>}
+        {!editing && !running && <p className="text-faint">Bật feed để bơm sự cố chặn làn.</p>}
+      </div>
+    </SidePeek>
+  ) : null
+
+  const PANEL_W = 320
+  // Tấm chi tiết (SidePeek) đè lên mép phải với bề rộng tối đa 680px; thanh công cụ tránh nó.
+  const peekInset = peek ? Math.min(680, window.innerWidth * 0.92) : 0
+  const DRAWER_H = 280
+  const fleetList = Object.keys(snapshot?.fleet ?? {}).length === 0 ? (
+    <p className="text-xs text-muted">Chưa nhận được vị trí xe. Ghép tín hiệu "Vị trí từng xe" cho đội xe ở tab Kết nối dữ liệu, rồi bật feed.</p>
+  ) : (
+    <div className="space-y-3">
+      {Object.entries(snapshot!.fleet).map(([pool, vs]) => (
+        <div key={pool}>
+          <div className="mb-1 text-xs font-semibold text-text">{names[pool] ?? pool}</div>
+          <ul className="space-y-1">
+            {vs.map((v) => (
+              <li key={v.id} className="flex items-center gap-2 text-[11.5px] text-text-2">
+                <i className={`h-2 w-2 flex-none rounded-full ${v.state === 'MOVING' ? 'bg-ok' : v.state === 'WAITING' ? 'bg-bad' : v.state === 'LOADING' ? 'bg-warn' : 'bg-faint'}`} />
+                <span className="font-mono">{v.id}</span>
+                <span className="text-muted">{STATE_LABEL[v.state] ?? v.state}{v.load > 0 ? `, chở ${v.load}` : ''}{v.lane ? `, làn ${v.lane}` : ''}{v.off_map ? ', ngoài đường' : ''}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  )
+
+  // Trang kiểu Sơ đồ: canvas lấp đầy vùng làm việc, mọi thứ khác là bảng nổi (bên trái), thanh công cụ (đáy) và ngăn dữ liệu (đáy).
   return (
-    <PageBody wide>
-      <PageHeader
-        title="Bản đồ AGV"
-        subtitle={model}
-        actions={
-          editing ? (
+    <PeekHost peek={peek} onClose={() => setSelected(null)}>
+      <div className="flex h-full min-h-[480px] flex-col">
+        <HeaderActions>
+          {editing ? (
             <>
+              <span className="text-[11px] text-muted">Đang sửa bản đồ</span>
               <button className={btn} onClick={cancelEdit}>Huỷ</button>
               <button className={btnPrimary} disabled={save.isPending} onClick={() => save.mutate(draft!)}>Lưu bản đồ</button>
             </>
-          ) : (
-            map && <button className={btn} onClick={startEdit}>Sửa bản đồ</button>
-          )
-        }
-      />
-      <FeedControl model={model} />
-      <ErrorBox error={save.error ?? block.error ?? unblock.error} />
+          ) : map ? <button className={btn} onClick={startEdit}>Sửa bản đồ</button> : null}
+        </HeaderActions>
+        <div className="flex-none border-b border-line bg-panel p-2"><FeedControl model={model} offerFrame /></div>
 
-      {!map ? (
-        <Card title="Chưa có bản đồ">
-          <EmptyState title="Mô hình chưa có bản đồ AGV">
-            Bản đồ cho biết trạm nào nằm ở đâu, xe đi đường nào và làn nào dễ tắc. Bản đồ mẫu có trong scripts/seed_demo.py; hoặc tự vẽ.
-            <div className="mt-3"><button className={btnPrimary} onClick={startEdit}>Vẽ bản đồ mới</button></div>
-          </EmptyState>
-        </Card>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <Card
-            title={editing ? 'Đang sửa bản đồ' : 'Xe chạy trực tiếp'}
-            actions={
-              editing ? (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {([['select', 'Chọn, kéo'], ['junction', '＋ Ngã tư'], ['station', '＋ Trạm'], ['connect', 'Nối làn']] as [Tool, string][]).map(([t, label]) => (
-                    <button key={t} aria-pressed={tool === t} onClick={() => { setTool(t); setLinkFrom(null) }}
-                      className={`rounded-md border px-2 py-1 text-[11px] ${tool === t ? 'border-text bg-text font-semibold text-bg' : 'border-line-2 text-muted hover:text-text'}`}>{label}</button>
-                  ))}
-                  {tool === 'connect' && (
-                    <label className="flex items-center gap-1 text-[11px] text-muted"><input type="checkbox" checked={bothWays} onChange={(e) => setBothWays(e.target.checked)} /> hai chiều</label>
-                  )}
-                </div>
-              ) : <Tag>{map.points.length} điểm · {map.lanes.length} làn · {map.speed_mps} m/s</Tag>
-            }
-          >
-            {editing && (
-              <p className="mb-2 text-[11px] text-muted">
-                {tool === 'connect' ? (linkFrom ? `Bấm điểm đích để nối từ ${linkFrom}.` : 'Bấm điểm đầu, rồi điểm đích để nối làn.')
-                  : tool === 'select' ? 'Kéo điểm để dời; bấm điểm hoặc làn để sửa thuộc tính.' : 'Bấm vào chỗ trống trên bản đồ để đặt điểm mới.'}
-              </p>
-            )}
-            <div className="h-[520px] rounded-lg border border-line bg-bg">
-              <AgvMapCanvas
-                map={map} fleets={fleets} names={names} ringOf={(k) => rings[k]} blocked={blockedIds} selected={selected} editing={editing} linkFrom={linkFrom}
-                onSelect={setSelected} onPointClick={onPointClick} onMovePoint={(id, x, y) => apply((m) => movePoint(m, id, x, y))} onBackgroundClick={onBackground}
-              />
+        <div className="relative min-h-0 flex-1 overflow-hidden bg-bg">
+          {!map ? (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <EmptyState title="Mô hình chưa có bản đồ AGV">
+                Bản đồ cho biết trạm nào nằm ở đâu, xe đi đường nào và làn nào dễ tắc. Bản đồ mẫu có trong scripts/seed_demo.py; hoặc tự vẽ.
+                <div className="mt-3"><button className={btnPrimary} onClick={startEdit}>Vẽ bản đồ mới</button></div>
+              </EmptyState>
             </div>
-            <p className="mt-2 text-[11px] leading-relaxed text-muted">
-              Xe: <b className="text-ok">xanh</b> đang chạy, <b className="text-warn">vàng</b> bốc dỡ hàng, <b className="text-bad-text">đỏ</b> chờ vào làn, xám nghỉ; vòng nét đứt là đang chở hàng.
-              Làn: xám thông thoáng, <b className="text-warn">vàng</b> đầy chỗ, <b className="text-bad-text">đỏ</b> có xe chờ. Viền trạm theo trạng thái node trong sơ đồ.
-            </p>
-          </Card>
+          ) : (
+            <>
+              <AgvMapCanvas
+                ref={canvasRef} padLeft={panelOpen ? PANEL_W + 24 : 0}
+                map={map} fleets={fleets} names={names} ringOf={(k) => rings[k]} blocked={blockedIds} selected={selected} editing={editing} linkFrom={linkFrom}
+                draft={linkFrom ? { from: linkFrom, via } : null} ghosts={ghosts}
+                onSelect={setSelected} onPointClick={onPointClick} onMovePoint={(id, x, y) => apply((m) => movePoint(m, id, x, y))} onBackgroundClick={onBackground}
+                onMoveWaypoint={(lane, i, x, y) => apply((m) => moveWaypoint(m, lane, i, x, y))}
+                onInsertWaypoint={(lane, i, at) => apply((m) => insertWaypoint(m, lane, i, at))}
+                onRemoveWaypoint={(lane, i) => apply((m) => removeWaypoint(m, lane, i))}
+              />
 
-          <div className="space-y-4">
-            {editing && (
-              <Card title="Thông số chung">
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <label className="space-y-1"><span className="block text-text-2">Tốc độ xe (m/s)</span>
-                    <input className={`${input} w-full`} inputMode="decimal" value={draft!.speed_mps} onChange={(e) => apply((m) => ({ ...m, speed_mps: Number(e.target.value) || 0 }))} /></label>
-                  <label className="space-y-1"><span className="block text-text-2">Mét mỗi đơn vị vẽ</span>
-                    <input className={`${input} w-full`} inputMode="decimal" value={draft!.unit_m} onChange={(e) => apply((m) => ({ ...m, unit_m: Number(e.target.value) || 0 }))} /></label>
-                </div>
-              </Card>
-            )}
-
-            {selPoint && (
-              <Card title={`Điểm ${selPoint.id}`}>
-                {editing ? <PointEditor point={selPoint} nodes={nodeOptions.map((n) => ({ key: n.key, name: names[n.key] ?? n.key }))}
-                  onChange={(p) => apply((m) => ({ ...m, points: m.points.map((q) => (q.id === p.id ? p : q)) }))}
-                  onDelete={() => { apply((m) => removePoint(m, selPoint.id)); setSelected(null) }} />
-                  : <p className="text-xs text-text-2">{selPoint.kind === 'station' ? `Trạm gắn với node ${selPoint.node_key ? names[selPoint.node_key] ?? selPoint.node_key : '(chưa gắn)'}.` : selPoint.kind === 'charger' ? 'Chỗ sạc.' : 'Ngã tư.'}</p>}
-              </Card>
-            )}
-
-            {selLane && (
-              <Card title={`Làn ${selLane.id}`}>
-                <div className="space-y-2 text-xs text-text-2">
-                  <p>{selLane.from} → {selLane.to}, dài {Math.round(laneLengthM(map, selLane))} m, chứa tối đa {selLane.capacity} xe.</p>
-                  {!editing && occ.get(selLane.id) && (
-                    <p>Đang có <b className="text-text">{occ.get(selLane.id)!.holding}</b> xe, <b className="text-text">{occ.get(selLane.id)!.waiting}</b> chờ vào làn kế: {TONE_LABEL[laneTone(occ.get(selLane.id)!)]}.</p>
-                  )}
+              {panelOpen && (
+                <FloatingPanel side="left" width={PANEL_W} top={12} bottom={tableOpen ? DRAWER_H + 12 : 64} title={`Bản đồ AGV · ${map.points.length} điểm, ${map.lanes.length} làn, ${map.speed_mps} m/s`} onClose={() => setPanelOpen(false)}>
+                  <PanelSection title="Đội xe">{fleetList}</PanelSection>
                   {editing ? (
-                    <div className="flex items-end gap-2">
-                      <label className="space-y-1"><span className="block">Sức chứa</span>
-                        <input type="number" min={1} className={`${input} w-20`} value={selLane.capacity} onChange={(e) => apply((m) => setLaneCapacity(m, selLane.id, Number(e.target.value)))} /></label>
-                      <button className={btn} onClick={() => { apply((m) => removeLane(m, selLane.id)); setSelected(null) }}>Xoá làn</button>
-                    </div>
-                  ) : laneBlocks.has(selLane.id) ? (
-                    <div className="space-y-1.5">
-                      <p className="text-bad-text">Đang bị chặn (sự cố bơm từ bảng demo).</p>
-                      <button className={btn} disabled={unblock.isPending} onClick={() => unblock.mutate(laneBlocks.get(selLane.id)!.id)}>Gỡ chặn</button>
-                    </div>
+                    <PanelSection title="Thông số chung">
+                      <label className="block space-y-1 text-xs"><span className="block text-text-2">Tốc độ xe (m/s)</span>
+                        <input className={`${input} w-full`} inputMode="decimal" value={draft!.speed_mps} onChange={(e) => apply((m) => ({ ...m, speed_mps: Number(e.target.value) || 0 }))} /></label>
+                    </PanelSection>
                   ) : (
-                    <button className={btn} disabled={!running || block.isPending} onClick={() => block.mutate(selLane.id)}>Chặn làn này 30 phút</button>
+                    <PanelSection title="Khung toạ độ xe">
+                      <FrameCard bare model={model} map={map} names={names} fleets={fleets} draft={frameDraft} onDraft={setFrameDraft} />
+                    </PanelSection>
                   )}
-                  {!editing && !running && <p className="text-faint">Bật feed để bơm sự cố chặn làn.</p>}
-                </div>
-              </Card>
-            )}
+                  <PanelSection title="Chú giải" defaultOpen={false}>
+                    <p className="text-[11px] leading-relaxed text-muted">
+                      Xe: <b className="text-ok">xanh</b> đang chạy, <b className="text-warn">vàng</b> bốc dỡ hàng, <b className="text-bad-text">đỏ</b> chờ vào làn, xám nghỉ; vòng nét đứt là đang chở hàng; mũi tên trắng là hướng xe.
+                      Làn: xám thông thoáng, <b className="text-warn">vàng</b> đầy chỗ, <b className="text-bad-text">đỏ</b> có xe chờ. Viền trạm theo trạng thái node trong sơ đồ.
+                      Lăn chuột để thu phóng, kéo chỗ trống để dời bản đồ.
+                    </p>
+                  </PanelSection>
+                </FloatingPanel>
+              )}
 
-            <Card title="Đội xe">
-              {Object.keys(snapshot?.fleet ?? {}).length === 0 ? (
-                <p className="text-xs text-muted">Chưa nhận được vị trí xe. Ghép tín hiệu "Vị trí từng xe" cho đội xe ở tab Kết nối dữ liệu, rồi bật feed.</p>
-              ) : (
-                <div className="space-y-3">
-                  {Object.entries(snapshot!.fleet).map(([pool, vs]) => (
-                    <div key={pool}>
-                      <div className="mb-1 text-xs font-semibold text-text">{names[pool] ?? pool}</div>
-                      <ul className="space-y-1">
-                        {vs.map((v) => (
-                          <li key={v.id} className="flex items-center gap-2 text-[11.5px] text-text-2">
-                            <i className={`h-2 w-2 flex-none rounded-full ${v.state === 'MOVING' ? 'bg-ok' : v.state === 'WAITING' ? 'bg-bad' : v.state === 'LOADING' ? 'bg-warn' : 'bg-faint'}`} />
-                            <span className="font-mono">{v.id}</span>
-                            <span className="text-muted">{STATE_LABEL[v.state] ?? v.state}{v.load > 0 ? `, chở ${v.load}` : ''}{v.lane ? `, làn ${v.lane}` : ''}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
+              {editing && (
+                <div role="status" className="absolute z-10 max-w-[520px] -translate-x-1/2 rounded-lg border border-line bg-panel px-3 py-1.5 text-center text-[11px] text-muted shadow-lg" style={{ bottom: (tableOpen ? DRAWER_H : 0) + 56, left: `calc((100% - ${peekInset}px) / 2)` }}>
+                  {tool === 'connect'
+                    ? (linkFrom
+                      ? `Đang vẽ từ ${linkFrom}: bấm chỗ trống để thêm điểm uốn (đã có ${via.length}), bấm một điểm để kết thúc, Esc để huỷ.`
+                      : 'Bấm điểm đầu, bấm chỗ trống để thêm điểm uốn nếu làn cong hay chéo, rồi bấm điểm cuối.')
+                    : tool === 'select' ? 'Kéo điểm để dời; bấm một làn để thêm (dấu +), kéo hoặc xoá (bấm đúp) điểm uốn của nó. Lưu áp dụng cho lần phát kế của feed.' : 'Bấm vào chỗ trống trên bản đồ để đặt điểm mới.'}
                 </div>
               )}
-            </Card>
-          </div>
+
+              <MapToolbar
+                editing={editing} tool={tool} onTool={(t) => { setTool(t); setLinkFrom(null); setVia([]) }} bothWays={bothWays} onBothWays={setBothWays}
+                onZoomBy={(f) => canvasRef.current?.zoomBy(f)} onFit={() => canvasRef.current?.fit()}
+                panelOpen={panelOpen} onPanel={() => setPanelOpen((o) => !o)} tableOpen={tableOpen} onTable={() => setTableOpen((o) => !o)}
+                bottom={`${tableOpen ? DRAWER_H + 12 : 12}px`} rightInset={peekInset}
+              />
+
+              {tableOpen && (
+                <section aria-label="Bảng dữ liệu bản đồ" className="absolute inset-x-0 bottom-0 z-10 flex flex-col border-t border-line bg-panel shadow-lg" style={{ height: DRAWER_H }}>
+                  <header className="flex flex-none items-center gap-4 border-b border-line px-4 pt-2">
+                    {([['map', 'Điểm và làn'], ['cal', 'Hiệu chỉnh thời gian chuyến']] as const).map(([t, label]) => (
+                      <button key={t} role="tab" aria-selected={tableTab === t} onClick={() => setTableTab(t)}
+                        className={`-mb-px border-b-2 pb-1.5 text-xs font-medium ${tableTab === t ? 'border-text font-semibold text-text' : 'border-transparent text-muted hover:text-text'}`}>{label}</button>
+                    ))}
+                    <button aria-label="Đóng bảng" onClick={() => setTableOpen(false)} className="ml-auto pb-1.5 text-muted hover:text-text"><X size={14} /></button>
+                  </header>
+                  <div className="min-h-0 flex-1 overflow-auto p-3">
+                    {tableTab === 'map'
+                      ? <MapTables map={map} names={names} occ={occ} blocked={blockedIds} selected={selected} onSelect={setSelected} />
+                      : <CalibrationCard model={model} />}
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+          {(save.error || block.error || unblock.error) && <div className="absolute left-1/2 top-3 z-20 w-[420px] -translate-x-1/2"><ErrorBox error={save.error ?? block.error ?? unblock.error} /></div>}
         </div>
-      )}
-      {!editing && map && <CalibrationCard model={model} />}
-      {editing && <Notice>Lưu bản đồ sẽ áp dụng cho lần phát tiếp theo của feed; feed đang chạy giữ bản đồ cũ đến khi bạn bấm Đặt lại rồi Bắt đầu.</Notice>}
-    </PageBody>
+      </div>
+    </PeekHost>
   )
 }
 
-function PointEditor({ point, nodes, onChange, onDelete }: {
-  point: MapPoint; nodes: { key: string; name: string }[]; onChange: (p: MapPoint) => void; onDelete: () => void
+function PointEditor({ point, nodes, onChange }: {
+  point: MapPoint; nodes: { key: string; name: string }[]; onChange: (p: MapPoint) => void
 }) {
   return (
     <div className="space-y-2 text-xs">
@@ -249,7 +299,6 @@ function PointEditor({ point, nodes, onChange, onDelete }: {
             {nodes.map((n) => <option key={n.key} value={n.key}>{n.name} ({n.key})</option>)}
           </select></label>
       )}
-      <button className={btn} onClick={onDelete}>Xoá điểm (và các làn nối vào nó)</button>
     </div>
   )
 }

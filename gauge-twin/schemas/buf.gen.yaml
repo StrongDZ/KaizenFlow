@@ -1,0 +1,11 @@
+# Go + Python for every proto. Local plugins only; all binaries are pinned in
+# tools/Dockerfile. Paths are relative to schemas/.
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: ../gen/go
+    opt: paths=source_relative
+  - protoc_builtin: python
+    out: ../gen/python
+  - protoc_builtin: pyi
+    out: ../gen/python

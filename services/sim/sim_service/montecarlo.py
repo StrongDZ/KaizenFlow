@@ -26,13 +26,25 @@ def _pct(values) -> dict:
 
 def aggregate_kpis(reps: list[RepResult]) -> dict:
     first = reps[0].kpis
-    out = {k: _pct([r.kpis[k] for r in reps]) for k in ("throughput", "red_minutes", "backorder_end")}
+    out = {k: _pct([r.kpis[k] for r in reps])
+           for k in ("throughput", "red_minutes", "backorder_end", "backorder", "service_level")}
     out["storages"] = {}
     for key in first["storages"]:
         reds = [r.kpis["storages"][key]["red_s"] for r in reps]
         out["storages"][key] = {"red_probability": float(np.mean([x > 0 for x in reds])), "red_s": _pct(reds)}
-    for cat in ("processes", "pools"):
-        out[cat] = {key: {"util": _pct([r.kpis[cat][key]["util"] for r in reps])} for key in first[cat]}
+    process_metrics = (
+        "util", "utilization", "nominal_rate", "effective_throughput",
+        "running_s", "blocked_s", "starved_s", "down_s", "idle_s",
+        "blocked_ratio", "starved_ratio", "down_ratio",
+        "count_in", "count_ok", "count_ng",
+        "input_wip_peak", "output_wip_peak", "input_wip_end", "output_wip_end", "wip_growth",
+    )
+    out["processes"] = {
+        key: {name: _pct([r.kpis["processes"][key][name] for r in reps]) for name in process_metrics}
+        for key in first["processes"]
+    }
+    out["pools"] = {key: {"util": _pct([r.kpis["pools"][key]["util"] for r in reps])}
+                    for key in first["pools"]}
     out["edges"] = {key: {name: _pct([r.kpis["edges"][key][name] for r in reps])
                           for name in ("wait_pool_mean", "wait_hook_mean")}
                     for key in first["edges"]}

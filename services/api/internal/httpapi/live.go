@@ -59,13 +59,15 @@ func (h *handlers) ingest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
+		// Model là mô hình mà các nguồn trong lô thuộc về (feed gửi kèm); không có thì nguồn được gắn theo ghép nối khớp.
+		Model    string         `json:"model"`
 		Messages []live.Message `json:"messages"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 4<<20)
 	if !decode(w, r, &body) {
 		return
 	}
-	writeJSON(w, 200, h.Live.Ingest(body.Messages))
+	writeJSON(w, 200, h.Live.IngestFor(body.Model, body.Messages))
 }
 
 type liveResp struct {
@@ -98,18 +100,8 @@ func (h *handlers) clearLive(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
-type subjectView struct {
-	Subject   string           `json:"subject"`
-	Kind      string           `json:"kind"`
-	Name      string           `json:"name"`
-	NodeType  string           `json:"node_type,omitempty"`
-	Archetype string           `json:"archetype,omitempty"`
-	Material  string           `json:"material,omitempty"`
-	Mode      string           `json:"mode,omitempty"`
-	Src       string           `json:"src,omitempty"`
-	Dst       string           `json:"dst,omitempty"`
-	Signals   []live.SignalDef `json:"signals"`
-}
+// subjectView là live.Subject: node hoặc edge cùng các tín hiệu chuẩn của nó.
+type subjectView = live.Subject
 
 func (h *handlers) liveSubjects(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
@@ -147,7 +139,9 @@ func subjectsOf(g *store.Graph, types map[string]store.NodeType) ([]subjectView,
 		if defs == nil {
 			defs = []live.SignalDef{}
 		}
-		subs = append(subs, subjectView{Subject: n.Key, Kind: "node", Name: name, NodeType: n.NodeType, Archetype: t.Archetype, Signals: defs})
+		sv := subjectView{Subject: n.Key, Kind: "node", Name: name, NodeType: n.NodeType, Archetype: t.Archetype, Signals: defs}
+		fillHints(&sv, params)
+		subs = append(subs, sv)
 	}
 	for _, e := range g.Edges {
 		mode, _ := e.Params["mode"].(string)
@@ -157,10 +151,148 @@ func subjectsOf(g *store.Graph, types map[string]store.NodeType) ([]subjectView,
 			}
 			return key
 		}
-		subs = append(subs, subjectView{Subject: e.Key, Kind: "edge", Name: label(e.Src) + " → " + label(e.Dst), Material: e.Material,
-			Mode: mode, Src: e.Src, Dst: e.Dst, Signals: live.EdgeSignals(mode)})
+		sv := subjectView{Subject: e.Key, Kind: "edge", Name: label(e.Src) + " → " + label(e.Dst), Material: e.Material,
+			Mode: mode, Src: e.Src, Dst: e.Dst, Signals: live.EdgeSignals(mode)}
+		sv.Pool, _ = e.Params["pool"].(string)
+		sv.Lot = 1
+		if lot, ok := numOf(e.Params["lot"]); ok && lot > 0 {
+			sv.Lot = lot
+		}
+		subs = append(subs, sv)
 	}
 	return subs, nil
+}
+
+func numOf(v any) (float64, bool) {
+	switch x := v.(type) {
+	case float64:
+		return x, true
+	case int:
+		return float64(x), true
+	case int64:
+		return float64(x), true
+	}
+	return 0, false
+}
+
+// meanSeconds: giá trị trung bình của một thời gian cho dạng số hoặc phân phối ({dist: const|norm|lognorm|exp|tri|uniform...}).
+func meanSeconds(v any) float64 {
+	if f, ok := numOf(v); ok {
+		return f
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return 0
+	}
+	for _, k := range []string{"value", "mean", "mean_s"} {
+		if f, ok := numOf(m[k]); ok {
+			return f
+		}
+	}
+	if lo, ok := numOf(m["min"]); ok {
+		if hi, ok := numOf(m["max"]); ok {
+			return (lo + hi) / 2
+		}
+	}
+	return 0
+}
+
+// fillHints điền các dữ kiện từ tham số hiệu lực của node mà phần gợi ý công thức tự tính cần (tồn đầu kỳ, số đơn vị mỗi lượt, chu kỳ).
+func fillHints(sv *subjectView, params map[string]any) {
+	switch sv.Archetype {
+	case "STORAGE":
+		sv.Initial = map[string]float64{}
+		for _, raw := range listAny(params["stock"]) {
+			m, _ := raw.(map[string]any)
+			if code, _ := m["material"].(string); code != "" {
+				init, _ := numOf(m["initial"])
+				sv.Initial[code] = init
+			}
+		}
+	case "PROCESS":
+		sv.CycleS = meanSeconds(params["cycle"])
+		sv.InQty, sv.OutQty = map[string]float64{}, map[string]float64{}
+		recipes := listAny(params["recipes"])
+		if len(recipes) == 0 {
+			return
+		}
+		r0, _ := recipes[0].(map[string]any)
+		for _, raw := range listAny(r0["inputs"]) {
+			m, _ := raw.(map[string]any)
+			if code, _ := m["material"].(string); code != "" {
+				q, _ := numOf(m["qty"])
+				sv.InQty[code] = q
+			}
+		}
+		for _, raw := range listAny(r0["outputs"]) {
+			m, _ := raw.(map[string]any)
+			port, _ := m["port"].(string)
+			if code, _ := m["material"].(string); code != "" && port != "NG" {
+				q, _ := numOf(m["qty"])
+				sv.OutQty[code] = q
+			}
+		}
+	}
+}
+
+func listAny(v any) []any {
+	l, _ := v.([]any)
+	return l
+}
+
+// sourceSamples trả các nguồn đã đăng ký của mô hình cùng bản tin mẫu (bản tin mới nhất đang phát nếu có, không thì mẫu đã lưu).
+func (h *handlers) sourceSamples(ctx context.Context, model string) ([]live.SourceSample, error) {
+	rows, err := h.Store.ListSources(ctx, model)
+	if err != nil {
+		return nil, err
+	}
+	ram := map[string]any{}
+	for _, s := range h.Live.Snapshot(model).Sources {
+		ram[s.Source] = s.Last
+	}
+	out := make([]live.SourceSample, 0, len(rows))
+	for _, d := range rows {
+		var sample any
+		if last, ok := ram[d.Source]; ok && last != nil {
+			sample = last
+		} else if len(d.Sample) > 0 {
+			_ = json.Unmarshal(d.Sample, &sample)
+		}
+		out = append(out, live.SourceSample{Source: d.Source, Sample: sample})
+	}
+	return out, nil
+}
+
+// liveCheck: GET /api/models/{key}/live/check. Độ phủ ghép nối: tín hiệu nào đã có nguồn, đã tự tính, chưa có hay hỏng;
+// chức năng nào đã đủ tín hiệu; và gợi ý công thức tự tính cho tín hiệu chưa có.
+func (h *handlers) liveCheck(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	key := chi.URLParam(r, "key")
+	g, types, err := h.modelGraph(ctx, key, false)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	subs, err := subjectsOf(g, types)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	bs, err := h.Store.ListBindings(ctx, key)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	samples, err := h.sourceSamples(ctx, key)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	rep := live.AnalyzeCoverage(live.CoverageInput{Subjects: subs, Bindings: bs, Sources: samples})
+	if p := live.OffMapProblem(h.Live.Snapshot(key).Fleet); p != nil {
+		rep.Problems = append(rep.Problems, *p)
+	}
+	writeJSON(w, 200, rep)
 }
 
 func (h *handlers) liveSignals(w http.ResponseWriter, r *http.Request) {
@@ -220,6 +352,8 @@ func (h *handlers) putBindings(w http.ResponseWriter, r *http.Request) {
 			JSONPath  string         `json:"json_path"`
 			Transform live.Transform `json:"transform"`
 			Enabled   *bool          `json:"enabled"`
+			Mode      string         `json:"mode"`
+			Derive    *live.Derive   `json:"derive"`
 		} `json:"bindings"`
 	}
 	if !decode(w, r, &body) {
@@ -239,6 +373,15 @@ func (h *handlers) putBindings(w http.ResponseWriter, r *http.Request) {
 	for _, s := range subs {
 		bySubject[s.Subject] = s
 	}
+	// signalOK: tín hiệu có nằm trong danh mục của đối tượng không (kho nhận mọi `level:<vật tư>`, vì vật tư có thể thêm sau).
+	signalOK := func(s subjectView, name string) bool {
+		for _, d := range s.Signals {
+			if d.Name == name {
+				return true
+			}
+		}
+		return s.Archetype == "STORAGE" && live.ValidSignal("STORAGE", nil, name)
+	}
 	var list []validate.Issue
 	bs := make([]live.Binding, 0, len(body.Bindings))
 	for _, in := range body.Bindings {
@@ -247,25 +390,62 @@ func (h *handlers) putBindings(w http.ResponseWriter, r *http.Request) {
 			list = append(list, validate.Issue{Key: in.Subject, Message: "không có node hoặc edge này trong sơ đồ"})
 			continue
 		}
-		valid := false
-		for _, d := range s.Signals {
-			if d.Name == in.Signal {
-				valid = true
-			}
-		}
-		if s.Archetype == "STORAGE" && live.ValidSignal("STORAGE", nil, in.Signal) {
-			valid = true
-		}
-		if !valid {
+		if !signalOK(s, in.Signal) {
 			list = append(list, validate.Issue{Key: in.Subject, Message: "tín hiệu '" + in.Signal + "' không hợp lệ cho đối tượng này"})
 			continue
 		}
 		enabled := in.Enabled == nil || *in.Enabled
-		bs = append(bs, live.Binding{Subject: in.Subject, Signal: in.Signal, Source: in.Source, JSONPath: in.JSONPath,
-			Transform: in.Transform, Enabled: enabled})
+		b := live.Binding{Subject: in.Subject, Signal: in.Signal, Source: in.Source, JSONPath: in.JSONPath,
+			Transform: in.Transform, Enabled: enabled, Mode: in.Mode, Derive: in.Derive}
+		if b.Mode == "" {
+			b.Mode = live.ModeSource
+		}
+		if b.Mode == live.ModeDerived {
+			b.Source, b.JSONPath, b.Transform = "", "", live.Transform{} // tự tính không có nguồn
+		} else {
+			b.Derive = nil
+		}
+		bs = append(bs, b)
+	}
+	if len(list) == 0 {
+		// Công thức tự tính được kiểm trên trạng thái sau khi lưu: các ghép nối cũ (bớt những cái sắp bị thay) cộng các ghép nối mới.
+		existing, err := h.Store.ListBindings(ctx, key)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		replaced := map[live.Ref]bool{}
+		for _, b := range bs {
+			replaced[live.Ref{Subject: b.Subject, Signal: b.Signal}] = true
+		}
+		final := append([]live.Binding{}, bs...)
+		for _, b := range existing {
+			if !replaced[live.Ref{Subject: b.Subject, Signal: b.Signal}] {
+				final = append(final, b)
+			}
+		}
+		known := func(ref live.Ref) bool {
+			s, ok := bySubject[ref.Subject]
+			return ok && signalOK(s, ref.Signal)
+		}
+		for _, b := range bs {
+			if b.Mode != live.ModeDerived {
+				continue
+			}
+			if b.Derive == nil {
+				list = append(list, validate.Issue{Key: b.Subject, Message: "Thiếu công thức tự tính."})
+			} else if err := live.ValidateDerive(live.Ref{Subject: b.Subject, Signal: b.Signal}, *b.Derive, final, known, live.RelatedSubjects(subs, b.Subject)); err != nil {
+				list = append(list, validate.Issue{Key: b.Subject, Message: err.Error()})
+			}
+		}
 	}
 	if len(list) > 0 {
 		writeJSON(w, 422, issues(list...))
+		return
+	}
+	// ?check=1: chỉ kiểm tra (mọi luật như khi lưu) mà không lưu, để hộp thoại báo hợp lệ hay chưa trước khi bấm Lưu.
+	if r.URL.Query().Get("check") == "1" {
+		writeJSON(w, 200, map[string]bool{"ok": true})
 		return
 	}
 	if err := h.Store.SaveBindings(ctx, key, bs); err != nil {
@@ -320,7 +500,20 @@ func (h *handlers) getAgvMap(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
-	_, _ = w.Write(raw)
+	_, _ = w.Write(normalizedMap(raw))
+}
+
+// normalizedMap đổi bản đồ lưu từ trước (v1, đơn vị vẽ × unit_m) sang v2 (mét) để mọi nơi đọc đều thấy một dạng; hỏng thì trả nguyên.
+func normalizedMap(raw json.RawMessage) json.RawMessage {
+	m, err := live.ParseMap(raw)
+	if err != nil {
+		return raw
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 func (h *handlers) putAgvMap(w http.ResponseWriter, r *http.Request) {
@@ -339,9 +532,7 @@ func (h *handlers) putAgvMap(w http.ResponseWriter, r *http.Request) {
 	for _, n := range g.Nodes {
 		nodes[n.Key] = true
 	}
-	if m.UnitM <= 0 {
-		m.UnitM = 1
-	}
+	m.Normalize()
 	if m.Points == nil {
 		m.Points = []live.MapPoint{}
 	}
@@ -361,6 +552,7 @@ func (h *handlers) putAgvMap(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	h.Live.InvalidateMap(key)
 	w.WriteHeader(204)
 }
 
@@ -393,7 +585,7 @@ func (h *handlers) blueprint(w http.ResponseWriter, r *http.Request) {
 	}
 	var agv json.RawMessage
 	if raw, err := h.Store.GetAgvMap(ctx, key); err == nil {
-		agv = raw
+		agv = normalizedMap(raw)
 	} else if !errors.Is(err, store.ErrNotFound) {
 		writeErr(w, err)
 		return

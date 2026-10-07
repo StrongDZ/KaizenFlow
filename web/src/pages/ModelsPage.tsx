@@ -5,6 +5,7 @@ import { api } from '../api/client'
 import type { ModelSummary } from '../api/types'
 import { DeleteAction } from '../components/DeleteAction'
 import { Field, FormDialog } from '../components/FormDialog'
+import { SearchSelect } from '../components/SearchSelect'
 import { DataTable, type Column } from '../components/table/DataTable'
 import { EmptyState, ErrorBox, Loading, PageBody, PageHeader, SearchBox, btnPrimary, input } from '../components/ui'
 import { fmtDateTime, versionStatusLabel } from '../lib/format'
@@ -27,9 +28,11 @@ export default function ModelsPage() {
   const [q, setQ] = useState('')
   const [key, setKey] = useState('')
   const [creating, setCreating] = useState(false)
-  const close = () => { setCreating(false); setKey(''); create.reset() }
+  const [start, setStart] = useState<'blank' | 'copy'>('blank')
+  const [from, setFrom] = useState('')
+  const close = () => { setCreating(false); setKey(''); setStart('blank'); setFrom(''); create.reset() }
   const create = useMutation({
-    mutationFn: () => api.createModel(key.trim()),
+    mutationFn: () => api.createModel(key.trim(), start === 'copy' && from !== '' ? { copy_from: from } : {}),
     onSuccess: (r) => {
       void qc.invalidateQueries({ queryKey: ['models'] })
       navigate(`/versions/${r.version_id}`)
@@ -68,9 +71,9 @@ export default function ModelsPage() {
       />
       <FormDialog
         open={creating} title="Tạo mô hình"
-        description="Mô hình là một sơ đồ nhà máy. Đặt tên rồi dựng sơ đồ ở tab Sơ đồ."
+        description="Mô hình là một sơ đồ nhà máy. Đặt tên, chọn bắt đầu từ sơ đồ trống hay từ một mô hình có sẵn, rồi dựng tiếp ở tab Sơ đồ."
         submitLabel="Tạo mô hình" pending={create.isPending} error={create.error}
-        canSubmit={isValidModelKey(key.trim())} onSubmit={() => create.mutate()} onClose={close}
+        canSubmit={isValidModelKey(key.trim()) && (start === 'blank' || from !== '')} onSubmit={() => create.mutate()} onClose={close}
       >
         <Field
           label="Tên mô hình" hint="Chữ, số, gạch nối, gạch dưới; bắt đầu bằng chữ hoặc số. Ví dụ denso-line-3."
@@ -78,6 +81,25 @@ export default function ModelsPage() {
         >
           <input autoFocus className={`${input} w-full`} placeholder="denso-line-3" value={key} onChange={(e) => setKey(e.target.value)} />
         </Field>
+        <div className="space-y-1.5">
+          <span className="block text-text-2">Bắt đầu từ</span>
+          <div role="radiogroup" aria-label="Bắt đầu từ" className="flex gap-1 rounded-lg border border-line bg-panel-2 p-0.5">
+            {([['blank', 'Sơ đồ trống'], ['copy', 'Sao từ mô hình có sẵn']] as const).map(([m, label]) => (
+              <button key={m} type="button" role="radio" aria-checked={start === m} onClick={() => setStart(m)}
+                className={`flex-1 rounded-md px-2 py-1 text-[11.5px] ${start === m ? 'bg-raised font-semibold text-text shadow-sm' : 'text-muted hover:text-text'}`}>{label}</button>
+            ))}
+          </div>
+          {start === 'copy' ? (
+            <>
+              <SearchSelect
+                value={from} label="Mô hình nguồn" placeholder="Chọn mô hình để sao chép"
+                options={(models.data ?? []).map((m) => ({ value: m.model_key, label: m.model_key, hint: `v${m.latest_version}, ${versionStatusLabel(m.status)}` }))}
+                onChange={(v) => { setFrom(v); if (key.trim() === '') setKey(`${v}-2`) }}
+              />
+              <span className="block text-faint">Sao sơ đồ mới nhất của mô hình đó (node, đường nối, tham số) thành bản nháp v1. Scenario và kết quả chạy không được sao.</span>
+            </>
+          ) : <span className="block text-faint">Bắt đầu với sơ đồ trống: kéo node từ danh sách loại node vào.</span>}
+        </div>
       </FormDialog>
       <ErrorBox error={models.error} />
       <DataTable

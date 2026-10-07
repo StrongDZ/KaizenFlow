@@ -2,9 +2,11 @@ package httpapi_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -200,8 +202,28 @@ func TestAgvMapValidationAndRoundTrip(t *testing.T) {
 		"lanes": []any{map[string]any{"id": "L1", "from": "A", "to": "B", "capacity": 2}}}
 	a.call("PUT", "/api/models/lm/agv-map", good, 204)
 	got := a.call("GET", "/api/models/lm/agv-map", nil, 200)
-	if len(got["points"].([]any)) != 2 || got["unit_m"].(float64) != 1 {
+	if len(got["points"].([]any)) != 2 || got["v"].(float64) != 2 {
 		t.Errorf("map = %v", got)
+	}
+}
+
+func TestAgvMapLegacyUnitsAreStoredAndServedAsMeters(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	legacy := map[string]any{"unit_m": 2, "speed_mps": 1.4,
+		"points": []any{
+			map[string]any{"id": "A", "x": 0, "y": 0, "kind": "station", "node_key": "S"},
+			map[string]any{"id": "B", "x": 15, "y": 0, "kind": "station", "node_key": "OUT"}},
+		"lanes": []any{map[string]any{"id": "L1", "from": "A", "to": "B", "capacity": 2, "path": []any{map[string]any{"x": 7, "y": 3}}}}}
+	a.call("PUT", "/api/models/lm/agv-map", legacy, 204)
+	got := a.call("GET", "/api/models/lm/agv-map", nil, 200)
+	b := got["points"].([]any)[1].(map[string]any)
+	path := got["lanes"].([]any)[0].(map[string]any)["path"].([]any)[0].(map[string]any)
+	if b["x"].(float64) != 30 || path["x"].(float64) != 14 || path["y"].(float64) != 6 || got["v"].(float64) != 2 {
+		t.Errorf("legacy map must come back in meters: %v", got)
+	}
+	if _, has := got["unit_m"]; has {
+		t.Errorf("unit_m must be gone: %v", got)
 	}
 }
 
@@ -315,8 +337,13 @@ func TestLiveForecastBuildsANowcastScenarioFromLiveStateAndRunsIt(t *testing.T) 
 
 func TestLiveForecastUsesInjectedFMCGProvider(t *testing.T) {
 	a := newLiveAPIWithDeps(t, "", httpapi.Deps{FMCGNowcast: stubNowcastProvider{}})
+	a.call("POST", "/api/materials", map[string]any{"code": "CASE-01", "name": "Thùng hàng"}, 201) // PUT graph chỉ nhận vật tư đã có trong Thư viện
 	a.publishedGraph("bimbo-fmcg", map[string]any{
 		"nodes": []any{
+			map[string]any{"key": "IN_A", "node_type": "DOCK_IN", "params": map[string]any{
+				"arrivals": map[string]any{"interarrival": 600.0},
+				"lots":     []any{map[string]any{"material": "CASE-01", "qty": 100.0}},
+			}},
 			map[string]any{"key": "FG_A", "node_type": "RACK_WAREHOUSE", "params": map[string]any{
 				"stock": []any{map[string]any{"material": "CASE-01", "initial": 180.0, "max": 1200.0}},
 			}},
@@ -330,6 +357,7 @@ func TestLiveForecastUsesInjectedFMCGProvider(t *testing.T) {
 			}},
 		},
 		"edges": []any{
+			map[string]any{"key": "IN_A>FG_A", "src": "IN_A", "dst": "FG_A", "material": "CASE-01", "params": map[string]any{}},
 			map[string]any{"key": "FG_A>SHIP_A", "src": "FG_A", "dst": "SHIP_A", "material": "CASE-01", "params": map[string]any{}},
 		},
 	})
@@ -435,4 +463,335 @@ func TestCalibrationComparesMeasuredTripsWithTheModelAndAppliesThemAsScenarios(t
 func TestAckInsight(t *testing.T) {
 	a := newLiveAPI(t, "")
 	a.call("POST", "/api/insights/99999/ack", nil, 404)
+}
+
+func bindSource(a *liveAPI, model, subject, signal, source, path string) {
+	a.call("PUT", "/api/models/"+model+"/bindings", map[string]any{"bindings": []any{
+		map[string]any{"subject": subject, "signal": signal, "source": source, "json_path": path}}}, 200)
+}
+
+func sourcesOf(a *liveAPI, model string) map[string]map[string]any {
+	out := map[string]map[string]any{}
+	for _, raw := range a.call("GET", "/api/models/"+model+"/sources", nil, 200)["sources"].([]any) {
+		m := raw.(map[string]any)
+		out[m["source"].(string)] = m
+	}
+	return out
+}
+
+func TestSourcesRegistryMergesDBWithLiveStateAndSurvivesSilence(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	bindSource(a, "lm", "SRC", "arrived", "dock/src/count", "n")
+	a.call("POST", "/api/ingest", map[string]any{"model": "lm", "messages": []any{
+		map[string]any{"source": "dock/src/count", "ts": "2026-10-01T08:00:00+07:00", "desc": "Cửa nhận hàng", "payload": map[string]any{"n": 4}},
+		map[string]any{"source": "plc/other", "ts": "2026-10-01T08:00:00+07:00", "payload": map[string]any{"st": "RUN"}},
+	}}, 200)
+	if err := a.svc.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	got := sourcesOf(a, "lm")
+	if len(got) != 2 {
+		t.Fatalf("sources = %v", got)
+	}
+	d := got["dock/src/count"]
+	if d["desc"] != "Cửa nhận hàng" || d["origin"] != "feed" || d["live"] != true || d["count"].(float64) < 1 {
+		t.Fatalf("source = %v", d)
+	}
+	refs := d["bindings"].([]any)
+	if len(refs) != 1 || refs[0].(map[string]any)["subject"] != "SRC" || refs[0].(map[string]any)["signal"] != "arrived" {
+		t.Fatalf("bindings = %v", refs)
+	}
+	if len(got["plc/other"]["bindings"].([]any)) != 0 {
+		t.Fatalf("nguồn chưa ghép: %v", got["plc/other"])
+	}
+	if sample := d["sample"].(map[string]any); sample["n"].(float64) != 4 {
+		t.Fatalf("sample = %v", d["sample"])
+	}
+	// API khởi động lại hoặc feed tắt: RAM mất nguồn, danh sách vẫn còn, chỉ không còn "sống"
+	a.svc.State().ClearSources()
+	after := sourcesOf(a, "lm")
+	if len(after) != 2 || after["dock/src/count"]["live"] != false {
+		t.Fatalf("sau khi im lặng: %v", after)
+	}
+	if after["dock/src/count"]["sample"] == nil {
+		t.Fatalf("mẫu phải còn trong DB: %v", after["dock/src/count"])
+	}
+	a.call("GET", "/api/models/nope/sources", nil, 404)
+}
+
+func TestAddManualSourceAndDryRunTest(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	a.call("POST", "/api/models/lm/sources", map[string]any{"source": "", "sample": map[string]any{}}, 422)
+	a.call("POST", "/api/models/lm/sources", map[string]any{"source": "dev/x/count", "desc": "Đếm tại X", "sample": map[string]any{"n": 3}}, 201)
+	got := sourcesOf(a, "lm")["dev/x/count"]
+	if got == nil || got["origin"] != "manual" || got["desc"] != "Đếm tại X" || got["live"] != false {
+		t.Fatalf("source = %v", got)
+	}
+	bindSource(a, "lm", "SRC", "arrived", "dev/x/count", "n")
+	res := a.call("POST", "/api/models/lm/sources/test", map[string]any{"source": "dev/x/count", "payload": map[string]any{"n": 7}}, 200)
+	rs := res["readings"].([]any)
+	if res["matched"].(float64) != 1 || len(rs) != 1 || rs[0].(map[string]any)["value"].(float64) != 7 || rs[0].(map[string]any)["subject"] != "SRC" {
+		t.Fatalf("test result = %v", res)
+	}
+	// thử không ghi vào dữ liệu live
+	snap := a.call("GET", "/api/models/lm/live", nil, 200)
+	if subj, _ := snap["subjects"].(map[string]any); len(subj) != 0 {
+		t.Fatalf("gửi thử không được ghi vào trạng thái live: %v", subj)
+	}
+	// giá trị 0 vẫn phải có trong kết quả (không bị omitempty nuốt)
+	res = a.call("POST", "/api/models/lm/sources/test", map[string]any{"source": "dev/x/count", "payload": map[string]any{"n": 0}}, 200)
+	if v, ok := res["readings"].([]any)[0].(map[string]any)["value"]; !ok || v.(float64) != 0 {
+		t.Fatalf("giá trị 0 phải có mặt: %v", res)
+	}
+	// payload không có trường → lỗi nói rõ, không vỡ
+	res = a.call("POST", "/api/models/lm/sources/test", map[string]any{"source": "dev/x/count", "payload": map[string]any{"khac": 1}}, 200)
+	if len(res["errors"].([]any)) == 0 {
+		t.Fatalf("thiếu trường phải báo lỗi: %v", res)
+	}
+}
+
+func TestDeleteSourceAsksBeforeBreakingBindings(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	a.call("POST", "/api/models/lm/sources", map[string]any{"source": "dev/a", "sample": map[string]any{"n": 1}}, 201)
+	a.call("POST", "/api/models/lm/sources", map[string]any{"source": "dev/free", "sample": map[string]any{"n": 1}}, 201)
+	bindSource(a, "lm", "SRC", "arrived", "dev/a", "n")
+	// nguồn chưa ghép: xoá thẳng
+	a.call("DELETE", "/api/models/lm/sources?source=dev%2Ffree", nil, 204)
+	a.call("DELETE", "/api/models/lm/sources?source=dev%2Ffree", nil, 404)
+	// nguồn đang được ghép: 409 kèm số ghép nối sẽ hỏng
+	res := a.call("DELETE", "/api/models/lm/sources?source=dev%2Fa", nil, 409)
+	if res["impact"].(map[string]any)["bindings"].(float64) != 1 {
+		t.Fatalf("409 = %v", res)
+	}
+	if sourcesOf(a, "lm")["dev/a"] == nil {
+		t.Fatal("chưa xác nhận thì nguồn phải còn")
+	}
+	a.call("DELETE", "/api/models/lm/sources?source=dev%2Fa&cascade=true", nil, 204)
+	if sourcesOf(a, "lm")["dev/a"] != nil {
+		t.Fatal("xoá cascade phải xoá nguồn")
+	}
+	if n := len(a.call("GET", "/api/models/lm/bindings", nil, 200)["items"].([]any)); n != 0 {
+		t.Fatalf("ghép nối phụ thuộc phải bị xoá theo: %d", n)
+	}
+}
+
+func putBindingsRaw(a *liveAPI, model string, list []any, want int) map[string]any {
+	return a.call("PUT", "/api/models/"+model+"/bindings", map[string]any{"bindings": list}, want)
+}
+
+func derivedSum(subject, signal string, terms ...map[string]any) map[string]any {
+	ts := make([]any, len(terms))
+	for i, t := range terms {
+		ts[i] = t
+	}
+	return map[string]any{"subject": subject, "signal": signal, "mode": "derived", "derive": map[string]any{"kind": "sum", "terms": ts}}
+}
+
+func term(subject, signal string, sign int) map[string]any {
+	return map[string]any{"subject": subject, "signal": signal, "sign": sign}
+}
+
+func TestDerivedBindingRoundTripsAndSwitchesBackToSource(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	bindSource(a, "lm", "SRC", "arrived", "dock/src/count", "n")
+	putBindingsRaw(a, "lm", []any{derivedSum("SRC>S", "moved", term("SRC", "arrived", 1))}, 200)
+	var got map[string]any
+	for _, raw := range a.call("GET", "/api/models/lm/bindings", nil, 200)["items"].([]any) {
+		if m := raw.(map[string]any); m["subject"] == "SRC>S" {
+			got = m
+		}
+	}
+	if got == nil || got["mode"] != "derived" || got["source"] != "" {
+		t.Fatalf("binding = %v", got)
+	}
+	d := got["derive"].(map[string]any)
+	if d["kind"] != "sum" || d["terms"].([]any)[0].(map[string]any)["subject"] != "SRC" {
+		t.Fatalf("derive = %v", d)
+	}
+	// đổi lại sang lấy từ nguồn: công thức bị bỏ
+	putBindingsRaw(a, "lm", []any{map[string]any{"subject": "SRC>S", "signal": "moved", "source": "belt/x", "json_path": "moved"}}, 200)
+	for _, raw := range a.call("GET", "/api/models/lm/bindings", nil, 200)["items"].([]any) {
+		if m := raw.(map[string]any); m["subject"] == "SRC>S" && (m["mode"] != "source" || m["derive"] != nil) {
+			t.Fatalf("binding sau khi đổi lại = %v", m)
+		}
+	}
+}
+
+func TestDerivedBindingIsValidatedBeforeSaving(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	bindSource(a, "lm", "SRC", "arrived", "dock/src/count", "n")
+	msg := func(res map[string]any) string { return res["issues"].([]any)[0].(map[string]any)["message"].(string) }
+	// đầu vào chưa ghép
+	res := putBindingsRaw(a, "lm", []any{derivedSum("SRC>S", "moved", term("S", "level:RAW-01", 1))}, 422)
+	if m := msg(res); !strings.Contains(m, "chưa có nguồn") {
+		t.Fatalf("message = %q", m)
+	}
+	// tín hiệu không có trong sơ đồ
+	res = putBindingsRaw(a, "lm", []any{derivedSum("SRC>S", "moved", term("NOPE", "arrived", 1))}, 422)
+	if m := msg(res); !strings.Contains(m, "không có trong sơ đồ") {
+		t.Fatalf("message = %q", m)
+	}
+	// vòng: hai edge tính từ nhau trong cùng một lần lưu
+	res = putBindingsRaw(a, "lm", []any{
+		derivedSum("SRC>S", "moved", term("S>OUT", "moved", 1)),
+		derivedSum("S>OUT", "moved", term("SRC>S", "moved", 1)),
+	}, 422)
+	if m := msg(res); !strings.Contains(m, "vòng") {
+		t.Fatalf("message = %q", m)
+	}
+	// thiếu công thức
+	putBindingsRaw(a, "lm", []any{map[string]any{"subject": "SRC>S", "signal": "moved", "mode": "derived"}}, 422)
+	// không có gì bị lưu sau các lần lỗi
+	for _, raw := range a.call("GET", "/api/models/lm/bindings", nil, 200)["items"].([]any) {
+		if raw.(map[string]any)["mode"] == "derived" {
+			t.Fatalf("lần lưu lỗi không được để lại ghép nối tự tính: %v", raw)
+		}
+	}
+}
+
+func TestDerivedChainInOneSaveIsAcceptedWhenOrdered(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	bindSource(a, "lm", "SRC", "arrived", "dock/src/count", "n")
+	putBindingsRaw(a, "lm", []any{
+		derivedSum("SRC>S", "moved", term("SRC", "arrived", 1)),
+		derivedSum("S>OUT", "moved", term("SRC>S", "moved", 1)), // dựa vào ghép nối tự tính ngay trong lô này
+	}, 200)
+}
+
+func TestLiveCheckReportsCoverageReadinessAndSuggestions(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	a.call("GET", "/api/models/nope/live/check", nil, 404)
+	bindSource(a, "lm", "SRC", "arrived", "dock/src/count", "n")
+	a.call("POST", "/api/models/lm/sources", map[string]any{"source": "dock/src/count", "sample": map[string]any{"n": 5}}, 201)
+	rep := a.call("GET", "/api/models/lm/live/check", nil, 200)
+	sum := rep["summary"].(map[string]any)
+	if sum["source"].(float64) != 1 || sum["signals"].(float64) < 5 || sum["broken"].(float64) != 0 {
+		t.Fatalf("summary = %v", sum)
+	}
+	var moved map[string]any
+	for _, raw := range rep["signals"].([]any) {
+		c := raw.(map[string]any)
+		if c["subject"] == "SRC>S" && c["signal"] == "moved" {
+			moved = c
+		}
+	}
+	if moved == nil || moved["status"] != "missing" {
+		t.Fatalf("SRC>S moved = %v", moved)
+	}
+	sugg := moved["suggestions"].([]any)
+	if len(sugg) != 1 {
+		t.Fatalf("SRC arrived đã ghép nên phải gợi ý moved = arrived: %v", moved)
+	}
+	d := sugg[0].(map[string]any)["derive"].(map[string]any)
+	if d["kind"] != "sum" || d["terms"].([]any)[0].(map[string]any)["signal"] != "arrived" {
+		t.Fatalf("derive = %v", d)
+	}
+	// gợi ý áp dụng được nguyên xi: lưu rồi coi như đã tự tính
+	putBindingsRaw(a, "lm", []any{map[string]any{"subject": "SRC>S", "signal": "moved", "mode": "derived", "derive": d}}, 200)
+	rep = a.call("GET", "/api/models/lm/live/check", nil, 200)
+	if rep["summary"].(map[string]any)["derived"].(float64) != 1 {
+		t.Fatalf("summary sau khi áp dụng gợi ý = %v", rep["summary"])
+	}
+	live := false
+	for _, raw := range rep["readiness"].([]any) {
+		if r := raw.(map[string]any); r["feature"] == "live" && r["ok"] == false && len(r["missing"].([]any)) > 0 {
+			live = true
+		}
+	}
+	if !live {
+		t.Fatalf("live chưa đủ tín hiệu phải báo thiếu: %v", rep["readiness"])
+	}
+	// trường không có trong bản tin mẫu → hỏng
+	bindSource(a, "lm", "SRC", "arrived", "dock/src/count", "khong_co")
+	rep = a.call("GET", "/api/models/lm/live/check", nil, 200)
+	if rep["summary"].(map[string]any)["broken"].(float64) < 1 {
+		t.Fatalf("trường không có trong mẫu phải báo hỏng: %v", rep["summary"])
+	}
+}
+
+func TestPutBindingsCheckModeValidatesWithoutSaving(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	bindSource(a, "lm", "SRC", "arrived", "dock/src/count", "n")
+	good := derivedSum("SRC>S", "moved", term("SRC", "arrived", 1))
+	res := a.call("PUT", "/api/models/lm/bindings?check=1", map[string]any{"bindings": []any{good}}, 200)
+	if res["ok"] != true {
+		t.Fatalf("res = %v", res)
+	}
+	for _, raw := range a.call("GET", "/api/models/lm/bindings", nil, 200)["items"].([]any) {
+		if raw.(map[string]any)["subject"] == "SRC>S" {
+			t.Fatal("chế độ kiểm tra không được lưu gì")
+		}
+	}
+	bad := derivedSum("SRC>S", "moved", term("S", "level:RAW-01", 1)) // đầu vào chưa ghép
+	res = a.call("PUT", "/api/models/lm/bindings?check=1", map[string]any{"bindings": []any{bad}}, 422)
+	if msg := res["issues"].([]any)[0].(map[string]any)["message"].(string); !strings.Contains(msg, "chưa có nguồn") {
+		t.Fatalf("message = %q", msg)
+	}
+}
+
+func TestFleetPositionsAreFramedAndMatchedToLanesEndToEnd(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	a.call("PUT", "/api/models/lm/agv-map", map[string]any{"v": 2, "speed_mps": 1.4,
+		"points": []any{
+			map[string]any{"id": "A", "x": 0, "y": 0, "kind": "station", "node_key": "S"},
+			map[string]any{"id": "B", "x": 30, "y": 0, "kind": "station", "node_key": "OUT"}},
+		"lanes": []any{map[string]any{"id": "L1", "from": "A", "to": "B", "capacity": 2}}}, 204)
+	a.call("PUT", "/api/models/lm/bindings", map[string]any{"bindings": []any{
+		map[string]any{"subject": "TUG", "signal": "fleet", "source": "agv/+/pos",
+			"transform": map[string]any{"frame": map[string]any{"scale": 0.001}}}}}, 200) // hãng xe báo mm
+	send := func(x, y float64) {
+		a.call("POST", "/api/ingest", map[string]any{"messages": []any{
+			map[string]any{"source": "agv/t1/pos", "ts": "2026-10-01T08:00:00Z", "payload": map[string]any{"id": "T1", "x": x, "y": y, "st": "MOVING"}}}}, 200)
+	}
+	vehicle := func() map[string]any {
+		fleet := a.call("GET", "/api/models/lm/live", nil, 200)["fleet"].(map[string]any)
+		return fleet["TUG"].([]any)[0].(map[string]any)
+	}
+	send(15000, 500) // 15 m, lệch 0,5 m khỏi làn
+	if v := vehicle(); v["lane"] != "L1" || v["off_map"] != false || v["x"].(float64) != 15 || v["raw_x"].(float64) != 15000 || v["s"].(float64) != 15 {
+		t.Errorf("xe phải nằm trên L1 ở 15 m: %v", v)
+	}
+	send(15000, 9000) // cách làn 9 m
+	if v := vehicle(); v["off_map"] != true || v["lane"] != "" {
+		t.Errorf("xe cách làn 9 m phải ngoài đường: %v", v)
+	}
+}
+
+func TestAgvMapStoredBeforeV2IsServedInMeters(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	raw := `{"unit_m":1.5,"speed_mps":1.2,"points":[{"id":"A","x":0,"y":0,"kind":"junction"},{"id":"B","x":20,"y":0,"kind":"junction"}],"lanes":[{"id":"L","from":"A","to":"B","capacity":1}]}`
+	if err := a.store.PutAgvMap(context.Background(), "lm", json.RawMessage(raw)); err != nil { // bản lưu từ trước khi có v2
+		t.Fatal(err)
+	}
+	got := a.call("GET", "/api/models/lm/agv-map", nil, 200)
+	if got["v"].(float64) != 2 || got["points"].([]any)[1].(map[string]any)["x"].(float64) != 30 {
+		t.Errorf("bản đồ lưu từ trước phải được phục vụ ở dạng v2 (mét): %v", got)
+	}
+	bp := a.call("GET", "/api/models/lm/live/blueprint", nil, 200)
+	if bp["agv_map"].(map[string]any)["v"].(float64) != 2 {
+		t.Errorf("blueprint cho feed cũng phải là v2: %v", bp["agv_map"])
+	}
+}
+
+func TestDerivedBindingMayOnlyUseSignalsOfConnectedObjects(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	bindSource(a, "lm", "SRC", "arrived", "dock/src/count", "n")
+	// SRC nối với đường SRC>S nhưng không nối trực tiếp với đường S>OUT: không dùng làm đầu vào của nó được.
+	res := putBindingsRaw(a, "lm", []any{derivedSum("S>OUT", "moved", term("SRC", "arrived", 1))}, 422)
+	if m := res["issues"].([]any)[0].(map[string]any)["message"].(string); !strings.Contains(m, "không nối trực tiếp") {
+		t.Fatalf("message = %q", m)
+	}
+	// còn đầu của chính đường nối đó thì được (SRC là đầu vào của SRC>S).
+	putBindingsRaw(a, "lm", []any{derivedSum("SRC>S", "moved", term("SRC", "arrived", 1))}, 200)
 }

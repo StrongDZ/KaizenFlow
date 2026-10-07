@@ -1,0 +1,45 @@
+[project]
+name = "gauge-twin-ml"
+version = "0.1.0"
+description = "Dataset builder, training, evaluation and ONNX export of the gauge-reading models"
+requires-python = ">=3.11,<3.12"
+# Versions are the ones installed in ml/Dockerfile; keep both in sync.
+# torch and torchvision come from the PyTorch index matching TORCH_VARIANT.
+dependencies = [
+    "torch==2.5.1",
+    "torchvision==0.20.1",
+    "numpy==2.1.3",
+    "opencv-python-headless==4.10.0.84",
+    "pyarrow==18.0.0",
+    "onnx==1.17.0",
+    "onnxruntime==1.20.1",
+    "mlflow-skinny==2.18.0",
+    "sqlalchemy==2.0.36",
+    "alembic==1.14.0",
+    # Only gauge_ml.timedisp.autolabel (labelling the time-display photos) uses it.
+    "anthropic==1.11.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.3.3", "ruff==0.7.1", "pillow==11.0.0", "protobuf==5.28.3"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["gauge_ml*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Generated protobuf code, the renderer (the tests render their own data) and
+# ds-sim (parity test between the deployed preprocessing and training).
+pythonpath = [".", "../gen/python", "../sim/gauge-renderer", "../sim/ds-sim"]
+addopts = "-p no:cacheprovider"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

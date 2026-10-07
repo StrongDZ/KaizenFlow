@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Put first on PATH (DOCKER_SUDO=1 in run-full.sh) when the account may only
+# use Docker through sudo: only the docker command is elevated, the scripts
+# themselves run as the normal user. -E keeps the variables compose reads
+# (limits, cpusets, scenario settings); -n never prompts in a detached run.
+exec sudo -n -E /usr/bin/docker "$@"

@@ -36,9 +36,14 @@ class HttpSink:
     def __init__(self, api_url: str, timeout: float = 5.0):
         self.url = api_url.rstrip("/") + "/api/ingest"
         self.timeout = timeout
+        # Mô hình mà các bản tin thuộc về; Runner đặt khi bắt đầu phát. API dùng nó để ghi nguồn dữ liệu vào đúng mô hình.
+        self.model: str | None = None
 
     def __call__(self, messages: list[dict]) -> None:
-        _call("POST", self.url, {"messages": messages}, self.timeout)
+        body: dict = {"messages": messages}
+        if self.model:
+            body["model"] = self.model
+        _call("POST", self.url, body, self.timeout)
 
 
 class ApiClient:

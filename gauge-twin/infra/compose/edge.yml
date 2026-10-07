@@ -1,0 +1,85 @@
+# One simulated edge: ds-sim (CPU reference pipeline) + edge-agent.
+# Needs the stack of dev.yml (`make up`), RTSP streams (`make sim-up`) and
+# exported models in data/ml-runs/onnx. Start with `make edge-up`.
+name: gauge-twin-edge
+
+x-user: &user "65534:65534"   # both processes share the ZeroMQ ipc sockets
+
+services:
+  # Prepares the shared volumes. Until config-api exists it also seeds the
+  # station configs rendered next to the videos, as <machine_id>.json.
+  edge-init:
+    image: gauge-twin-ds-sim:local
+    user: "0:0"
+    entrypoint: ["/bin/sh", "/scripts/init.sh"]
+    environment:
+      SEED_CONFIGS: ${EDGE_SEED_CONFIGS:-1}
+    volumes:
+      - ./edge/init.sh:/scripts/init.sh:ro
+      - ${SIM_DATA_DIR:-../../data/sim}:/sim:ro
+      - zmq:/tmp/zmq
+      - edge-config:/config
+      - edge-buffer:/buffer
+
+  ds-sim:
+    image: gauge-twin-ds-sim:local
+    build:
+      context: ../..
+      dockerfile: sim/ds-sim/Dockerfile
+    user: *user
+    restart: unless-stopped
+    depends_on:
+      edge-init:
+        condition: service_completed_successfully
+    environment:
+      CONFIG_DIR: /config
+      MODEL_DIR: /models
+      FRAMES_ENDPOINT: ipc:///tmp/zmq/frames
+      CONTROL_ENDPOINT: ipc:///tmp/zmq/control
+      DRIFT_INTERVAL: ${DRIFT_INTERVAL:-600}
+      WORKERS: ${DS_SIM_WORKERS:-6}
+    volumes:
+      - ${EDGE_MODEL_DIR:-../../data/ml-runs/onnx}:/models:ro
+      - zmq:/tmp/zmq
+      - edge-config:/config:ro
+    cpus: ${DS_SIM_CPUS:-6}
+    networks: [gauge-twin]
+
+  edge-agent:
+    image: gauge-twin-edge-agent:local
+    build:
+      context: ../..
+      dockerfile: edge/edge-agent/Dockerfile
+    user: *user
+    restart: unless-stopped
+    depends_on:
+      edge-init:
+        condition: service_completed_successfully
+    environment:
+      EDGE_ID: ${EDGE_ID:-edge-0001}
+      # plant/line/machine of every camera this edge serves.
+      EDGE_MACHINES: ${EDGE_MACHINES:-SIM/L01/machine_001}
+      MQTT_BROKER: emqx:1883
+      CONFIG_DIR: /config
+      BUFFER_PATH: /buffer/buffer.db
+      FRAMES_ENDPOINT: ipc:///tmp/zmq/frames
+      CONTROL_ENDPOINT: ipc:///tmp/zmq/control
+      PPROF: ${EDGE_AGENT_PPROF:-false}
+    volumes:
+      - zmq:/tmp/zmq
+      - edge-config:/config
+      - edge-buffer:/buffer
+    ports:
+      - "${EDGE_AGENT_HTTP_PORT:-8081}:8080"   # /metrics and /healthz
+    networks:
+      gauge-twin:
+        aliases: [edge-agent]
+
+networks:
+  gauge-twin:
+    external: true
+
+volumes:
+  zmq:
+  edge-config:
+  edge-buffer:

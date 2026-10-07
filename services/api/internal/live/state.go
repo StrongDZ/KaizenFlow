@@ -62,6 +62,8 @@ func Coverage(hist []Sample, windowS float64) (float64, bool) {
 type SigVal struct {
 	V  float64   `json:"v"`
 	TS time.Time `json:"ts"`
+	// Changed là giờ ảo mà giá trị này đổi lần gần nhất; zero nếu mới thấy một mẫu (chưa biết đổi lúc nào). Dùng cho công thức hoạt động.
+	Changed time.Time `json:"-"`
 }
 
 type subject struct {
@@ -78,6 +80,7 @@ type sourceInfo struct {
 	seenWall     time.Time
 	count        int64
 	last         any
+	gapS         float64 // trung bình trượt của khoảng cách giữa hai bản tin liên tiếp (giây thật)
 }
 
 type modelState struct {
@@ -91,10 +94,11 @@ type State struct {
 	mu      sync.RWMutex
 	models  map[string]*modelState
 	sources map[string]*sourceInfo
+	maps    map[string]*AgvMap // bản đồ AGV của từng mô hình, để khớp vị trí xe vào làn
 }
 
 func NewState() *State {
-	return &State{models: map[string]*modelState{}, sources: map[string]*sourceInfo{}}
+	return &State{models: map[string]*modelState{}, sources: map[string]*sourceInfo{}, maps: map[string]*AgvMap{}}
 }
 
 func (s *State) model(key string) *modelState {
@@ -104,6 +108,36 @@ func (s *State) model(key string) *modelState {
 		s.models[key] = m
 	}
 	return m
+}
+
+// SetMap đặt (hoặc bỏ, nếu nil) bản đồ AGV dùng để khớp vị trí xe của mô hình vào làn.
+func (s *State) SetMap(model string, m *AgvMap) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if m == nil {
+		delete(s.maps, model)
+		return
+	}
+	s.maps[model] = m
+}
+
+// matchVehicle điền Lane, S, Off cho xe theo bản đồ. Xe tự báo làn hợp lệ thì tin làn đó và chỉ tính S; không có bản đồ thì để nguyên.
+// Gọi khi đang giữ khoá ghi.
+func (s *State) matchVehicle(model string, v *Vehicle, prevLane string) {
+	mp := s.maps[model]
+	if mp == nil {
+		return
+	}
+	if v.Lane != "" {
+		for _, l := range mp.Lanes {
+			if l.ID == v.Lane {
+				v.S, _ = mp.project(l, v.X, v.Y)
+				return
+			}
+		}
+	}
+	m := mp.Match(v.X, v.Y, MatchIn{PrevLane: prevLane, Heading: v.Heading, State: v.State})
+	v.Lane, v.S, v.Off = m.Lane, m.S, m.Off
 }
 
 // NoteSource ghi nhận một nguồn đang phát (để UI liệt kê và gợi ý ghép), kể cả khi chưa có binding nào.
@@ -120,6 +154,15 @@ func (s *State) NoteSource(msg Message, wall time.Time) {
 	}
 	if msg.Desc != "" {
 		so.desc = msg.Desc
+	}
+	if !so.seenWall.IsZero() {
+		if dt := wall.Sub(so.seenWall).Seconds(); dt > 0 {
+			if so.gapS == 0 {
+				so.gapS = dt
+			} else {
+				so.gapS = 0.8*so.gapS + 0.2*dt
+			}
+		}
 	}
 	so.lastTS, so.seenWall, so.last = msg.TS, wall, msg.Payload
 	so.count++
@@ -148,6 +191,7 @@ func (s *State) Apply(model string, rs []Reading, wall time.Time) {
 			}
 			v := *r.Fleet
 			v.seen = wall
+			s.matchVehicle(model, &v, pool[v.ID].Lane)
 			pool[v.ID] = v
 			continue
 		}
@@ -166,7 +210,14 @@ func (s *State) Apply(model string, rs []Reading, wall time.Time) {
 		if cur, ok := sub.signals[r.Signal]; ok && r.TS.Before(cur.TS) {
 			continue
 		}
-		sub.signals[r.Signal] = SigVal{V: r.Num, TS: r.TS}
+		next := SigVal{V: r.Num, TS: r.TS}
+		if cur, ok := sub.signals[r.Signal]; ok {
+			next.Changed = cur.Changed
+			if cur.V != r.Num {
+				next.Changed = r.TS
+			}
+		}
+		sub.signals[r.Signal] = next
 		sub.push(r.Signal, Sample{TS: r.TS, V: r.Num})
 	}
 }
@@ -279,6 +330,8 @@ type SourceSnap struct {
 	Count  int64     `json:"count"`
 	Last   any       `json:"last"`
 	Bound  bool      `json:"bound"`
+	// PerMin: số bản tin mỗi phút (giờ thật), suy từ khoảng cách trung bình gần đây; 0 nếu chưa đủ dữ liệu.
+	PerMin float64 `json:"per_min"`
 }
 
 type Snapshot struct {
@@ -348,8 +401,12 @@ func (s *State) Snapshot(model string, wall time.Time, bindings []Binding) Snaps
 				break
 			}
 		}
+		perMin := 0.0
+		if so.gapS > 0 {
+			perMin = 60 / so.gapS
+		}
 		out.Sources = append(out.Sources, SourceSnap{Source: so.source, Desc: so.desc, LastTS: so.lastTS,
-			AgeMS: wall.Sub(so.seenWall).Milliseconds(), Count: so.count, Last: so.last, Bound: bound})
+			AgeMS: wall.Sub(so.seenWall).Milliseconds(), Count: so.count, Last: so.last, Bound: bound, PerMin: perMin})
 	}
 	sort.Slice(out.Sources, func(i, j int) bool { return out.Sources[i].Source < out.Sources[j].Source })
 	return out
@@ -410,4 +467,17 @@ func (s *State) Models() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// Value trả giá trị hiện tại của một tín hiệu số của một mô hình.
+func (s *State) Value(model string, r Ref) (SigVal, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if m := s.models[model]; m != nil {
+		if sub := m.subjects[r.Subject]; sub != nil {
+			v, ok := sub.signals[r.Signal]
+			return v, ok
+		}
+	}
+	return SigVal{}, false
 }

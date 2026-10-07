@@ -12,12 +12,14 @@ import {
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import { BandChart, axisLine, axisTick, tooltipProps } from '../components/Charts'
+import { ScenarioTimeline } from '../components/scenario/ScenarioTimeline'
 import { DataTable, type Column } from '../components/table/DataTable'
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, Tag, btn, btnPrimary } from '../components/ui'
 import { candidatesOf, describeAction, describeInsight, kpiP50 } from '../lib/insights'
 import { fmtDelta } from '../lib/format'
 import { byCode, thresholdsFor } from '../lib/model'
 import { clip, indexBands, series } from '../lib/replay'
+import { describeInjection, describeOverride, formatScenarioDuration } from '../lib/scenarioView'
 
 type ReportMode = 'run' | 'benchmarks'
 
@@ -294,6 +296,7 @@ function RunReportPage() {
   const storages = graph.data.nodes.filter((n) => risky.includes(n.key))
   const candidates = r.insights.filter((i) => i.kind === 'RECOMMENDATION').flatMap((i) => candidatesOf(i))
   const kpi = (k: string) => kpiP50(r.kpis, k)?.toFixed(1) ?? '—'
+  const serviceLevel = kpiP50(r.kpis, 'service_level')
   return (
     <div data-theme="light" className="min-h-full bg-bg text-text">
       <div className="mx-auto max-w-4xl space-y-5 p-8 print:p-0">
@@ -303,24 +306,52 @@ function RunReportPage() {
             <div className="text-sm text-muted">
               {graph.data.model_key} v{graph.data.version} · {scenario.data.name} · Run #{r.id} · bắt đầu {new Date(r.sim_start).toLocaleString('vi-VN')}
             </div>
-            <div className="text-xs text-faint">{scenario.data.replications} lần lặp Monte Carlo · horizon {scenario.data.horizon_s / 3600} giờ · engine {r.engine_version}</div>
+            <div className="text-xs text-faint">{scenario.data.replications} lần lặp Monte Carlo · horizon {formatScenarioDuration(scenario.data.horizon_s)} · engine {r.engine_version}</div>
           </div>
           <button className={`${btnPrimary} print:hidden`} onClick={() => window.print()}>In / Lưu PDF</button>
         </div>
 
         <section>
-          <h2 className="mb-2 font-semibold">1. Chỉ số chính (trung vị)</h2>
+          <h2 className="mb-2 font-semibold">1. Thiết lập scenario</h2>
+          <div className="grid grid-cols-3 gap-3 text-sm">
+            <div className="rounded border p-2"><div className="text-xs text-muted">Thời lượng</div><b>{formatScenarioDuration(scenario.data.horizon_s)}</b></div>
+            <div className="rounded border p-2"><div className="text-xs text-muted">Lần lặp</div><b>{scenario.data.replications}</b></div>
+            <div className="rounded border p-2"><div className="text-xs text-muted">Khởi đầu</div><b>{scenario.data.start_state}</b></div>
+          </div>
+          <div className="mt-3 break-inside-avoid rounded border p-3">
+            <ScenarioTimeline
+              horizonS={scenario.data.horizon_s}
+              events={scenario.data.injections.map((i) => describeInjection(i))}
+              startLabel={scenario.data.start_state}
+            />
+          </div>
+          {scenario.data.overrides.length > 0 && (
+            <div className="mt-3 text-sm">
+              <div className="font-medium">Thay đổi so với cấu hình nền</div>
+              <ul className="mt-1 list-disc pl-5">
+                {scenario.data.overrides.map((override, index) => {
+                  const d = describeOverride(override)
+                  return <li key={index}>{d.label}: {d.lines.join('; ')}</li>
+                })}
+              </ul>
+            </div>
+          )}
+        </section>
+
+        <section>
+          <h2 className="mb-2 font-semibold">2. Chỉ số chính (trung vị)</h2>
           <table className="w-full text-sm">
             <tbody>
               <tr className="border-t"><td className="py-1">Sản lượng xuất</td><td className="text-right">{kpi('throughput')}</td></tr>
               <tr className="border-t"><td className="py-1">Tổng phút Đỏ</td><td className="text-right">{kpi('red_minutes')}</td></tr>
               <tr className="border-t"><td className="py-1">Nợ đơn cuối kỳ</td><td className="text-right">{kpi('backorder_end')}</td></tr>
+              <tr className="border-t"><td className="py-1">Mức phục vụ</td><td className="text-right">{serviceLevel === undefined ? '—' : `${(serviceLevel * 100).toFixed(1)}%`}</td></tr>
             </tbody>
           </table>
         </section>
 
         <section>
-          <h2 className="mb-2 font-semibold">2. Dự báo &amp; điểm nghẽn</h2>
+          <h2 className="mb-2 font-semibold">3. Dự báo &amp; điểm nghẽn</h2>
           <ul className="list-disc pl-5 text-sm">
             {r.insights.filter((i) => i.kind !== 'RECOMMENDATION').map((i) => <li key={i.id}>{describeInsight(i)}</li>)}
           </ul>
@@ -333,14 +364,14 @@ function RunReportPage() {
         </section>
 
         <section>
-          <h2 className="mb-2 font-semibold">3. Hành động đề xuất (đã kiểm chứng bằng mô phỏng)</h2>
+          <h2 className="mb-2 font-semibold">4. Hành động đề xuất (đã kiểm chứng bằng mô phỏng)</h2>
           {candidates.length === 0 && <div className="text-sm text-muted">Không có hành động nào cải thiện được kết quả.</div>}
           <table className="w-full text-sm">
             <tbody>
               {candidates.map((c) => (
-                <tr key={c.rank} className="border-t">
+                <tr key={c.rank} className="border-t align-top">
                   <td className="py-1">#{c.rank}</td>
-                  <td>{describeAction(c.action)}</td>
+                  <td className="py-1"><b>{describeAction(c.action)}</b>{c.reason && <span className="mt-0.5 block text-xs text-muted">{c.reason}</span>}</td>
                   <td className="text-right">−{c.delta_kpi.red_minutes.toFixed(1)} phút Đỏ</td>
                   <td className="text-right">{c.delta_kpi.throughput >= 0 ? '+' : ''}{c.delta_kpi.throughput.toFixed(1)} sản lượng</td>
                 </tr>

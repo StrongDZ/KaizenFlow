@@ -26,6 +26,7 @@ export function SuggestDialog({ open, model, suggestions, unmatched, subjects, o
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['bindings', model] })
       void qc.invalidateQueries({ queryKey: ['live', model] })
+      void qc.invalidateQueries({ queryKey: ['live-check', model] })
       onClose()
     },
   })

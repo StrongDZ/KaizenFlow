@@ -178,3 +178,77 @@ func TestStateKeepsIgnoringSmallOutOfOrderReadings(t *testing.T) {
 		t.Error("a late reading within the tolerance must not overwrite a newer value")
 	}
 }
+
+func TestApplyRemembersWhenAValueLastChanged(t *testing.T) {
+	s := NewState()
+	wall := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	put := func(ts time.Time, v float64) {
+		s.Apply("m", []Reading{{Model: "m", Subject: "P", Signal: "count_in", TS: ts, Num: v}}, wall)
+	}
+	base := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	put(base, 5)
+	if v, _ := s.Value("m", Ref{"P", "count_in"}); !v.Changed.IsZero() {
+		t.Fatalf("mẫu đầu tiên chưa biết đổi lúc nào: %+v", v)
+	}
+	put(base.Add(10*time.Second), 5) // không đổi
+	put(base.Add(20*time.Second), 6) // đổi
+	put(base.Add(30*time.Second), 6) // không đổi
+	v, ok := s.Value("m", Ref{"P", "count_in"})
+	if !ok || v.V != 6 || !v.Changed.Equal(base.Add(20*time.Second)) {
+		t.Fatalf("value = %+v, ok = %v; Changed phải là lúc đổi gần nhất", v, ok)
+	}
+	if _, ok := s.Value("m", Ref{"P", "nope"}); ok {
+		t.Fatal("tín hiệu chưa có")
+	}
+	if !s.Now("m").Equal(base.Add(30 * time.Second)) {
+		t.Fatalf("Now = %v", s.Now("m"))
+	}
+}
+
+func fleetReading(id string, x, y float64, state, lane string) Reading {
+	return Reading{Model: "m", Subject: "TUG_A", Signal: "fleet", TS: t0, Fleet: &Vehicle{ID: id, X: x, Y: y, State: state, Lane: lane}}
+}
+
+func TestStateMatchesVehiclesToLanes(t *testing.T) {
+	s := NewState()
+	s.SetMap("m", matchMap())
+	wall := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	s.Apply("m", []Reading{
+		fleetReading("on", 10, -1, "MOVING", ""),
+		fleetReading("lost", 10, 9, "MOVING", ""),
+		fleetReading("told", 30, 5, "MOVING", "BC"), // xe tự báo làn: tin theo, chỉ tính S
+	}, wall)
+	got := map[string]Vehicle{}
+	for _, v := range s.Snapshot("m", wall, nil).Fleet["TUG_A"] {
+		got[v.ID] = v
+	}
+	if v := got["on"]; v.Lane != "AB" || v.Off || !near(v.S, 10) {
+		t.Errorf("on = %+v", v)
+	}
+	if v := got["lost"]; v.Lane != "" || !v.Off {
+		t.Errorf("lost phải ngoài đường: %+v", v)
+	}
+	if v := got["told"]; v.Lane != "BC" || v.Off || !near(v.S, 10) {
+		t.Errorf("told = %+v (làn tự báo giữ nguyên, S = 10 dọc BC)", v)
+	}
+}
+
+func TestStateKeepsPreviousLaneBetweenMessages(t *testing.T) {
+	s := NewState()
+	s.SetMap("m", matchMap())
+	wall := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	s.Apply("m", []Reading{fleetReading("v", 5, 0.1, "MOVING", "BA")}, wall) // tự báo BA
+	s.Apply("m", []Reading{fleetReading("v", 6, 0.1, "MOVING", "")}, wall)   // lần sau không báo: giữ BA
+	if v := s.Snapshot("m", wall, nil).Fleet["TUG_A"][0]; v.Lane != "BA" {
+		t.Errorf("phải giữ làn cũ khi hai làn ngang nhau: %+v", v)
+	}
+}
+
+func TestStateWithoutMapLeavesVehiclesAlone(t *testing.T) {
+	s := NewState()
+	wall := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	s.Apply("m", []Reading{fleetReading("v", 5, 0.1, "MOVING", "")}, wall)
+	if v := s.Snapshot("m", wall, nil).Fleet["TUG_A"][0]; v.Lane != "" || v.Off {
+		t.Errorf("chưa có bản đồ thì không kết luận gì: %+v", v)
+	}
+}

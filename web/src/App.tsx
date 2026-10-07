@@ -1,10 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom'
 import { useLiveRuns } from './api/live'
 import { Shell } from './components/shell/Shell'
+import { EmptyState, PageBody } from './components/ui'
 import { shouldRetry } from './lib/retry'
 import AgvMapPage from './pages/AgvMapPage'
 import ComparePage from './pages/ComparePage'
+import AlertsPage from './pages/AlertsPage'
+import SourcesPage from './pages/SourcesPage'
 import ConnectPage from './pages/ConnectPage'
 import ControlRoomPage from './pages/ControlRoomPage'
 import EditorPage from './pages/EditorPage'
@@ -32,6 +35,16 @@ import WarehouseControlPage from './pages/WarehouseControlPage'
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false, retry: shouldRetry } } })
 
+function NotFound() {
+  return (
+    <PageBody>
+      <EmptyState title="Không có trang này">
+        Đường dẫn không đúng hoặc trang đã bị bỏ. <Link to="/" className="text-accent underline">Về Tổng quan</Link>
+      </EmptyState>
+    </PageBody>
+  )
+}
+
 function Live() {
   useLiveRuns()
   return null
@@ -45,8 +58,10 @@ export default function App() {
         <Routes>
           <Route element={<Shell />}>
             <Route path="/" element={<OverviewPage />} />
+            <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/models" element={<ModelsPage />} />
             <Route path="/models/:key/versions" element={<VersionsPage />} />
+            <Route path="/models/:key/sources" element={<SourcesPage />} />
             <Route path="/models/:key/connect" element={<ConnectPage />} />
             <Route path="/models/:key/live" element={<LivePage />} />
             <Route path="/models/:key/map" element={<AgvMapPage />} />
@@ -74,6 +89,7 @@ export default function App() {
               <Route path="materials" element={<MaterialsPage />} />
               <Route path="materials/:code" element={<MaterialDetailPage />} />
             </Route>
+            <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
       </BrowserRouter>

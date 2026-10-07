@@ -17,12 +17,14 @@ type Message struct {
 }
 
 // Transform biến đổi giá trị đã trích: số thì `v*scale+offset`; trạng thái thì đổi theo bảng `enum`;
-// đội xe (`signal=fleet`) thì `fields` đổi tên trường của bản tin vị trí.
+// đội xe (`signal=fleet`) thì `fields` đổi tên trường của bản tin vị trí và `frame` đổi hệ toạ độ.
 type Transform struct {
 	Scale  *float64          `json:"scale,omitempty"`
 	Offset *float64          `json:"offset,omitempty"`
 	Enum   map[string]string `json:"enum,omitempty"`
 	Fields map[string]string `json:"fields,omitempty"`
+	// Frame (chỉ cho đội xe): đổi toạ độ hãng xe báo sang toạ độ bản đồ. Nil là đồng nhất.
+	Frame *Frame `json:"frame,omitempty"`
 }
 
 // Binding gắn một tín hiệu chuẩn của node/edge với một trường của một nguồn.
@@ -35,15 +37,26 @@ type Binding struct {
 	JSONPath  string    `json:"json_path"`
 	Transform Transform `json:"transform"`
 	Enabled   bool      `json:"enabled"`
+	// Mode: ModeSource (mặc định, lấy từ trường của nguồn) hoặc ModeDerived (tự tính bằng Derive, không có nguồn).
+	Mode   string  `json:"mode"`
+	Derive *Derive `json:"derive,omitempty"`
 }
 
 // Vehicle là vị trí một xe trên bản đồ.
 type Vehicle struct {
-	ID    string    `json:"id"`
-	X     float64   `json:"x"`
-	Y     float64   `json:"y"`
-	State string    `json:"state"`
+	ID string `json:"id"`
+	// X, Y là toạ độ bản đồ (mét, sau khi đổi khung); RawX, RawY là toạ độ hãng xe báo, để căn chỉnh khung.
+	X    float64 `json:"x"`
+	Y    float64 `json:"y"`
+	RawX float64 `json:"raw_x"`
+	RawY float64 `json:"raw_y"`
+	// Heading là hướng (độ, atan2(dy, dx) trong hệ bản đồ); nil nếu bản tin không có.
+	Heading *float64 `json:"heading,omitempty"`
+	State   string   `json:"state"`
+	// Lane là làn xe tự báo hoặc làn do khớp vị trí tìm ra; S là mét dọc làn; Off là xe không nằm trên làn nào (khi đã có bản đồ).
 	Lane  string    `json:"lane"`
+	S     float64   `json:"s"`
+	Off   bool      `json:"off_map"`
 	Load  float64   `json:"load"`
 	TS    time.Time `json:"ts"`
 	AgeMS int64     `json:"age_ms"`
@@ -88,7 +101,7 @@ func toFloat(v any) (float64, bool) {
 	return 0, false
 }
 
-var fleetDefaults = map[string]string{"id": "id", "x": "x", "y": "y", "state": "st", "lane": "seg", "load": "load"}
+var fleetDefaults = map[string]string{"id": "id", "x": "x", "y": "y", "heading": "th", "state": "st", "lane": "seg", "load": "load"}
 
 func fleetField(t Transform, name string) string {
 	if p, ok := t.Fields[name]; ok && p != "" {
@@ -110,7 +123,14 @@ func normalizeFleet(b Binding, msg Message) (Reading, error) {
 	if !okx || !oky || !okfx || !okfy {
 		return Reading{}, fmt.Errorf("%s/%s: bản tin xe thiếu toạ độ x, y", b.Subject, b.Signal)
 	}
-	v := Vehicle{ID: fmt.Sprint(idv), X: fx, Y: fy, TS: msg.TS}
+	v := Vehicle{ID: fmt.Sprint(idv), RawX: fx, RawY: fy, TS: msg.TS}
+	v.X, v.Y = b.Transform.Frame.Apply(fx, fy)
+	if h, ok := get("heading"); ok {
+		if fh, ok := toFloat(h); ok {
+			hh := b.Transform.Frame.Heading(fh)
+			v.Heading = &hh
+		}
+	}
 	if s, ok := get("state"); ok {
 		v.State = strings.ToUpper(fmt.Sprint(s))
 		if mapped, ok := b.Transform.Enum[v.State]; ok {
@@ -131,7 +151,7 @@ func Normalize(model string, bindings []Binding, msg Message) ([]Reading, []erro
 	var rs []Reading
 	var errs []error
 	for _, b := range bindings {
-		if !b.Enabled || !MatchSource(b.Source, msg.Source) {
+		if !b.Enabled || b.Mode == ModeDerived || !MatchSource(b.Source, msg.Source) {
 			continue
 		}
 		var r Reading

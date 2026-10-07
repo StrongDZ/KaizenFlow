@@ -273,3 +273,106 @@ func TestSupersedeDriftClosesOnlyThisModelsOpenDriftInsights(t *testing.T) {
 		t.Error("another model's DRIFT and other kinds must stay open")
 	}
 }
+
+func TestDataSourceUpsertAccumulatesAndKeepsHistory(t *testing.T) {
+	st := testfix.Seeded(t, "store_src")
+	t1 := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	t2 := t1.Add(time.Minute)
+	err := st.UpsertSources(ctx, []store.DataSource{{ModelKey: "m", Source: "plc/prs-02/status", Desc: "Máy dập 2", Origin: "feed",
+		FirstSeen: t1, LastSeen: t1, Count: 5, Sample: json.RawMessage(`{"st":"RUN"}`)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// lần ghi sau: cộng dồn số bản tin, giữ lần đầu thấy, cập nhật lần cuối và mẫu; mô tả rỗng không xoá mô tả cũ
+	err = st.UpsertSources(ctx, []store.DataSource{{ModelKey: "m", Source: "plc/prs-02/status", Origin: "feed",
+		FirstSeen: t2, LastSeen: t2, Count: 3, Sample: json.RawMessage(`{"st":"IDLE"}`)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, err := st.ListSources(ctx, "m")
+	if err != nil || len(list) != 1 {
+		t.Fatalf("list = %+v, err = %v", list, err)
+	}
+	got := list[0]
+	if got.Count != 8 || !got.FirstSeen.Equal(t1) || !got.LastSeen.Equal(t2) || got.Desc != "Máy dập 2" || string(got.Sample) != `{"st": "IDLE"}` {
+		t.Fatalf("source = %+v (sample %s)", got, got.Sample)
+	}
+	// mô hình khác không thấy
+	if other, _ := st.ListSources(ctx, "khac"); len(other) != 0 {
+		t.Fatalf("list của mô hình khác = %+v", other)
+	}
+}
+
+func TestDataSourceManualOverridesOriginAndDeleteReportsNotFound(t *testing.T) {
+	st := testfix.Seeded(t, "store_src2")
+	now := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	_ = st.UpsertSources(ctx, []store.DataSource{{ModelKey: "m", Source: "a/b", Origin: "feed", FirstSeen: now, LastSeen: now, Count: 1}})
+	_ = st.UpsertSources(ctx, []store.DataSource{{ModelKey: "m", Source: "a/b", Desc: "Khai báo tay", Origin: "manual", FirstSeen: now, LastSeen: now, Sample: json.RawMessage(`{"x":1}`)}})
+	list, _ := st.ListSources(ctx, "m")
+	if len(list) != 1 || list[0].Origin != "manual" || list[0].Desc != "Khai báo tay" {
+		t.Fatalf("list = %+v", list)
+	}
+	if err := st.DeleteSource(ctx, "m", "a/b"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteSource(ctx, "m", "a/b"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("xoá lần hai = %v, muốn ErrNotFound", err)
+	}
+}
+
+func TestDeletingModelRemovesItsDataSources(t *testing.T) {
+	st := testfix.Seeded(t, "store_src3")
+	id, err := st.CreateModel(ctx, "xoa-nguon", nil)
+	if err != nil || id == 0 {
+		t.Fatalf("create = %d, %v", id, err)
+	}
+	now := time.Now()
+	_ = st.UpsertSources(ctx, []store.DataSource{{ModelKey: "xoa-nguon", Source: "s", Origin: "feed", FirstSeen: now, LastSeen: now, Count: 1}})
+	if err := st.DeleteModel(ctx, "xoa-nguon", true); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := st.ListSources(ctx, "xoa-nguon"); len(list) != 0 {
+		t.Fatalf("nguồn còn sót sau khi xoá mô hình: %+v", list)
+	}
+}
+
+func TestDerivedBindingRoundTripAndShapeChecks(t *testing.T) {
+	st := testfix.Seeded(t, "store_derived")
+	d := live.Derive{Kind: live.KindSum, Const: 40, Terms: []live.Term{{Subject: "A", Signal: "moved", Sign: 1}, {Subject: "B", Signal: "moved", Sign: -1}}}
+	err := st.SaveBindings(ctx, "m", []live.Binding{
+		{Subject: "S", Signal: "level:RAW-01", Mode: live.ModeDerived, Derive: &d, Enabled: true},
+		binding("A", "moved", "belt/a", "moved"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, err := st.ListBindings(ctx, "m")
+	if err != nil || len(list) != 2 {
+		t.Fatalf("list = %+v, %v", list, err)
+	}
+	for _, b := range list {
+		switch b.Subject {
+		case "S":
+			if b.Mode != live.ModeDerived || b.Source != "" || b.Derive == nil || b.Derive.Const != 40 || len(b.Derive.Terms) != 2 || b.Derive.Terms[1].Sign != -1 {
+				t.Fatalf("derived = %+v (%+v)", b, b.Derive)
+			}
+		case "A":
+			if b.Mode != live.ModeSource || b.Derive != nil {
+				t.Fatalf("source = %+v", b)
+			}
+		}
+	}
+	// AllBindings (đường ingest) mang đủ cả hai kiểu
+	all, err := st.AllBindings(ctx)
+	if err != nil || len(all) != 2 {
+		t.Fatalf("all = %+v, %v", all, err)
+	}
+	// thiếu công thức, hoặc kiểu lạ, bị từ chối trước khi chạm DB
+	var re *store.RefError
+	if err := st.SaveBindings(ctx, "m", []live.Binding{{Subject: "S", Signal: "x", Mode: live.ModeDerived, Enabled: true}}); !errors.As(err, &re) {
+		t.Fatalf("thiếu công thức: %v", err)
+	}
+	if err := st.SaveBindings(ctx, "m", []live.Binding{{Subject: "S", Signal: "x", Mode: "abc", Source: "s", Enabled: true}}); !errors.As(err, &re) {
+		t.Fatalf("kiểu lạ: %v", err)
+	}
+}

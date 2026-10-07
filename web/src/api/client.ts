@@ -1,6 +1,6 @@
 import type {
-  AgvMap, Binding, BindingInput, CalibrationApplied, CalibrationResp, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
-  BandRow, EventRow, Graph, GraphEdge, GraphNode, InsightRow, Issue, Json, Material, MaterialDetail, MaterialUpdate, ModelSummary,
+  AgvMap, Binding, Frame, BindingInput, CoverageReport, DataSourceRow, SourceTestResult, CalibrationApplied, CalibrationResp, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
+  BandRow, CheckReport, EventRow, Graph, GraphEdge, GraphNode, InsightRow, Issue, Json, Material, MaterialDetail, MaterialUpdate, ModelSummary,
   NewMaterial, NewNodeType, NewScenario, NodeType, NodeTypeDetail, NodeTypeUpdate, Run, RunDetail, RunRow, Scenario, ScenarioBody, ScenarioRow,
   SignalRow, VersionInfo,
 } from './types'
@@ -47,15 +47,19 @@ function qs(params: Record<string, string | undefined>): string {
 
 const post = <T>(path: string, body?: unknown) => req<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) })
 const put = <T>(path: string, body: unknown) => req<T>(path, { method: 'PUT', body: JSON.stringify(body) })
-const del = (path: string, cascade = false) => req<void>(`${path}${cascade ? '?cascade=true' : ''}`, { method: 'DELETE' })
+const del = (path: string, cascade = false) => req<void>(`${path}${cascade ? `${path.includes('?') ? '&' : '?'}cascade=true` : ''}`, { method: 'DELETE' })
 
 export const api = {
   nodeTypes: () => req<NodeType[]>('/api/node-types'),
   materials: () => req<Material[]>('/api/materials'),
   models: () => req<ModelSummary[]>('/api/models'),
-  createModel: (model_key: string, settings?: Json) => post<{ version_id: number }>('/api/models', { model_key, settings }),
+  /** copy_from: khoá một mô hình có sẵn; mô hình mới bắt đầu từ bản sao sơ đồ mới nhất của nó. */
+  createModel: (model_key: string, opts: { settings?: Json; copy_from?: string } = {}) => post<{ version_id: number }>('/api/models', { model_key, ...opts }),
   versions: (key: string) => req<VersionInfo[]>(`/api/models/${encodeURIComponent(key)}/versions`),
   graph: (id: number) => req<Graph>(`/api/versions/${id}`),
+  /** Kiểm tra sơ đồ: không thân thì kiểm bản đã lưu, có thân thì kiểm bản đang sửa; deep còn hỏi sim. */
+  checkGraph: (id: number, body?: { nodes: GraphNode[]; edges: GraphEdge[] }, deep = false) =>
+    req<CheckReport>(`/api/versions/${id}/check${deep ? '?deep=1' : ''}`, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
   saveGraph: (id: number, body: { nodes: GraphNode[]; edges: GraphEdge[]; settings?: Json }) =>
     req<void>(`/api/versions/${id}/graph`, { method: 'PUT', body: JSON.stringify(body) }),
   publish: (id: number) => post<{ status: string }>(`/api/versions/${id}/publish`),
@@ -108,13 +112,24 @@ export const api = {
   bindings: (key: string) => req<Binding[]>(`/api/models/${encodeURIComponent(key)}/bindings`),
   saveBindings: (key: string, bindings: BindingInput[]) =>
     put<{ bindings: Binding[] }>(`/api/models/${encodeURIComponent(key)}/bindings`, { bindings }),
+  /** Kiểm tra các ghép nối với mọi luật như khi lưu nhưng không lưu (hộp Ghép nối dùng để báo hợp lệ trước khi bấm Lưu). */
+  checkBindings: (key: string, bindings: BindingInput[]) =>
+    put<{ ok: boolean }>(`/api/models/${encodeURIComponent(key)}/bindings?check=1`, { bindings }),
   deleteBinding: (key: string, id: number) => del(`/api/models/${encodeURIComponent(key)}/bindings/${id}`),
   deleteAllBindings: (key: string) => del(`/api/models/${encodeURIComponent(key)}/bindings`),
+  liveCheck: (key: string) => req<CoverageReport>(`/api/models/${encodeURIComponent(key)}/live/check`),
+  sources: (key: string) => req<{ sources: DataSourceRow[] }>(`/api/models/${encodeURIComponent(key)}/sources`).then((r) => r.sources),
+  addSource: (key: string, body: { source: string; desc?: string; sample?: unknown }) =>
+    post<{ source: string }>(`/api/models/${encodeURIComponent(key)}/sources`, body),
+  deleteSource: (key: string, source: string, cascade = false) =>
+    del(`/api/models/${encodeURIComponent(key)}/sources?source=${encodeURIComponent(source)}`, cascade),
+  testSource: (key: string, body: { source: string; payload: unknown }) =>
+    post<SourceTestResult>(`/api/models/${encodeURIComponent(key)}/sources/test`, body),
   agvMap: (key: string) => req<AgvMap>(`/api/models/${encodeURIComponent(key)}/agv-map`),
   saveAgvMap: (key: string, map: AgvMap) => put<void>(`/api/models/${encodeURIComponent(key)}/agv-map`, map),
   feed: {
     status: () => req<FeedStatus>('/api/feed/status'),
-    start: (model: string, speed: number) => post<FeedStatus>('/api/feed/start', { model, speed }),
+    start: (model: string, speed: number, frame?: Frame & { noise_m?: number }) => post<FeedStatus>('/api/feed/start', { model, speed, ...(frame ? { frame } : {}) }),
     pause: () => post<FeedStatus>('/api/feed/pause'),
     resume: () => post<FeedStatus>('/api/feed/resume'),
     speed: (speed: number) => post<FeedStatus>('/api/feed/speed', { speed }),

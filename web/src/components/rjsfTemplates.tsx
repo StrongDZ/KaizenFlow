@@ -2,6 +2,7 @@ import { getDefaultRegistry } from '@rjsf/core'
 import type { ArrayFieldTemplateProps, IconButtonProps, ObjectFieldTemplateProps, RJSFSchema, TitleFieldProps } from '@rjsf/utils'
 import type { ReactNode } from 'react'
 import { distFields } from './DistField'
+import { materialFields } from './MaterialField'
 
 /** Nút mặc định của rjsf chỉ có biểu tượng glyphicon (không có font), nên hiện ra là ô trống. Thay bằng chữ. */
 function AddButton({ onClick, disabled }: IconButtonProps) {
@@ -62,4 +63,4 @@ function ObjectFieldTemplate(props: ObjectFieldTemplateProps) {
 }
 
 export const rjsfTemplates = { ButtonTemplates: { AddButton, RemoveButton }, TitleFieldTemplate, ArrayFieldTemplate, ObjectFieldTemplate }
-export const rjsfFields = distFields
+export const rjsfFields = { ...distFields, ...materialFields }

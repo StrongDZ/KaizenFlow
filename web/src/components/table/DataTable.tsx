@@ -11,7 +11,7 @@ export type Column<T> = {
   className?: string
 }
 
-export function DataTable<T>({ rows, columns, rowKey, onRowClick, empty, initialSort, flat }: {
+export function DataTable<T>({ rows, columns, rowKey, onRowClick, empty, initialSort, flat, selected }: {
   rows: T[]
   columns: Column<T>[]
   rowKey: (row: T) => string | number
@@ -20,6 +20,8 @@ export function DataTable<T>({ rows, columns, rowKey, onRowClick, empty, initial
   initialSort?: Sort
   /** Bảng nằm trong một Card: bỏ viền riêng để không thành hộp trong hộp. */
   flat?: boolean
+  /** Dòng đang được chọn (hiện nền nhạt), cho bảng có khung chi tiết bên cạnh. */
+  selected?: (row: T) => boolean
 }) {
   const [sort, setSort] = useState<Sort | null>(initialSort ?? null)
   const sorted = useMemo(() => {
@@ -61,7 +63,8 @@ export function DataTable<T>({ rows, columns, rowKey, onRowClick, empty, initial
               tabIndex={onRowClick ? 0 : undefined}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
               onKeyDown={onRowClick ? (e) => onKey(e, row) : undefined}
-              className={`border-b border-line/60 last:border-0 ${onRowClick ? 'cursor-pointer hover:bg-panel' : ''}`}
+              aria-selected={selected?.(row) || undefined}
+              className={`border-b border-line/60 last:border-0 ${onRowClick ? 'cursor-pointer hover:bg-panel' : ''} ${selected?.(row) ? 'bg-panel' : ''}`}
             >
               {columns.map((c) => (
                 <td key={c.key} className={`px-3 py-2.5 ${c.align === 'right' ? 'text-right tabular-nums' : ''} ${c.className ?? ''}`}>
