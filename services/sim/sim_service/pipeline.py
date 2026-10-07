@@ -4,8 +4,9 @@ from __future__ import annotations
 import csv
 import io
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from sim_service.aggregate import export_warehouse_series
 from sim_service.contract import ENGINE_VERSION, RunRequest, validate_refs
 from sim_service.detect import detect
 from sim_service.impact import failure_impacts
@@ -22,6 +23,7 @@ class RunResult:
     insights: list[dict]
     signals: list[dict]
     events: list[dict]
+    warehouse_series_log: list[dict] = field(default_factory=list)
 
 
 def execute(req: RunRequest, workers: int = 1) -> RunResult:
@@ -47,7 +49,15 @@ def execute(req: RunRequest, workers: int = 1) -> RunResult:
                       for r in reps for t, s, n, v in r.signals), key=lambda x: x["time"])
     events = sorted(({"time": t, "run_id": req.run_id, "rep": r.rep, "subject": s, "type": typ, "payload": p}
                      for r in reps for t, s, typ, p in r.events), key=lambda x: x["time"])
-    return RunResult(req.run_id, ENGINE_VERSION, aggregate_kpis(reps), bands(req, reps), insights, signals, events)
+    wh_log: list[dict] = []
+    if reps:
+        primary = reps[0]
+        try:
+            wh_log = export_warehouse_series(primary, req.nodes)
+        except Exception:
+            wh_log = []
+    return RunResult(req.run_id, ENGINE_VERSION, aggregate_kpis(reps), bands(req, reps), insights,
+                     signals, events, wh_log)
 
 
 def to_csv(result: RunResult) -> str:

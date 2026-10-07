@@ -103,6 +103,8 @@ func New(d Deps) http.Handler {
 	r.Delete("/api/models/{key}/bindings/{id}", h.deleteBinding)
 	r.Get("/api/models/{key}/agv-map", h.getAgvMap)
 	r.Put("/api/models/{key}/agv-map", h.putAgvMap)
+	r.Post("/api/models/{key}/benchmark/7day", h.benchmark7day)
+	r.Post("/api/models/{key}/benchmark/forecast", h.benchmarkForecast)
 	r.Handle("/api/feed/*", h.feedProxy())
 	r.Handle("/ws", d.Hub)
 	return r

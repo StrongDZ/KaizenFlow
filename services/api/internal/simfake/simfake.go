@@ -37,6 +37,7 @@ func New() *Server {
 	mux.HandleFunc("POST /runs", s.start)
 	mux.HandleFunc("GET /runs/{id}", s.status)
 	mux.HandleFunc("GET /runs/{id}/result", s.result)
+	mux.HandleFunc("GET /runs/{id}/warehouse_series", s.warehouseSeries)
 	mux.HandleFunc("GET /runs/{id}/export.csv", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/csv")
 		_, _ = w.Write([]byte("kind,time,rep,subject,name,value\n"))
@@ -132,4 +133,49 @@ func Result(id int64) simapi.Result {
 		Signals: sigs,
 		Events:  []simapi.Event{{Time: t0, RunID: id, Subject: "S", Type: "COLOR_CHANGE", Payload: map[string]any{"state": "RED"}}},
 	}
+}
+
+func (s *Server) warehouseSeries(w http.ResponseWriter, r *http.Request) {
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	s.mu.Lock()
+	known := s.known[id]
+	s.mu.Unlock()
+	if !known {
+		writeJSON(w, 404, map[string]string{"detail": "run not found"})
+		return
+	}
+	log := WarehouseSeriesSample(id)
+	writeJSON(w, 200, map[string]any{
+		"run_id":               id,
+		"warehouse_series_log": log,
+		"count":                len(log),
+	})
+}
+
+// WarehouseSeriesSample tạo 336 dòng mẫu (1 kho, 2 SKU, 168 giờ = 7 ngày).
+func WarehouseSeriesSample(runID int64) []simapi.WarehouseSeriesEntry {
+	nStorages := 1
+	nSKU := 2
+	hours := 168
+	total := nStorages * nSKU * hours
+	out := make([]simapi.WarehouseSeriesEntry, 0, total)
+	colors := []string{"GREEN", "YELLOW", "RED"}
+	for h := 0; h < hours; h++ {
+		for skuIdx := 0; skuIdx < nSKU; skuIdx++ {
+			sku := "RAW-01"
+			if skuIdx == 1 {
+				sku = "RAW-02"
+			}
+			out = append(out, simapi.WarehouseSeriesEntry{
+				TsS:       float64(h * 3600),
+				SKU:       sku,
+				NodeKey:   "S",
+				Level:     float64(50 + h%20),
+				Capacity:  200.0,
+				CoverageH: float64(12 - h%15),
+				Color:     colors[h%3],
+			})
+		}
+	}
+	return out
 }

@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Background, Controls, ReactFlow, ReactFlowProvider, useReactFlow } from '@xyflow/react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { BandRow, Graph, NodeType, RunDetail, Scenario } from '../api/types'
@@ -13,6 +13,7 @@ import { RunGate } from '../components/controlroom/RunGate'
 import { FloatingPanel, PanelSection } from '../components/FloatingPanel'
 import { kfEdgeTypes } from '../components/KfEdge'
 import { kfNodeTypes } from '../components/KfNode'
+import { WarehousePopover, type WarehouseSkuRow } from '../components/WarehousePopover'
 import { HeaderActions, useShell } from '../components/shell/ShellContext'
 import { useTheme } from '../hooks/useTheme'
 import { StatusChip, btn } from '../components/ui'
@@ -75,6 +76,7 @@ function Room({ run, scenario, graph, types, rows }: {
   const [speed, setSpeed] = useState<Speed>(1)
   const [panelOpen, setPanelOpen] = useState(true)
   const [openPin, setOpenPin] = useState<number | null>(null)
+  const wrap = useRef<HTMLDivElement>(null)
   const t = times[ti] ?? 0
   const hasTime = times.length > 0
 
@@ -176,8 +178,50 @@ function Room({ run, scenario, graph, types, rows }: {
   }
   const showPanel = !focus && panelOpen
 
+  const [popover, setPopover] = useState<{ nodeId: string; x: number; y: number } | null>(null)
+  const popoverFlowNode = popover ? nodes.find((n) => n.id === popover.nodeId) : undefined
+  const popoverRows = useMemo<WarehouseSkuRow[]>(() => {
+    if (!popoverFlowNode || !graph) return []
+    const gNode = graph.nodes.find((n) => n.key === popoverFlowNode.id)
+    if (!gNode) return []
+    const coverageH = valueAt(series(idx, popoverFlowNode.id, 'coverage_h'), t)?.p50
+    const stockParams = (gNode.params?.stock ?? types[popoverFlowNode.data.nodeType]?.default_params?.stock ?? []) as unknown[]
+    const out: WarehouseSkuRow[] = []
+    const th = thresholdsFor({ node_type: popoverFlowNode.data.nodeType, params: gNode.params ?? {} }, types)
+    for (const x of stockParams) {
+      if (x && typeof x === 'object') {
+        const o = x as { material?: unknown; initial?: unknown; max?: unknown }
+        const sku = typeof o.material === 'string' ? o.material : ''
+        const max = typeof o.max === 'number' ? o.max : Number(o.max) || 0
+        const initial = typeof o.initial === 'number' ? o.initial : Number(o.initial) || 0
+        if (sku) {
+          const perSku = valueAt(series(idx, popoverFlowNode.id, `level:${sku}`), t)?.p50
+          const alt = valueAt(series(idx, popoverFlowNode.id, `stock_${sku}`), t)?.p50
+          const level = valueAt(series(idx, popoverFlowNode.id, 'level'), t)?.p50
+          out.push({
+            sku,
+            max,
+            current: perSku ?? alt ?? level ?? initial,
+            coverageH,
+            thresholds: th,
+          })
+        }
+      }
+    }
+    return out
+  }, [popoverFlowNode, graph, types, idx, t])
+  const onNodeClick = (_e: ReactMouseEvent, node: FlowNode) => {
+    if (node.data.archetype !== 'STORAGE') { setPopover(null); return }
+    const r = wrap.current?.getBoundingClientRect()
+    setPopover({
+      nodeId: node.id,
+      x: _e.clientX - (r?.left ?? 0) + 12,
+      y: _e.clientY - (r?.top ?? 0),
+    })
+  }
+
   return (
-    <div className="relative h-full min-h-[480px]">
+    <div ref={wrap} className="relative h-full min-h-[480px]">
       <HeaderActions>
         <StatusChip status={run.status} />
         <span className="text-[11px] text-muted">{scenario.replications} lần lặp</span>
@@ -188,11 +232,24 @@ function Room({ run, scenario, graph, types, rows }: {
       <ReactFlow
         nodes={nodes} edges={edges} nodeTypes={kfNodeTypes} edgeTypes={kfEdgeTypes} nodesConnectable={false} nodesDraggable={false}
         colorMode={theme} fitView fitViewOptions={{ padding: { top: '56px', right: '280px', bottom: '96px', left: '24px' } }}
-        onPaneClick={() => setOpenPin(null)}
+        onPaneClick={() => { setOpenPin(null); setPopover(null) }}
+        onNodeClick={onNodeClick}
       >
         <Background gap={18} size={1} color="var(--color-line)" />
         <Controls showInteractive={false} position="bottom-left" style={{ marginBottom: 82 }} />
       </ReactFlow>
+
+      {popover && popoverFlowNode && (
+        <WarehousePopover
+          open
+          onOpenChange={(o) => { if (!o) setPopover(null) }}
+          anchorX={popover.x}
+          anchorY={popover.y}
+          title={`${popoverFlowNode.data.name} (${popoverFlowNode.data.key})`}
+          rows={popoverRows}
+          container={wrap.current}
+        />
+      )}
 
       {!focus && <Ribbon kpis={run.kpis} at={cursor} time={hasTime ? t : undefined} deltaRed={deltaRed} />}
       {!focus && hasTime && (

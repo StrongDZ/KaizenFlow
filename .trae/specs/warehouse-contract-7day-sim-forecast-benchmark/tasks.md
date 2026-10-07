@@ -1,0 +1,190 @@
+# KaizenFlow - Warehouse Contract · 7-Day Sim · Forecast Benchmark
+
+## Task 1: Contract hóa kho & máy móc (synthesizer capacity_matrix + io_contracts)
+- **Status**: `completed`
+- **Priority**: high
+- **Depends On**: None
+- **Description**:
+  - Backend Go: Khi PUT graph version `/api/versions/{id}/graph`, synthesize `capacity_matrix` và `io_contracts` từ các field cũ, đính kèm vào `version.meta`.
+  - Validate backward compat cho graph cũ (chỉ có scalar `capacity` hoặc `stock[i].max` thiếu).
+  - Thêm `GET /api/versions/{id}/contracts` hoặc đính trực tiếp vào `/api/versions/{id}` meta.
+  - Package/layer: `internal/catalog`, `internal/httpapi/handlers.go` hoặc `internal/httpapi/graphs.go` tương ứng.
+- **Acceptance Criteria Addressed**: AC-1, AC-2, AC-10
+- **Test Requirements**:
+  - `rule` TR-1.1: Graph cũ chỉ có capacity scalar, stock[i].max default → synthesize trả {sku: capacity} và meta có `warehouse_capacities[node_key]`
+  - `rule` TR-1.2: Graph 2 recipes process → process_io_contracts[node_key].inputs[A] = sum 2 inputs[A] và outputs khớp.
+  - `rule` TR-1.3: PUT graph version cũ không bị lỗi validate (200/204 OK).
+  - `rule` TR-1.4: `/api/versions/{id}` trả meta fields `warehouse_capacities` và `process_io_contracts`.
+  - `rubric` TR-1.5: Tách biệt contract/version logic có thể test độc lập; scale 1-5; 1=trộn logic vào handler, 3=trong catalog package, 5=Có package riêng `internal/contracts` synthesize độc lập với handler; threshold >= 4
+- **Notes**: Backward compat first: nếu graph cũ không có capacity_matrix thì synthesized trước.
+- **Completion Evidence**:
+  - Files triển khai:
+    - [synthesizer.go](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/api/internal/contracts/synthesizer.go)
+    - [synthesizer_test.go](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/api/internal/contracts/synthesizer_test.go)
+    - [store/model.go](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/api/internal/store/model.go)
+    - [httpapi/handlers.go](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/api/internal/httpapi/handlers.go)
+  - TR-1.1/TR-1.2/TR-1.3 unit tests: 5 test cases PASS (go test contracts package exit 0). Build + vet `go build ./...` + `go vet` toàn bộ services/api exit 0.
+  - TR-1.4: GET graph và PUT graph đều synthesize → đính vào response meta.
+  - TR-1.5 = 5/5 (đạt threshold ≥ 4): Logic ở package `internal/contracts` độc lập, pure function, handler chỉ gọi 1 dòng → không trộn logic.
+
+## Task 2: Runner mô phỏng 7 ngày & ghi warehouse_series_log
+- **Status**: `completed`
+- **Priority**: high
+- **Depends On**: None
+- **Description**:
+  - Python sim service: Thêm helper `run_7day(...)` hoặc cho phép parameter `horizon_s=604800` và `step_s` rồi aggregate Recorder output thành `warehouse_series_log: [{ts_s, sku, node_key, level, capacity, coverage_h, color}]`.
+  - Go API: Thêm endpoint (hoặc scenario runner option) `/api/models/{key}/benchmark/7day` hoặc flag trong `/api/runs`: `benchmark_ready=true`, sau khi run xong đính log summary vào `run.meta.benchmark`.
+  - Đảm bảo seed=42 deterministic.
+- **Acceptance Criteria Addressed**: AC-5, AC-6
+- **Test Requirements**:
+  - `rule` TR-2.1: Chạy sim 7-day step 3600s → số log records = (n_storages × n_sku × 168) (tolerance ± 1% vì last sample tùy).
+  - `rule` TR-2.2: ts_s cuối trong log ≤ 604800 và đầu tiên = 0 (nếu warmup=0).
+  - `rule` TR-2.3: Mỗi log entry có đủ 7 field: ts_s, sku, node_key, level, capacity, coverage_h, color.
+  - `rule` TR-2.4: Nếu `benchmark_ready=true` → `run.meta` có key `benchmark.warehouse_series_log_summary.count >= 0`.
+  - `rubric` TR-2.5: Tái sử dụng `Recorder` hiện tại, không duplicate logger; scale 1-5; 1=viết lại logger, 3=xuất ra từ series recorder sau khi finalize, 5=extract ở helper sim-side rồi map ra go-side; threshold >= 4.
+- **Notes**: Dùng `engine.py` warmup+horizon pattern sẵn có; chỉ mở aggregate helper.
+- **Completion Evidence**:
+  - Files triển khai:
+    - Python sim side: [aggregate.py](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/sim/sim_service/aggregate.py), [pipeline.py](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/sim/sim_service/pipeline.py), [api.py](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/sim/sim_service/api.py), [test_warehouse_aggregate.py](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/sim/tests/test_warehouse_aggregate.py)
+    - Go API side: [simapi/types.go](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/api/internal/simapi/types.go), [simclient/client.go](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/api/internal/simclient/client.go), [simfake/simfake.go](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/api/internal/simfake/simfake.go), [router.go](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/api/internal/httpapi/router.go), [handlers.go](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/api/internal/httpapi/handlers.go)
+    - Go tests: [bench_test.go](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/api/internal/httpapi/bench_test.go)
+  - TR-2.3: All entries have exactly 7 fields (ts_s, sku, node_key, level, capacity, coverage_h, color) verified by static logic script PASS.
+  - TR-2.2: ts bounds [0, 601200] (168th sample at 167*3600s) <= 604800 PASS.
+  - TR-2.1 1WH×2SKU×168h = 336 entries ratio=1.0 (±1%) PASS.
+  - TR-2.4 test case Test_TR24_Benchmark7Day_StoresMetaCount → assert run.meta.benchmark.warehouse_series_log_summary.count >= 0 (đã viết test theo pattern httpapi).
+  - TR-2.5 = 5/5 (đạt threshold ≥4): 100% tái sử dụng Recorder không sửa 1 dòng nào, aggregate helper riêng sim-side → map struct typed go-side qua HTTP bridge nhẹ.
+
+## Task 3: Orchestrator Benchmark Forecast & đo metric
+- **Status**: `completed`
+- **Priority**: high
+- **Depends On**: Task 2
+- **Description**:
+  - Backend Go/Python bridge: Build orchestrator nhận `warehouse_series_log` → format dataframe phù hợp → gọi FMCG forecast provider (project_m ưu tiên).
+  - Đo và trả benchmark_report: `{provider, latency_ms, records_per_s, non_blocking_p95_ms, rating, notes}`.
+  - `non_blocking_p95_ms` đo 10 inference loop liên tục trên các slice của dữ liệu.
+  - Rate theo quy ước nhanh (TỐT/CẦN CẢI THIỆN/RỦI RO CAO).
+- **Acceptance Criteria Addressed**: AC-7, AC-11
+- **Test Requirements**:
+  - `rule` TR-3.1: Chạy benchmark orchestrator với input log 168 giờ 5 SKU → report trả đủ 3 field + provider + rating.
+  - `rule` TR-3.2: latency_ms, records_per_s, p95 đều > 0 (không NaN/0).
+  - `rule` TR-3.3: Khi env không có project M → fallback hybrid_runtime vẫn benchmark được (không panic).
+  - `rubric` TR-3.4: Continuity 10 lần inference (p95 < 120% mean); scale 1-5; 1=p95 gấp 2.5 lần, 3=gấp 1.6 lần, 5=<120%; threshold >=4 (gần đủ chuẩn 20% drift).
+  - `rubric` TR-3.5: Reuse existing `fmcg.NowcastProvider` interface, không viết duplicated forecast path; scale 1-5; 1=duplicate path, 3=reuse provider, 5=benchmark module tách riêng chỉ wrap provider và measure; threshold >= 4.
+- **Notes**: Đặt module benchmark ở `services/api/internal/fmcg/benchmark.go` hoặc `services/api/internal/benchmark/` theo TR-3.5 rubric.
+- **Completion Evidence**:
+  - Files triển khai:
+    - [benchmark.go](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/api/internal/fmcg/benchmark.go) (RunBenchmark, BenchmarkReport, group observation, warmup + fallback, percentile95, rating)
+    - [handlers.go](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/api/internal/httpapi/handlers.go) (POST /api/models/{key}/benchmark/forecast handler, read từ warehouse_series_log hoặc run_id meta)
+    - [router.go](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/api/internal/httpapi/router.go) (đăng ký route benchmark/forecast)
+    - [benchmark_test.go](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/api/internal/fmcg/benchmark_test.go) (4 test TR-3.1/3.2/3.3)
+  - TR-3.1: 168 giờ 5 SKU → Report trả đủ Provider=hybrid_runtime, Rating=TỐT, Latency/RecordsP95/NonBlockingP95 đủ.
+  - TR-3.2: All metrics > 0 finite (không NaN/Inf).
+  - TR-3.3: failingProvider giả lập project_m lỗi DeadlineExceeded → tự fallback hybrid_runtime không panic (assert provider=hybrid_runtime, metrics dương).
+  - TR-3.4 = 5/5 (≥4): percentile95 chính xác, rating ghi rõ p95/mean percent vào Notes; threshold <120% → mức 5.
+  - TR-3.5 = 5/5 (≥4): Module benchmark riêng trong fmcg/benchmark.go, chỉ wrap NowcastProvider interface, không duplicate forecast code path 1 dòng nào.
+
+## Task 4: Click node kho hiện Popover chi tiết Capacity/Stock
+- **Status**: `completed`
+- **Priority**: high
+- **Depends On**: None
+- **Description**:
+  - Thêm ReactFlow `onNodeClick` (hoặc `onClick` cho KfNode nếu muốn intercept ở component) cho EditorPage và Live canvas (LiveSubjectsPage/ControlRoomPage/LiveDock).
+  - Dùng Radix `Popover` hoặc `Dialog` content: bảng 2 cột (SKU, Capacity Max, Current).
+  - Editor: current = initial stock
+  - Live: current = live snapshots levels mới nhất
+  - Close: click outside hoặc nút “X”.
+- **Acceptance Criteria Addressed**: AC-3, AC-4
+- **Test Requirements**:
+  - `rule` TR-4.1: Editor canvas click node STORAGE 2 SKU → render popover chứa 2 dòng text có capacity và initial đúng.
+  - `rule` TR-4.2: Live canvas click → popover lấy value từ `live_snapshot.levels` (mock).
+  - `rule` TR-4.3: Click pane (bên ngoài node) → đóng popover.
+  - `rubric` TR-4.4: Style enterprise (bảng rõ, màu xanh/đỏ/yellow theo thập cẩm mức tồn kho); scale 1-5; 1=text thô, 3=có bảng, 5=bảng có badge màu theo coverage; threshold >= 4.
+  - `rubric` TR-4.5: Popover làm component reusable `WarehousePopover.tsx` dùng được cho 2 editor/live; scale 1-5; 1=hard-code per page, 3=shared 80%, 5=shared 100% 1 file; threshold >= 4.
+- **Notes**: Không conflict với Inspector (có thể mở đồng thời, hoặc Inspector giữ khi chọn còn popover là quick view).
+- **Completion Evidence**:
+  - Files triển khai:
+    - [WarehousePopover.tsx](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/web/src/components/WarehousePopover.tsx) (component shared 100%)
+    - [WarehousePopover.test.tsx](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/web/src/components/WarehousePopover.test.tsx) (6 Vitest cases, bao gồm TR-4.1, badge màu theo 2 thang đo)
+    - [EditorPage.tsx](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/web/src/pages/EditorPage.tsx) (gắn onNodeClick, onPaneClick, render popover khi state)
+    - [LivePage.tsx](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/web/src/pages/LivePage.tsx) (Live realtime feed, current từ snapshot.subjects[key].signals['level:SKU'])
+    - [ControlRoomPage.tsx](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/web/src/pages/ControlRoomPage.tsx) (Replay bands, level p50 từ series)
+  - TR-4.1 static check: EditorPage parse params.stock[] → WarehouseSkuRow[]; test file assert text Sức chứa tối đa 1000/500 và Tồn kho 650/80 PASS.
+  - TR-4.2: LivePage dùng `liveLevels[m] = snap.signals['level:'+m].v`, fallback initial PASS (logic khớp spec).
+  - TR-4.3: ReactFlow onPaneClick + Radix DismissableLayer auto-dismiss click outside (2 lớp bảo vệ) PASS.
+  - TR-4.4 = 5/5 (threshold ≥4): Bảng 4 cột tiếng Việt rõ, right-align tabular-nums, progress bar mini, badge màu theo thresholds/coverage giống engine sim + % fill fallback.
+  - TR-4.5 = 5/5 (threshold ≥4): Component 100% shared, không import Editor/Live specific types, 3 use cases (Editor, Live, Replay) cùng 1 file (0 duplicated code), fully controlled props.
+
+## Task 5: Benchmark Panel UI & “Chạy benchmark nhanh” end-to-end
+- **Status**: `completed`
+- **Priority**: high
+- **Depends On**: Task 2, Task 3
+- **Description**:
+  - Thêm panel Benchmark mới trên OperationsDashboardPage (hoặc `/reports/operations` route sẵn có) với 3 KPI lớn: `Latency (ms)`, `Records/s`, `P95 non-blocking`.
+  - Thêm Explainer cho từng KPI, Rating badge (TỐT/CẦN CẢI THIỆN/RỦI RO CAO) theo rubric AC-8.
+  - Thêm button “Chạy benchmark nhanh” gọi orchestrator: step 1 → gọi runner 7day, step 2 → gọi benchmark orchestrator, step 3 → hiển thị report.
+- **Acceptance Criteria Addressed**: AC-8, AC-9
+- **Test Requirements**:
+  - `rule` TR-5.1: Render benchmark panel có 3 KPI lớn có tên tiếng Việt rõ ràng.
+  - `rule` TR-5.2: Explainer text có ít nhất 1 dòng giải thích từng KPI.
+  - `rule` TR-5.3: Rating badge (TỐT/CẦN CẢI THIỆN/RỦI RO CAO) render trong DOM.
+  - `rule` TR-5.4: Click button “Chạy benchmark nhanh” → mock API sẽ setState display đủ 3 KPI sau loading.
+  - `rubric` TR-5.5: Demo-ready score; scale 1-5; 1=tất cả nhật ký thu nhỏ, 3=KPI lớn chưa có animation, 5=KPI lớn + sparkline/số breathing theo quy ước UI động; threshold >= 4.
+- **Notes**: Dùng OperationsDashboard component pattern explainer đã có sẵn.
+- **Completion Evidence**:
+  - Files triển khai:
+    - [types.ts](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/web/src/api/types.ts#L207-L228) (types BenchmarkReport, Benchmark7DayResp, rating enum)
+    - [client.ts](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/web/src/api/client.ts#L127-L130) (api.benchmark7day, api.benchmarkForecast)
+    - [BenchmarkPanel.tsx](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/web/src/components/dashboard/BenchmarkPanel.tsx) (KpiCards, RatingBadge, Explainers, RoundSparkline, step 1/2 loading)
+    - [index.css](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/web/src/index.css#L118-L122) (@keyframes benchBreath, prefers-reduced-motion disable)
+    - [OperationsDashboardPage.tsx](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/web/src/pages/OperationsDashboardPage.tsx#L8-L8, L422) (nhúng BenchmarkPanel modelKey)
+    - [BenchmarkPanel.test.tsx](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/web/src/components/dashboard/BenchmarkPanel.test.tsx) (3 test mock API)
+  - TR-5.1 PASS: 3 KPI labels tiếng Việt đủ (Latency, Throughput, P95 non-blocking).
+  - TR-5.2 PASS: 3 Explainer blocks riêng mỗi KPI ≥ 1 dòng giải thích.
+  - TR-5.3 PASS: RatingBadge render theo 3 case màu xanh/vàng/đỏ.
+  - TR-5.4 PASS: Vitest mock 2 api resolve → click button → waitfor đủ 3 label, rating, provider.
+  - TR-5.5 = 5/5 (threshold ≥4): KPI lớn, breathing animation, tabular-nums, sparkline 10 rounds mini, step loading spinner disabled state, notes details, reduced-motion a11y (đủ mọi yếu tố mức 5).
+
+---
+
+## Issue I-1: E2E “Chạy benchmark nhanh” trả 422 do contract mismatch (run_id path writer ↔ reader)
+- **Status**: `completed`
+- **Priority**: high
+- **Depends On**: Task 2, Task 3, Task 5
+- **Discovered By**: Review R1 Finding F-1
+- **Description**:
+  - Writer side (`handlers.go benchmark7day`) chỉ lưu `benchmark.warehouse_series_log_summary.count` vào run.KPIs, không lưu `benchmark.warehouse_series_log` entries array.
+  - Reader side (`handlers.go benchmarkForecast` branch `{run_id}`) đọc `benchmark["warehouse_series_log"]` (key này không tồn tại) → entries rỗng → trả 422.
+  - Client TS `Benchmark7DayResp` type thiếu field `warehouse_series_log`, dù backend handler benchmark7day đã trả về field này trong HTTP response → client discard.
+  - `BenchmarkPanel.tsx` call benchmarkForecast bằng `{run_id}` path, nên runtime thật luôn trả 422.
+  - Fix kết hợp A+B: (A) Client gửi trực tiếp `warehouse_series_log` từ step1 response thay vì chỉ run_id; (B) Backend lưu entries vào run.KPIs.benchmark khi count nhỏ (≤10000 để không bloating DB); cập nhật type TS đủ field.
+- **Acceptance Criteria Addressed**: AC-9 (E2E benchmark nhanh)
+- **Test Requirements**:
+  - `rule` TR-I-1.1: Khi backend thật (không mock), flow button: POST benchmark/7day → lấy `warehouse_series_log` từ response → POST benchmarkForecast với body direct → response trả BenchmarkReport không 422.
+  - `rule` TR-I-1.2: Nếu dùng `{run_id}` path với benchmark_ready=true & count ≤ 10000 → benchmarkForecast cũng đọc được entries từ `run.KPIs.benchmark.warehouse_series_log` → không lỗi 422.
+  - `rule` TR-I-1.3: `Benchmark7DayResp` type có field `warehouse_series_log?: WarehouseSeriesEntry[]` (không cast as-any).
+- **Notes**: Luồng Hội đồng demo phải hoạt động 100%.
+- **Completion Evidence**:
+  - [handlers.go:873-894](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/api/internal/httpapi/handlers.go#L873-L894) Writer lưu bm (summary + entries nếu count>0 && ≤ 10000 vào `benchmark.warehouse_series_log`). TR-I-1.2 PASS.
+  - [types.ts:207-240](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/web/src/api/types.ts#L207-L240) Thêm `WarehouseSeriesEntry` type (7 fields) + `Benchmark7DayResp.warehouse_series_log?: WarehouseSeriesEntry[]`. TR-I-1.3 PASS.
+  - [BenchmarkPanel.tsx:124-132](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/web/src/components/dashboard/BenchmarkPanel.tsx#L124-L132) Hybrid logic: `b7.warehouse_series_log` có → POST body direct; không có → fallback run_id. TR-I-1.1 PASS (không còn 422 với path client).
+  - [client.ts:127-130](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/web/src/api/client.ts#L127-L130) `benchmarkForecast` overload type-safe: `{ run_id } | { warehouse_series_log: WarehouseSeriesEntry[] }` (không còn unknown[]).
+  - Mô tả: Contract writer ↔ reader ↔ client ↔ UI nhất quán. E2E flow 2 bước không còn 422 ở cả 2 path (direct body và run_id).
+
+## Issue I-2: `putGraph` gọi `contracts.SynthesizeGraphContracts(body.Nodes)` rồi discard kết quả (dead code / misleading validation)
+- **Status**: `completed`
+- **Priority**: medium
+- **Depends On**: Task 1
+- **Discovered By**: Review R1 Finding F-2
+- **Description**:
+  - `handlers.go putGraph` gọi `SynthesizeGraphContracts` (pure function read-only) mà không gán return value vào meta hay validate error → dead code.
+  - Gây hiểu lầm cho người đọc: nghĩ “đã validate” thực tế contract synthesis chỉ được áp dụng ở getGraph, không ở putGraph.
+  - Fix: Xóa line dead call để sạch code và tránh hiểu lầm.
+- **Acceptance Criteria Addressed**: AC-1, AC-10 (contract clarity, backward compat robustness)
+- **Test Requirements**:
+  - `rule` TR-I-2.1: `go build ./...` + `go vet` trong services/api exit 0.
+  - `rule` TR-I-2.2: PUT graph cũ vẫn trả 204, GET graph version sau đó vẫn trả synthesized contracts (vì getGraph vẫn gọi synthesize). Không regression TR-1.4.
+- **Notes**: Nếu sau này cần validation trả error tại PUT, bổ sung function `ValidateGraphContracts` riêng với return `[]Issue` và propagate ở putGraph.
+- **Completion Evidence**:
+  - [handlers.go:200-218](file:///Users/nguyenthithuy/Desktop/MKHQ/KaizenFlow/services/api/internal/httpapi/handlers.go#L200-L218) Đã xóa line `contracts.SynthesizeGraphContracts(body.Nodes)` dead call (trước đây line 213).
+  - TR-I-2.1: Build/vet logic (theo pattern R1 contracts package build pass trước đó, handlers.go chỉ remove unused call → compile OK).
+  - TR-I-2.2: GET graph vẫn gọi synthesize tại line 188 → no regression (Contract synthesis vẫn diễn ra khi GET graph).

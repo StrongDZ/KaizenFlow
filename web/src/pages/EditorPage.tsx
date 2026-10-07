@@ -3,7 +3,7 @@ import {
   Background, ReactFlow, ReactFlowProvider, SelectionMode, applyEdgeChanges, applyNodeChanges, useReactFlow, useStore,
   type Connection, type EdgeChange, type NodeChange,
 } from '@xyflow/react'
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { CheckReport, Graph, Issue, NodeType } from '../api/types'
@@ -15,6 +15,7 @@ import { ShortcutsDialog } from '../components/editor/ShortcutsDialog'
 import { kfNodeTypes } from '../components/KfNode'
 import { CheckControl } from '../components/editor/CheckControl'
 import { SaveGuard } from '../components/editor/SaveGuard'
+import { WarehousePopover, type WarehouseSkuRow } from '../components/WarehousePopover'
 import { HeaderActions, useShell } from '../components/shell/ShellContext'
 import { useGraphCheck } from '../hooks/useGraphCheck'
 import { useTheme } from '../hooks/useTheme'
@@ -27,7 +28,7 @@ import { clipboard, copyOf, pasteOf } from '../lib/clipboard'
 import { defaultMaterial, edgeKey, edgeLabel, fromFlow, isEdit, makeNode, toFlow, type FlowEdge, type FlowNode } from '../lib/graph'
 import { canRedo, canUndo, emptyHistory, record, redo, undo, type History } from '../lib/history'
 import { autoLayout, type Dir } from '../lib/layout'
-import { byCode } from '../lib/model'
+import { byCode, thresholdsFor } from '../lib/model'
 import { isTypingTarget } from '../lib/playback'
 import { shortcutFor } from '../lib/shortcuts'
 
@@ -90,6 +91,40 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
   const inspectorOpen = hasSelection && !focus
   const padding = () => ({ top: '24px', bottom: '84px', right: inspectorOpen ? '344px' : '24px', left: paletteOpen && !focus ? '252px' : '24px' }) as const
   const refit = () => requestAnimationFrame(() => void fitView({ padding: padding(), duration: 300 }))
+
+  const [popover, setPopover] = useState<{ nodeId: string; x: number; y: number } | null>(null)
+  const popoverNode = popover ? nodes.find((n) => n.id === popover.nodeId) : undefined
+  const popoverRows = useMemo<WarehouseSkuRow[]>(() => {
+    if (!popoverNode) return []
+    const stock = (popoverNode.data.params?.stock ?? []) as unknown[]
+    const out: WarehouseSkuRow[] = []
+    for (const x of stock) {
+      if (x && typeof x === 'object') {
+        const o = x as { material?: unknown; initial?: unknown; max?: unknown }
+        const sku = typeof o.material === 'string' ? o.material : ''
+        const initial = typeof o.initial === 'number' ? o.initial : Number(o.initial) || 0
+        const max = typeof o.max === 'number' ? o.max : Number(o.max) || 0
+        if (sku) {
+          out.push({
+            sku,
+            current: initial,
+            max,
+            thresholds: thresholdsFor({ node_type: popoverNode.data.nodeType, params: popoverNode.data.params }, types),
+          })
+        }
+      }
+    }
+    return out
+  }, [popoverNode, types])
+  const onNodeClick = (_e: ReactMouseEvent, node: FlowNode) => {
+    if (node.data.archetype !== 'STORAGE') { setPopover(null); return }
+    const r = wrap.current?.getBoundingClientRect()
+    setPopover({
+      nodeId: node.id,
+      x: _e.clientX - (r?.left ?? 0) + 12,
+      y: _e.clientY - (r?.top ?? 0),
+    })
+  }
 
   const onNodesChange = useCallback((c: NodeChange<FlowNode>[]) => {
     setNodes((ns) => applyNodeChanges(c, ns))
@@ -381,6 +416,8 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
           openQuick({ x: pt.clientX, y: pt.clientY }, { nodeId: state.fromNode.id, type: state.fromHandle.type })
         }}
         onBeforeDelete={async () => { remember(); return true }}
+        onNodeClick={onNodeClick}
+        onPaneClick={() => setPopover(null)}
         nodesDraggable={!readOnly} nodesConnectable={!readOnly}
         selectionOnDrag={tool === 'select'} panOnDrag={tool === 'hand' ? true : [1]} selectionMode={SelectionMode.Partial}
         panActivationKeyCode="Space" multiSelectionKeyCode={['Shift', 'Meta', 'Control']}
@@ -389,6 +426,18 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
       >
         <Background gap={18} size={1} color="var(--color-line)" />
       </ReactFlow>
+
+      {popover && popoverNode && (
+        <WarehousePopover
+          open
+          onOpenChange={(o) => { if (!o) setPopover(null) }}
+          anchorX={popover.x}
+          anchorY={popover.y}
+          title={`${popoverNode.data.name} (${popoverNode.data.key})`}
+          rows={popoverRows}
+          container={wrap.current}
+        />
+      )}
 
       {!focus && (
         <CanvasToolbar

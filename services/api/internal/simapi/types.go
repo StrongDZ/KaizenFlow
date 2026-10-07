@@ -87,14 +87,31 @@ type Event struct {
 	Payload map[string]any `json:"payload"`
 }
 
+// WarehouseSeriesEntry là một dòng trong warehouse_series_log (theo từng kho, từng SKU, từng bước mẫu).
+type WarehouseSeriesEntry struct {
+	TsS       float64 `json:"ts_s"`
+	SKU       string  `json:"sku"`
+	NodeKey   string  `json:"node_key"`
+	Level     float64 `json:"level"`
+	Capacity  float64 `json:"capacity"`
+	CoverageH float64 `json:"coverage_h"`
+	Color     string  `json:"color"`
+}
+
+// WarehouseSeriesSummary gom khóa thông tin meta benchmark.
+type WarehouseSeriesSummary struct {
+	Count int `json:"count"`
+}
+
 type Result struct {
-	RunID         int64          `json:"run_id"`
-	EngineVersion string         `json:"engine_version"`
-	KPIs          map[string]any `json:"kpis"`
-	Bands         []Band         `json:"bands"`
-	Insights      []Insight      `json:"insights"`
-	Signals       []Signal       `json:"signals"`
-	Events        []Event        `json:"events"`
+	RunID                int64                   `json:"run_id"`
+	EngineVersion        string                  `json:"engine_version"`
+	KPIs                 map[string]any          `json:"kpis"`
+	Bands                []Band                  `json:"bands"`
+	Insights             []Insight               `json:"insights"`
+	Signals              []Signal                `json:"signals"`
+	Events               []Event                 `json:"events"`
+	WarehouseSeriesLog   []WarehouseSeriesEntry  `json:"warehouse_series_log,omitempty"`
 }
 
 type Status struct {

@@ -245,3 +245,263 @@ export type Calibration = {
 }
 export type CalibrationResp = { min_trips: number; edges: Calibration[]; waiting: { edge: string; name: string; n: number }[] }
 export type CalibrationApplied = { baseline_scenario_id: number; scenario_id: number; baseline_run_id: number; run_id: number; edges: number }
+
+export type BenchmarkRating = 'TỐT' | 'CẦN CẢI THIỆN' | 'RỦI RO CAO'
+
+export type WarehouseSeriesEntry = {
+  ts_s: number
+  sku: string
+  node_key: string
+  level: number
+  capacity: number
+  coverage_h: number
+  color: string
+}
+
+export type BenchmarkReport = {
+  provider: string
+  latency_ms: number
+  records_per_s: number
+  non_blocking_p95_ms: number
+  rating: BenchmarkRating
+  notes: string[]
+}
+
+export type Benchmark7DayResp = {
+  run_id: number
+  scenario_id?: number
+  model_key: string
+  version_id: number
+  horizon_s: number
+  step_s: number
+  warmup_s: number
+  replications: number
+  benchmark_ready: boolean
+  warehouse_series_log_summary: { count: number }
+  warehouse_series_log?: WarehouseSeriesEntry[]
+}
+
+// -------- Dashboard hiệu năng tổng thể (OverviewPage) -----------------------------
+// Hình dạng API sẽ trả về sau này (UI dùng mock shape tương thích).
+// Backend chỉ cần implement 1 endpoint tương tự:
+//     GET  /api/performance/kpis?window=14d&top_n=5
+export type PerfSeriesPoint = { t: string; v: number }
+
+export type PerfMachineRow = {
+  key: string
+  name: string
+  node_type: string
+  model_key: string
+  /** OEE tổng hợp theo 14 ngày gần nhất (0-100%) */
+  oee: number
+  availability: number
+  performance: number
+  quality: number
+  /** Năng suất TB / giờ */
+  throughput_ph: number
+  /** Thay đổi OEE so với 14 ngày trước (%), âm = cải thiện tốt hơn */
+  wow_delta_oee: number
+  /** 14 ngày OEE series (ngày cũ → mới, t = YYYY-MM-DD) */
+  oee_series_14d: PerfSeriesPoint[]
+  state: 'RUNNING' | 'IDLE' | 'BLOCKED' | 'DOWN' | 'UNKNOWN'
+}
+
+export type PerfFleetRow = {
+  key: string
+  name: string
+  kind: 'AGV' | 'TUGGER' | 'FORKLIFT'
+  model_key: string
+  pallets_ph: number
+  km_total_14d: number
+  wait_pool_avg_min: number
+  delivery_lateness_pct: number
+  wow_delta_pallets: number
+  series_14d: PerfSeriesPoint[]
+  state: 'ACTIVE' | 'IDLE' | 'MAINTENANCE' | 'CHARGING' | 'UNKNOWN'
+}
+
+export type PerfStorageRow = {
+  key: string
+  name: string
+  node_type: string
+  model_key: string
+  coverage_h_avg: number
+  inbound_ph: number
+  outbound_ph: number
+  red_minutes_14d: number
+  fill_pct_avg: number
+  wow_delta_coverage: number
+  coverage_series_14d: PerfSeriesPoint[]
+  band_color: 'GREEN' | 'YELLOW' | 'RED'
+}
+
+export type PerfFinanceRow = {
+  key: string
+  name: string
+  revenue_14d_vnd: number
+  operating_cost_14d_vnd: number
+  holding_cost_14d_vnd: number
+  scrap_cost_14d_vnd: number
+  gross_margin_pct: number
+  wow_delta_margin: number
+  margin_series_14d: PerfSeriesPoint[]
+  revenue_series_14d: PerfSeriesPoint[]
+  grade: 'TIỆN LỢI' | 'CÂN BẰNG' | 'LỖ'
+}
+
+export type PerformanceKpis = {
+  as_of: string
+  hero: {
+    revenue_7d_vnd: number; revenue_wow_pct: number
+    oee_avg_pct:    number; oee_wow_pct: number
+    pallets_ph_avg: number; pallets_wow_pct: number
+    margin_avg_pct: number; margin_wow_pct: number
+  }
+  machines: PerfMachineRow[]
+  fleet: PerfFleetRow[]
+  storage: PerfStorageRow[]
+  finance: PerfFinanceRow[]
+  top_n: number
+}
+
+// -------- Warehouse Pipeline View (Demand / Inbound / Adequacy) --------------------
+// Backend sau này implement (dữ liệu từ live.State RAM hoặc sim tally), trả về đúng shape
+// → UI WarehousePopover & Sidebar tổng hợp kho tự động hoạt động không sửa 1 dòng.
+export type InboundRow = {
+  lot_id: string
+  eta_ts: string
+  qty: number
+  sku: string
+  source?: string
+  status: 'IN_TRANSIT' | 'DOCKED' | 'BOOKED'
+}
+export type DemandRow = {
+  order_id: string
+  due_ts: string
+  qty: number
+  sku: string
+  destination?: string
+  priority: 'LOW' | 'NORMAL' | 'HIGH' | 'CRITICAL'
+}
+export type PipelinePoint = { t: string; on_hand: number; inbound: number; demand: number; net: number }
+export type WarehouseAdequacy = 'ĐỦ HÀNG' | 'CẢNH BÁO' | 'THIẾU HÀNG'
+
+export type WarehousePipelineView = {
+  node_key: string
+  horizon_h: number
+  as_of: string
+  totals: {
+    on_hand_current: number
+    inbound_total_horizon: number
+    demand_total_horizon: number
+    available_final: number
+    shortage_qty: number
+    coverage_remaining_h: number
+  }
+  adequacy: WarehouseAdequacy
+  inbound: InboundRow[]
+  demand: DemandRow[]
+  timeline_h: PipelinePoint[]
+}
+
+// -------- Machine Pipeline View (Input / Running / Output) --------------------------
+export type MachineInboundRow = {
+  lot_id: string; eta_ts: string; qty: number; sku: string; from_node?: string
+  status: 'TRANSFER' | 'WAIT_BUFFER' | 'ALLOCATED'
+}
+export type MachineBatchRow = {
+  batch_id: string
+  recipe_sku_in: string; qty_in: number
+  recipe_sku_out: string; qty_out: number
+  start_ts: string; end_ts: string
+  progress_pct: number
+  stage: 'QUEUED' | 'RUNNING' | 'FINALIZING'
+}
+export type MachineOutputRow = {
+  lot_id: string; ready_ts: string; qty: number; sku: string; to_node?: string
+  priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
+}
+export type MachineTimelinePoint = { t: string; inbound_load: number; run_capacity: number; output_load: number; queue_after: number }
+export type MachineVerdict = 'ĐANG CHẠY' | 'CHỜ NGUYÊN LIỆU' | 'TẮC NGÕ RA' | 'LỖI'
+
+export type MachinePipelineView = {
+  node_key: string; horizon_h: number; as_of: string
+  totals: {
+    input_pending_qty: number; current_batch_pct: number; output_pending_qty: number
+    oee_pct: number; batches_done_last_8h: number; batches_planned_next_8h: number
+  }
+  verdict: MachineVerdict
+  input_pending: MachineInboundRow[]
+  current_batch: MachineBatchRow | null
+  output_upcoming: MachineOutputRow[]
+  timeline_h: MachineTimelinePoint[]
+  recipe?: ProcessRecipeContract
+}
+
+// -------- Process Recipe SSoT (Input Contract · Processing · Output Contract · Chain) ------
+export type ProcessRecipeStage = { key: string; name: string; duration_pct: number }
+export type ChainVerdict = 'ĐỒNG BỘ TỐT' | 'CÓ CHẶN' | 'ĐOẠN GÃY'
+
+export type ProcessRecipeContract = {
+  node_key: string
+  recipe_code: string
+  recipe_name: string
+
+  input: {
+    sku: string; sku_name: string
+    from_node_key: string; from_node_name: string
+    qty_per_cycle: number
+    replenish_cycle_min: number
+    uom: string
+    current_coverage_h: number
+  }
+  processing: {
+    cycle_time_min: number
+    standard_yield_pct: number
+    stages: ProcessRecipeStage[]
+  }
+  output: {
+    sku: string; sku_name: string
+    to_node_key: string; to_node_name: string
+    qty_per_cycle: number
+    loss_pct: number
+    uom: string
+    downstream_depot_node_key?: string
+    downstream_depot_name?: string
+  }
+
+  full_chain: {
+    upstream_nodes: { key: string; name: string; archetype: string; status: 'OK' | 'WARN' | 'BAD' }[]
+    downstream_nodes: { key: string; name: string; archetype: string; status: 'OK' | 'WARN' | 'BAD' }[]
+    chain_health_score: number
+    chain_verdict: ChainVerdict
+    chain_blockers: string[]
+  }
+}
+
+// -------- Chain Summary Row (Sidebar Tab Dây chuyền vật tư) ----------------------------
+export type ChainSummaryRow = {
+  chain_id: string
+  chain_name: string
+  verdict: ChainVerdict
+  upstream: { supplier_name: string; raw_sku: string; raw_qty_total: number }
+  process: { node_key: string; node_name: string; machine_verdict: MachineVerdict; cycle_min: number; std_yield_pct: number }
+  downstream: { fg_sku: string; fg_node_name: string; fg_coverage_h: number; depot_name: string; depot_backorder: number }
+  chain_health_pct: number
+}
+
+// -------- Scenario Compare Before/After (Tab 6 Đánh giá Kịch bản) ----------------------
+export type BeforeAfterHours = { before_h: number; after_h: number; delta_pct: number }
+
+export type ScenarioCompareRow = {
+  /** Scope: 'ALL' = tổng hệ thống / 'CHAIN_A' / 'CHAIN_B' / 'CHAIN_C' = từng dây */
+  scope_id: string
+  scope_name: string
+  stockout: BeforeAfterHours
+  overstock: BeforeAfterHours
+  machine_downtime_h?: BeforeAfterHours
+  order_fulfill_rate_pct?: BeforeAfterHours
+  quick_rating: BenchmarkRating
+  /** Explainer 1 dòng cho Hội đồng chấm */
+  explainer: string
+}

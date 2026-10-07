@@ -1,8 +1,8 @@
 import type {
-  AgvMap, Binding, Frame, BindingInput, CoverageReport, DataSourceRow, SourceTestResult, CalibrationApplied, CalibrationResp, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
+  AgvMap, Binding, Frame, BindingInput, Benchmark7DayResp, BenchmarkReport, CoverageReport, DataSourceRow, SourceTestResult, CalibrationApplied, CalibrationResp, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
   BandRow, CheckReport, EventRow, Graph, GraphEdge, GraphNode, InsightRow, Issue, Json, Material, MaterialDetail, MaterialUpdate, ModelSummary,
-  NewMaterial, NewNodeType, NewScenario, NodeType, NodeTypeDetail, NodeTypeUpdate, Run, RunDetail, RunRow, Scenario, ScenarioBody, ScenarioRow,
-  SignalRow, VersionInfo,
+  NewMaterial, NewNodeType, NewScenario, NodeType, NodeTypeDetail, NodeTypeUpdate, PerformanceKpis, Run, RunDetail, RunRow, Scenario, ScenarioBody, ScenarioRow,
+  SignalRow, VersionInfo, WarehouseSeriesEntry,
 } from './types'
 
 export const API_BASE: string = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
@@ -138,4 +138,14 @@ export const api = {
     addIncident: (body: IncidentInput) => post<Incident>('/api/feed/incidents', body),
     clearIncident: (id: number) => del(`/api/feed/incidents/${id}`),
   },
+
+  benchmark7day: (key: string, body: { step_s: number; warmup_s: number; replications: number; seed: number; benchmark_ready: boolean }) =>
+    post<Benchmark7DayResp>(`/api/models/${encodeURIComponent(key)}/benchmark/7day`, body),
+  benchmarkForecast: (key: string, body: { run_id: number } | { warehouse_series_log: WarehouseSeriesEntry[] }) =>
+    post<BenchmarkReport>(`/api/models/${encodeURIComponent(key)}/benchmark/forecast`, body),
+
+  // Dashboard tổng thể hiệu năng (OverviewPage)
+  // Backend sau này implement endpoint này, trả về shape đúng PerformanceKpis là UI tự động hoạt động.
+  performanceKpis: (q: { window?: '7d' | '14d' | '30d'; top_n?: number } = {}) =>
+    req<PerformanceKpis>(`/api/performance/kpis${qs({ window: q.window, top_n: q.top_n?.toString() })}`),
 }
