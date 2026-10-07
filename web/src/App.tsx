@@ -11,6 +11,10 @@ import SourcesPage from './pages/SourcesPage'
 import ConnectPage from './pages/ConnectPage'
 import ControlRoomPage from './pages/ControlRoomPage'
 import EditorPage from './pages/EditorPage'
+import GaugeCameraPage from './pages/GaugeCameraPage'
+import GaugeCamerasPage from './pages/GaugeCamerasPage'
+import GaugeOverviewPage from './pages/GaugeOverviewPage'
+import GaugeStationPage from './pages/GaugeStationPage'
 import LibraryLayout from './pages/LibraryLayout'
 import LivePage from './pages/LivePage'
 import MaterialDetailPage from './pages/MaterialDetailPage'
@@ -58,6 +62,10 @@ export default function App() {
           <Route element={<Shell />}>
             <Route path="/" element={<OverviewPage />} />
             <Route path="/alerts" element={<AlertsPage />} />
+            <Route path="/gauge-twin" element={<GaugeOverviewPage />} />
+            <Route path="/gauge-twin/cameras" element={<GaugeCamerasPage />} />
+            <Route path="/gauge-twin/cameras/:camera" element={<GaugeCameraPage />} />
+            <Route path="/gauge-twin/:machine" element={<GaugeStationPage />} />
             <Route path="/models" element={<ModelsPage />} />
             <Route path="/models/:key/versions" element={<VersionsPage />} />
             <Route path="/models/:key/sources" element={<SourcesPage />} />

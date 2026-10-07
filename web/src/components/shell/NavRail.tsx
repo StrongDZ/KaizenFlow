@@ -1,4 +1,4 @@
-import { Bell, LayoutGrid, Library, Play, Workflow, type LucideIcon } from 'lucide-react'
+import { Bell, Gauge, LayoutGrid, Library, Play, Workflow, type LucideIcon } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { sectionOf, type Section } from '../../lib/nav'
 
@@ -7,6 +7,7 @@ const ITEMS: { key: Section; label: string; to: string; icon: LucideIcon }[] = [
   { key: 'models', label: 'Mô hình', to: '/models', icon: Workflow },
   { key: 'runs', label: 'Lần chạy', to: '/runs', icon: Play },
   { key: 'alerts', label: 'Cảnh báo', to: '/alerts', icon: Bell },
+  { key: 'gauge', label: 'Đồng hồ', to: '/gauge-twin', icon: Gauge },
   { key: 'library', label: 'Thư viện', to: '/library/node-types', icon: Library },
 ]
 

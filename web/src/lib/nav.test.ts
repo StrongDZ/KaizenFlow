@@ -10,6 +10,8 @@ describe('sectionOf', () => {
     expect(sectionOf('/versions/7/scenarios')).toBe('models')
     expect(sectionOf('/scenarios/5')).toBe('models')
     expect(sectionOf('/alerts')).toBe('alerts')
+    expect(sectionOf('/gauge-twin')).toBe('gauge')
+    expect(sectionOf('/gauge-twin/machine_001')).toBe('gauge')
     expect(sectionOf('/runs')).toBe('runs')
     expect(sectionOf('/runs/12/report')).toBe('runs')
     expect(sectionOf('/compare')).toBe('runs')
@@ -90,6 +92,15 @@ describe('crumbsFor', () => {
     expect(crumbsFor('/alerts', {}).map((c) => c.label)).toEqual(['Cảnh báo'])
     expect(crumbsFor('/models', {}).map((c) => c.label)).toEqual(['Mô hình'])
     expect(crumbsFor('/compare', {}).map((c) => c.label)).toEqual(['Lần chạy', 'So sánh'])
+  })
+
+  it('names the gauge pages', () => {
+    expect(crumbsFor('/gauge-twin', {})).toEqual([{ label: 'Đồng hồ' }])
+    expect(crumbsFor('/gauge-twin/machine_001', {})).toEqual([{ label: 'Đồng hồ', to: '/gauge-twin' }, { label: 'machine_001' }])
+    expect(crumbsFor('/gauge-twin/cameras', {}).map((c) => c.label)).toEqual(['Đồng hồ', 'Camera'])
+    expect(crumbsFor('/gauge-twin/cameras/cam-a', {})).toEqual([
+      { label: 'Đồng hồ', to: '/gauge-twin' }, { label: 'Camera', to: '/gauge-twin/cameras' }, { label: 'cam-a' },
+    ])
   })
 
   it('shows model, version picker and scenario in the model workspace', () => {

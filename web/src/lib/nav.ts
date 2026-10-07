@@ -1,4 +1,4 @@
-export type Section = 'overview' | 'models' | 'runs' | 'alerts' | 'library'
+export type Section = 'overview' | 'models' | 'runs' | 'alerts' | 'gauge' | 'library'
 export type Crumb = { label: string; to?: string; picker?: boolean }
 export type Tab = { label: string; to: string; end?: boolean; also?: string[]; group?: string }
 export type NavCtx = {
@@ -12,6 +12,7 @@ export type NavCtx = {
 
 export function sectionOf(path: string): Section {
   if (path.startsWith('/alerts')) return 'alerts'
+  if (path.startsWith('/gauge-twin')) return 'gauge'
   if (path.startsWith('/reports')) return 'overview'
   if (path.startsWith('/runs') || path.startsWith('/compare')) return 'runs'
   if (path.startsWith('/library')) return 'library'
@@ -82,6 +83,17 @@ export function crumbsFor(path: string, ctx: NavCtx): Crumb[] {
 
   if (path === '/') return [{ label: 'Tổng quan' }]
   if (path === '/alerts') return [{ label: 'Cảnh báo' }]
+  const camera = path.match(/^\/gauge-twin\/cameras(?:\/([^/]+))?/)
+  if (camera) {
+    const out: Crumb[] = [{ label: 'Đồng hồ', to: '/gauge-twin' }, { label: 'Camera', to: camera[1] ? '/gauge-twin/cameras' : undefined }]
+    if (camera[1]) out.push({ label: decodeURIComponent(camera[1]) })
+    return out
+  }
+  const gauge = path.match(/^\/gauge-twin(?:\/([^/]+))?/)
+  if (gauge) {
+    if (!gauge[1]) return [{ label: 'Đồng hồ' }]
+    return [{ label: 'Đồng hồ', to: '/gauge-twin' }, { label: decodeURIComponent(gauge[1]) }]
+  }
   if (path === '/reports/benchmarks') return [{ label: 'Tổng quan', to: '/' }, { label: 'Benchmark FMCG' }]
   if (path === '/reports/operations') return [{ label: 'Tổng quan', to: '/' }, { label: 'Dashboard vận hành' }]
   if (path === '/models') return [{ label: 'Mô hình' }]
