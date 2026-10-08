@@ -402,7 +402,7 @@ export function MachinePopover({ open, onOpenChange, title, anchorX, anchorY, pi
                     <div className="rounded-md border border-bad/40 bg-bad-bg/30 px-2 py-1 text-[9.5px] space-y-0.5">
                       <div className="font-bold text-bad-text">🚨 Đoạn chặn trong chuỗi:</div>
                       {recipe.full_chain.chain_blockers.map((b: string, i: number) => (
-                        <div key={i} className="text-bad-text-2 pl-1">· {b}</div>
+                        <div key={i} className="pl-1 text-bad-text">· {b}</div>
                       ))}
                     </div>
                   )}

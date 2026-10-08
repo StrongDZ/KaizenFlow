@@ -1092,13 +1092,13 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
                               kind: 'MACHINE',
                             })
                           }}
-                          className="group w-full rounded-xl border border-line-2 bg-rai px-3 py-2.5 text-left transition hover:border-ok/40 hover:bg-rai-2">
+                          className="group w-full rounded-xl border border-line-2 bg-raised px-3 py-2.5 text-left transition hover:border-ok/40 hover:bg-panel-2">
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2 min-w-0">
                               <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium ${chip}`}>{c.verdict}</span>
                               <span className="truncate text-[12px] font-semibold text-text">{c.chain_name}</span>
                             </div>
-                            <code className="shrink-0 rounded bg-bg-2 px-1.5 py-0.5 font-mono text-[10px] text-text-2">{c.chain_id}</code>
+                            <code className="shrink-0 rounded bg-panel-2 px-1.5 py-0.5 font-mono text-[10px] text-text-2">{c.chain_id}</code>
                           </div>
 
                           <div className="mt-2 truncate text-[11px] text-text-2">
@@ -1107,7 +1107,7 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
                             <span>{fmtNum(c.upstream.raw_qty_total / 1000, 1)}k từ {c.upstream.supplier_name.split(' ').pop()}</span>
                             <span className="mx-1 text-line-2">→</span>
                             <span className={`font-medium ${c.process.machine_verdict === 'ĐANG CHẠY' ? 'text-ok-text' : c.process.machine_verdict === 'LỖI' ? 'text-bad-text' : 'text-warn-text'}`}>{c.process.node_name}</span>
-                            <span className="mx-0.5 text-text-3">{c.process.cycle_min}'</span>
+                            <span className="mx-0.5 text-muted">{c.process.cycle_min}'</span>
                             <span className="mx-1 text-line-2">→</span>
                             <span className="text-warn-text">{c.downstream.fg_sku}</span>
                             <span className="mx-0.5">/</span>

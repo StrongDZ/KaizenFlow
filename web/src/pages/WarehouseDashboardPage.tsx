@@ -485,7 +485,7 @@ function DashboardContent({
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse text-[12px]">
             <thead>
-              <tr className="border-b border-line-2 bg-panel-2/50 text-left text-[10.5px]r text-muted">
+              <tr className="border-b border-line-2 bg-panel-2/50 text-left text-[10.5px] text-muted">
                 <th className="px-3 py-2 font-semibold">SKU</th>
                 <th className="px-3 py-2 text-right font-semibold">Tồn</th>
                 <th className="px-3 py-2 text-right font-semibold">Max</th>
@@ -613,7 +613,7 @@ function HeroCard({
     <section className={'rounded-xl border bg-panel p-3 ' + toneRing}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5 text-[10px] font-semiboldr text-muted">
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted">
             <Icon size={11} strokeWidth={2} /> {label}
           </div>
           <div className="mt-1.5 flex items-baseline gap-1.5">

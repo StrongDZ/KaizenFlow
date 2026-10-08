@@ -20,7 +20,7 @@ export default function RunLayout() {
   const shell = useShell()
   const [actionsEl, setActionsEl] = useState<HTMLElement | null>(null)
   const { run, scenario } = useRunBundle(runId, false)
-  const parent = useParentRun(scenario.data?.parent_id)
+  const parent = useParentRun(run.data, scenario.data).run
   const recommendations = (run.data?.insights ?? []).filter((i) => i.kind === 'RECOMMENDATION').reduce((n, i) => n + candidatesOf(i).length, 0)
   const tabs = runTabs(runId, { recommendations, compare: parent !== undefined })
   const value = useMemo(() => ({ ...shell, actionsEl }), [shell, actionsEl])
@@ -28,7 +28,7 @@ export default function RunLayout() {
 
   return (
     <div className="flex h-full min-h-0 flex-col print:block print:h-auto">
-      {!shell.focus && <TabBar
+      <TabBar
         label={`Các phần của lần chạy #${runId}`} tabs={tabs}
         end={<>
           {run.data && (
@@ -39,7 +39,7 @@ export default function RunLayout() {
           )}
           <div ref={setActionsEl} className="flex flex-none items-center gap-2 empty:hidden" />
         </>}
-      />}
+      />
       <div className="relative min-h-0 flex-1 overflow-auto print:overflow-visible">
         <ShellContext.Provider value={value}>
           <Outlet />

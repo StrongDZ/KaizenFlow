@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import { memo, useMemo, useState } from 'react'
 import { api } from '../../api/client'
 import type { EventRow, Graph, Json, NodeType } from '../../api/types'
@@ -33,17 +33,21 @@ export const SensorPanel = memo(function SensorPanel({ runId, graph, types, inje
   runId: number; graph: Graph; types: Record<string, NodeType>; injections: Json[]; replications: number
 }) {
   const machines = graph.nodes.filter((n) => signalsOf(n, types).length > 0)
-  const all = useQuery({ queryKey: ['events', runId, 'all'], queryFn: () => api.events(runId) })
+  // Hỏi theo từng loại sự kiện: API cắt ở 5000 dòng theo thời gian, hỏi tất cả thì mất các lần hỏng ở cuối lần chạy.
+  const byType = useQueries({ queries: Object.keys(EVENT).map((type) => ({ queryKey: ['events', runId, type], queryFn: () => api.events(runId, { type }) })) })
+  const pending = byType.some((q) => q.isPending)
+  const rows = byType.map((q) => q.data)
   const byMachine = useMemo(() => {
     const out = new Map<string, EventRow[]>()
-    for (const e of all.data ?? []) {
+    const all = rows.flatMap((r) => r ?? []).sort((a, b) => Date.parse(a.t) - Date.parse(b.t))
+    for (const e of all) {
       if (e.rep !== 0 || !EVENT[e.type]) continue
       const list = out.get(e.subject)
       if (list) list.push(e)
       else out.set(e.subject, [e])
     }
     return out
-  }, [all.data])
+  }, rows) // mảng phụ thuộc là dữ liệu của bốn truy vấn (độ dài cố định): chỉ tính lại khi một trong số đó đổi
   const ordered = useMemo(() => [...machines].sort((a, b) => (byMachine.get(b.key)?.length ?? 0) - (byMachine.get(a.key)?.length ?? 0)), [machines, byMachine])
   const [picked, setPicked] = useState<string | null>(null)
   const subject = picked ?? defaultSensorSubject(ordered.map((n) => n.key), injections)
@@ -78,7 +82,7 @@ export const SensorPanel = memo(function SensorPanel({ runId, graph, types, inje
                   className={`flex w-full flex-col gap-1 rounded-md px-2 py-1.5 text-left ${active ? 'bg-raised' : 'hover:bg-panel'}`}
                 >
                   <NodeIdentity name={n.name || n.key} code={n.key} archetype={n.archetype} icon={typeof types[n.node_type]?.ui?.icon === 'string' ? types[n.node_type].ui.icon as string : undefined} size={24} />
-                  <span className={`pl-[34px] text-[11px] ${bad ? 'text-bad-text' : ev.length > 0 ? 'text-warn' : 'text-muted'}`}>{all.isPending ? '…' : summary(ev)}</span>
+                  <span className={`pl-[34px] text-[11px] ${bad ? 'text-bad-text' : ev.length > 0 ? 'text-warn' : 'text-muted'}`}>{pending ? '…' : summary(ev)}</span>
                 </button>
               </li>
             )

@@ -238,7 +238,7 @@ function Room({ run, scenario, graph, types, rows }: {
     }
   }), [flow, idx, t, peak, dotSpeed, playing, hasTime, maintenance, activeStory?.target, activeStory?.tone, storyAffected])
 
-  const parentRun = useParentRun(scenario.parent_id)
+  const parentRun = useParentRun(run, scenario).run
   const deltaRed = parentRun && kpiP50(run.kpis, 'red_minutes') !== undefined && kpiP50(parentRun.kpis, 'red_minutes') !== undefined
     ? (kpiP50(run.kpis, 'red_minutes') as number) - (kpiP50(parentRun.kpis, 'red_minutes') as number)
     : undefined
