@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   Warehouse as WarehouseIcon, Boxes, TrendingUp as TrendingUpIcon, TrendingDown as TrendingDownIcon,
   AlertTriangle, Gauge, Clock, ArrowLeftRight, Package, Factory,
@@ -79,12 +79,15 @@ function aggregateHistory(entries: WarehouseSeriesEntry[], resolution: Resolutio
 }
 
 export default function WarehouseDashboardPage() {
-  void useLocation()
   const modelsQ = useQuery({ queryKey: ['models'], queryFn: api.models, staleTime: 30_000 })
+  // Mô hình lấy từ địa chỉ (?model=), nên mở từ dòng của mô hình nào thì đúng mô hình đó.
+  const [params, setParams] = useSearchParams()
+  const wanted = params.get('model')
   const selectedModelKey = useMemo(() => {
-    const m = (modelsQ.data ?? []).find((x) => x.model_key === 'bimbo-fmcg') ?? (modelsQ.data ?? [])[0]
+    const list = modelsQ.data ?? []
+    const m = list.find((x) => x.model_key === wanted) ?? list.find((x) => x.model_key === 'bimbo-fmcg') ?? list[0]
     return m?.model_key ?? 'bimbo-fmcg'
-  }, [modelsQ.data])
+  }, [modelsQ.data, wanted])
   const selectedVersionId = useMemo(() => {
     const m = (modelsQ.data ?? []).find((x) => x.model_key === selectedModelKey)
     return m?.latest_version_id
@@ -146,7 +149,7 @@ export default function WarehouseDashboardPage() {
           </span>
         }
         actions={
-          <Link to="/reports/warehouse" className={btnGhost}>
+          <Link to={`/reports/warehouse?model=${encodeURIComponent(selectedModelKey)}`} className={btnGhost}>
             <Boxes size={13} /> Điều khiển tồn kho
           </Link>
         }
@@ -155,7 +158,8 @@ export default function WarehouseDashboardPage() {
       {/* Sticky Selector top-[40px] — Shell header h-10 = 40px */}
       <div className="sticky top-[40px] z-30 -mx-6 mb-4 border-b border-line bg-bg/85 px-6 py-2 backdrop-blur-sm">
         <div className="flex flex-wrap items-center gap-2">
-          <ModelPicker models={modelsQ.data ?? []} value={selectedModelKey} disabled={modelsQ.isLoading} />
+          <ModelPicker models={modelsQ.data ?? []} value={selectedModelKey} disabled={modelsQ.isLoading}
+            onChange={(k) => { setSelectedNodeKey(null); setParams({ model: k }, { replace: true }) }} />
           <NodePicker nodes={storageNodes} value={resolvedNodeKey ?? ''} onChange={setSelectedNodeKey} disabled={!graphQ.data} />
           <div className="ml-auto flex items-center gap-1 rounded-lg border border-line-2 bg-panel px-2 py-1">
             {(['1h', '6h', '1d'] as Resolution[]).map((r) => (
@@ -193,7 +197,7 @@ export default function WarehouseDashboardPage() {
 
 /* ——— Subcomponents ——— */
 
-function ModelPicker({ models, value, disabled }: { models: ModelSummary[]; value: string; disabled?: boolean }) {
+function ModelPicker({ models, value, disabled, onChange }: { models: ModelSummary[]; value: string; disabled?: boolean; onChange: (k: string) => void }) {
   return (
     <label className="inline-flex items-center gap-2 rounded-lg border border-line-2 bg-panel px-2.5 py-1.5 text-xs">
       <Factory size={12} className="text-muted" />
@@ -201,7 +205,8 @@ function ModelPicker({ models, value, disabled }: { models: ModelSummary[]; valu
       <select
         disabled={disabled}
         value={value}
-        className="bg-transparent pr-4 text-[12px] font-medium text-text outline-none disabled:opacity-60"
+        onChange={(e) => onChange(e.target.value)}
+        className="appearance-none bg-transparent pr-4 text-[12px] font-medium text-text outline-none disabled:opacity-60"
         aria-label="Chọn mô hình"
       >
         {models.map((m) => (
@@ -225,7 +230,7 @@ function NodePicker({ nodes, value, onChange, disabled }: {
         disabled={disabled || nodes.length === 0}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="bg-transparent pr-4 text-[12px] font-medium text-text outline-none disabled:opacity-60"
+        className="appearance-none bg-transparent pr-4 text-[12px] font-medium text-text outline-none disabled:opacity-60"
         aria-label="Chọn kho"
       >
         {nodes.map((n) => (

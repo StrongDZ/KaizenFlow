@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Graph, GraphNode, LiveSnapshot, ModelSummary, NodeType, SubjectSnap } from '../api/types'
 import { FeedControl } from '../components/live/FeedControl'
@@ -162,8 +162,11 @@ export default function WarehouseControlPage() {
   const defaultKey = items.find((m: ModelSummary) => m.model_key === DEFAULT_MODEL)?.model_key
     ?? items.find((m: ModelSummary) => m.status === 'PUBLISHED')?.model_key
     ?? items[0]?.model_key
-  const [modelKey, setModelKey] = useState<string>(defaultKey ?? '')
-  const currentModel = modelKey || defaultKey || ''
+  // Mô hình nằm trên địa chỉ (?model=): mở từ dòng của một mô hình thì luôn đúng mô hình đó, đổi ở ô chọn thì địa chỉ đổi theo.
+  const [params, setParams] = useSearchParams()
+  const wanted = params.get('model') ?? ''
+  const currentModel = (items.some((m: ModelSummary) => m.model_key === wanted) ? wanted : '') || defaultKey || ''
+  const setModelKey = (k: string) => setParams({ model: k }, { replace: true })
   const g = useModelGraph(currentModel)
   const live = useQuery({ queryKey: ['live', currentModel], queryFn: () => api.live(currentModel), enabled: !!currentModel, refetchInterval: 3000 })
   const modelsError = models.error as Error | null
@@ -198,11 +201,11 @@ export default function WarehouseControlPage() {
         subtitle={currentModel}
         actions={
           <div className="flex items-center gap-2">
-            <select className={input} value={modelKey} onChange={(e) => setModelKey(e.target.value)} aria-label="Chọn mô hình">
+            <select className={input} value={currentModel} onChange={(e) => setModelKey(e.target.value)} aria-label="Chọn mô hình">
               {items.map((m: ModelSummary) => <option key={m.model_key} value={m.model_key}>{m.model_key} (v{m.latest_version})</option>)}
             </select>
             <Link className={btn} to={`/models/${encodeURIComponent(currentModel)}/live`}>Sơ đồ trực tiếp</Link>
-            <Link className={btnPrimary} to="/reports/operations">Dashboard vận hành</Link>
+            <Link className={btnPrimary} to={`/reports/operations?model=${encodeURIComponent(currentModel)}`}>Dashboard vận hành</Link>
           </div>
         }
       />

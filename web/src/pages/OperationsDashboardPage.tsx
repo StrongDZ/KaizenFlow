@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Gauge } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Insight, ModelSummary, RunRow, Scenario } from '../api/types'
 import { axisLine, axisTick, tooltipProps } from '../components/Charts'
@@ -136,18 +136,17 @@ function Explainer({ title, children }: { title: string; children: string }) {
 export default function OperationsDashboardPage() {
   const qc = useQueryClient()
   const models = useQuery({ queryKey: ['models'], queryFn: api.models })
-  const [modelKey, setModelKey] = useState(DEFAULT_MODEL)
+  // Mô hình nằm trên địa chỉ (?model=); địa chỉ không nêu hoặc nêu mô hình không còn thì mới lấy mặc định.
+  const [params, setParams] = useSearchParams()
+  const wanted = params.get('model') ?? DEFAULT_MODEL
+  const modelKey = !models.data || models.data.some((m) => m.model_key === wanted)
+    ? wanted
+    : models.data.find((m) => m.model_key === DEFAULT_MODEL)?.model_key ?? models.data[0]?.model_key ?? wanted
+  const setModelKey = (k: string) => setParams({ model: k }, { replace: true })
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([])
   const [selectedCompareRuns, setSelectedCompareRuns] = useState<number[]>([])
   const [lastBatchRunIds, setLastBatchRunIds] = useState<number[]>([])
   const [batchApplyIssue, setBatchApplyIssue] = useState<Error | null>(null)
-
-  useEffect(() => {
-    if (!models.data || models.data.length === 0) return
-    if (models.data.some((m) => m.model_key === modelKey)) return
-    const fallback = models.data.find((m) => m.model_key === DEFAULT_MODEL)?.model_key ?? models.data[0].model_key
-    setModelKey(fallback)
-  }, [models.data, modelKey])
 
   const currentModel = useMemo(
     () => models.data?.find((m) => m.model_key === modelKey) ?? models.data?.find((m) => m.model_key === DEFAULT_MODEL) ?? models.data?.[0] ?? null,
