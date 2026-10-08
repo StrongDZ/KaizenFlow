@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
-  Boxes, Warehouse, TrendingUp, TrendingDown,
+  Boxes, Warehouse, TrendingUp, TrendingDown, Sparkles,
   Factory, Truck, Wallet, type LucideIcon, AlertTriangle,
 } from 'lucide-react'
 import { Area, AreaChart, ResponsiveContainer } from 'recharts'
@@ -474,49 +474,50 @@ export default function OverviewPage() {
       {/* ════════════════════════════════════════════════════════════════════
           HERO BANNER — Gradient blur + Tóm tắt điều hành (Executive Summary)
           ════════════════════════════════════════════════════════════════════ */}
-      <section className="relative rounded-xl border border-line bg-panel px-5 py-4">
+      <section className="relative overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-panel via-panel to-panel-2 px-5 py-4 sm:px-6 sm:py-5">
+        <div aria-hidden className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-accent/15 blur-3xl" />
+        <div aria-hidden className="pointer-events-none absolute -bottom-28 -left-12 h-60 w-60 rounded-full bg-ok/10 blur-3xl" />
+        <div aria-hidden className="pointer-events-none absolute right-1/3 top-1/2 h-40 w-40 rounded-full bg-warn/10 blur-3xl" />
 
-        <div className="relative flex flex-wrap items-start justify-between gap-6">
-          <div className="flex max-w-2xl flex-col gap-3">
-            <h1 className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-lg font-semibold leading-tight text-text">
-              Hiệu năng vận hành nhà máy
-              <span className="text-xs font-normal text-muted">cập nhật {fmtDateTime(kpis.as_of)}</span>
-              <span className="rounded-[5px] border border-warn/40 bg-warn/10 px-1.5 py-px text-[10.5px] font-normal text-warn-text" title="Các chỉ số máy, xe, kho và tài chính trên trang này đang sinh từ dữ liệu mẫu, chưa nối API thật">Số liệu minh hoạ</span>
+        <div className="relative flex flex-wrap items-center justify-between gap-6">
+          <div className="flex max-w-2xl flex-col gap-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-line-2 bg-panel/60 px-2.5 py-0.5 text-[10.5px] font-medium text-text-2">
+                <Sparkles size={11} strokeWidth={2} className="text-accent" />
+                Tổng quan hiệu năng
+              </span>
+              <span className="rounded-full border border-warn/40 bg-warn/10 px-2 py-0.5 text-[10.5px] text-warn-text" title="Các chỉ số máy, xe, kho và tài chính trên trang này đang sinh từ dữ liệu mẫu, chưa nối API thật">Số liệu minh hoạ</span>
+            </div>
+            <h1 className="text-xl font-semibold leading-snug tracking-tight text-text">
+              Hiệu năng vận hành nhà máy <span className="font-normal text-muted">—</span> <span className="text-accent">cập nhật {fmtDateTime(kpis.as_of)}</span>
             </h1>
-            <p className="max-w-xl text-xs leading-5 text-muted">
-              Chỉ số cốt lõi theo bốn nhóm: máy móc, xe vận chuyển, kho lưu trữ và tài chính. Mỗi thẻ dẫn tới nơi xem chi tiết và xử lý.
+            <p className="max-w-xl text-[12.5px] leading-relaxed text-muted">
+              Chỉ số cốt lõi trên bốn trụ cột: <b className="font-medium text-text-2">máy móc, xe vận chuyển, kho lưu trữ và tài chính</b>.
+              Mỗi thẻ bên dưới dẫn tới nơi xem chi tiết và xử lý.
             </p>
           </div>
 
-          {/* Mini recent + quick stats compact bên phải hero */}
-          <div className="flex w-full max-w-md flex-col gap-3 sm:w-auto">
-            <div className="grid grid-cols-2 gap-2.5">
-              <div className="flex flex-col gap-0.5 rounded-lg border border-line bg-panel-2 px-3 py-2.5">
-                <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><Boxes size={11} /> Mô hình</div>
-                <div className="text-base font-semibold tabular-nums leading-tight text-text">{models.data?.length ?? 0}</div>
-                <div className="text-[10px] text-muted">{live.length} đang chạy trực tiếp</div>
-              </div>
-              <div className="flex flex-col gap-0.5 rounded-lg border border-line bg-panel-2 px-3 py-2.5">
-                <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><Warehouse size={11} /> Kho & Máy</div>
-                <div className="text-base font-semibold tabular-nums leading-tight text-text">
-                  {fmtNumber(kpis.storage.length + kpis.machines.length)}
-                </div>
-                <div className="text-[10px] text-muted">{kpis.fleet.length} phương tiện vận hành</div>
-              </div>
-              <div className="flex flex-col gap-0.5 rounded-lg border border-line bg-panel-2 px-3 py-2.5">
-                <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><AlertTriangle size={11} /> Kho nguy cơ Đỏ</div>
-                <div className="text-base font-semibold tabular-nums leading-tight text-err-text">
-                  {kpis.storage.filter((s) => s.band_color === 'RED').length}
-                </div>
-                <div className="text-[10px] text-muted">{kpis.storage.filter((s) => s.band_color === 'YELLOW').length} đang cảnh báo Vàng</div>
-              </div>
-              <div className="flex flex-col gap-0.5 rounded-lg border border-line bg-panel-2 px-3 py-2.5">
-                <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><Factory size={11} /> Máy đang chạy</div>
-                <div className="text-base font-semibold tabular-nums leading-tight text-ok-text">
-                  {kpis.machines.filter((m) => m.state === 'RUNNING').length}
-                </div>
-                <div className="text-[10px] text-muted">{kpis.machines.filter((m) => m.state === 'DOWN').length} máy đang lỗi</div>
-              </div>
+          {/* Số liệu nhanh bên phải */}
+          <div className="grid w-full max-w-md grid-cols-2 gap-2 sm:w-auto">
+            <div className="flex flex-col gap-0.5 rounded-xl border border-line bg-panel/80 px-3 py-2">
+              <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><Boxes size={11} /> Mô hình</div>
+              <div className="text-base font-semibold tabular-nums leading-tight text-text">{models.data?.length ?? 0}</div>
+              <div className="text-[10px] text-muted">{live.length} đang chạy trực tiếp</div>
+            </div>
+            <div className="flex flex-col gap-0.5 rounded-xl border border-line bg-panel/80 px-3 py-2">
+              <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><Warehouse size={11} /> Kho & Máy</div>
+              <div className="text-base font-semibold tabular-nums leading-tight text-text">{fmtNumber(kpis.storage.length + kpis.machines.length)}</div>
+              <div className="text-[10px] text-muted">{kpis.fleet.length} phương tiện vận hành</div>
+            </div>
+            <div className="flex flex-col gap-0.5 rounded-xl border border-line bg-panel/80 px-3 py-2">
+              <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><AlertTriangle size={11} /> Kho nguy cơ Đỏ</div>
+              <div className="text-base font-semibold tabular-nums leading-tight text-err-text">{kpis.storage.filter((s) => s.band_color === 'RED').length}</div>
+              <div className="text-[10px] text-muted">{kpis.storage.filter((s) => s.band_color === 'YELLOW').length} đang cảnh báo Vàng</div>
+            </div>
+            <div className="flex flex-col gap-0.5 rounded-xl border border-line bg-panel/80 px-3 py-2">
+              <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><Factory size={11} /> Máy đang chạy</div>
+              <div className="text-base font-semibold tabular-nums leading-tight text-ok-text">{kpis.machines.filter((m) => m.state === 'RUNNING').length}</div>
+              <div className="text-[10px] text-muted">{kpis.machines.filter((m) => m.state === 'DOWN').length} máy đang lỗi</div>
             </div>
           </div>
         </div>
