@@ -53,7 +53,7 @@ def test_validate_endpoint():
 def test_result_endpoint_returns_full_result():
     client.post("/runs", json=payload(run_id=203, recommend=False))
     body = client.get("/runs/203/result").json()
-    assert set(body) == {"run_id", "engine_version", "kpis", "bands", "insights", "signals", "events"}
+    assert set(body) == {"run_id", "engine_version", "kpis", "bands", "insights", "signals", "events", "warehouse_series_log"}
     assert body["run_id"] == 203 and len(body["bands"]) > 0 and len(body["signals"]) > 0
     assert body["bands"][0]["target_time"].startswith("2026-10-01T")
     assert client.get("/runs/9999/result").status_code == 404
