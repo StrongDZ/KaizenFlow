@@ -44,6 +44,9 @@
   --color-info: #5aa2ff;
   --color-info-text: #8cbcff;
   --color-info-bg: #15243a;
+  --color-ok-bg: #12261c;
+  --color-warn-bg: #2a2412;
+  --color-muted-bg: #1c2633;
 }
 
 [data-theme='light'] {
@@ -83,6 +86,9 @@
   --color-info: #1d5fd1;
   --color-info-text: #1a4fae;
   --color-info-bg: #e8f0fd;
+  --color-ok-bg: #e6f4ec;
+  --color-warn-bg: #fdf4dc;
+  --color-muted-bg: #eef1f5;
 }
 
 /* Bản in luôn ra giấy trắng, kể cả khi đang ở trang tối. */
@@ -121,6 +127,9 @@
     --color-info: #1d5fd1;
     --color-info-text: #1a4fae;
     --color-info-bg: #e8f0fd;
+    --color-ok-bg: #e6f4ec;
+    --color-warn-bg: #fdf4dc;
+    --color-muted-bg: #eef1f5;
     color-scheme: light;
   }
 }

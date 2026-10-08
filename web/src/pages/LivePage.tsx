@@ -3,7 +3,7 @@ import { Activity, Plug, SlidersHorizontal, Wrench, Zap } from 'lucide-react'
 import { Background, Controls, ReactFlow, ReactFlowProvider } from '@xyflow/react'
 import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { AlertCircle, AlertTriangle, Factory as FactoryIcon, Gauge, GitCompare, Link2, TrendingDown, TrendingUp, Warehouse as WarehouseIcon } from 'lucide-react'
+import { AlertCircle, Factory as FactoryIcon, Gauge, TrendingDown, TrendingUp } from 'lucide-react'
 import { api } from '../api/client'
 import type { BeforeAfterHours, BenchmarkRating, ChainSummaryRow, ChainVerdict, Graph, MachineBatchRow, MachineInboundRow, MachineOutputRow, MachinePipelineView, MachineTimelinePoint, MachineVerdict, NodeType, PipelinePoint, ProcessRecipeContract, ProcessRecipeStage, ScenarioCompareRow, SubjectSnap, WarehouseAdequacy, WarehousePipelineView } from '../api/types'
 import { FloatingPanel, PanelSection } from '../components/FloatingPanel'
@@ -813,29 +813,24 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
 
       {panelOpen ? (
         <FloatingPanel side="right" top={112} bottom={12} width={308} title="Bảng điều khiển vận hành" onClose={() => setPanelOpen(false)}>
-          {/* Tabs 6 mục: Kho | Máy | Dây | Đánh giá | Lệch | Bơm */}
-          <div className="flex gap-1 border-b border-line p-1.5">
+          {/* Sáu mục, hai hàng ba ô: nhãn ngắn một dòng, không biểu tượng (đủ chỗ cho chữ thay vì gãy ba dòng). */}
+          <div role="tablist" aria-label="Mục của bảng điều khiển" className="grid grid-cols-3 gap-1 border-b border-line p-1.5">
             {([
-              { k: 'WAREHOUSE' as const, label: 'Kho tổng hợp', icon: WarehouseIcon },
-              { k: 'MACHINE' as const, label: 'Máy tổng hợp', icon: FactoryIcon },
-              { k: 'CHAIN' as const, label: '🔗 Dây chuyền', icon: Link2 },
-              { k: 'COMPARE' as const, label: '📊 Đánh giá', icon: GitCompare },
-              { k: 'DRIFT' as const, label: 'Lệch dự báo', icon: AlertCircle },
-              { k: 'INCIDENT' as const, label: 'Bơm sự cố', icon: AlertTriangle },
+              { k: 'WAREHOUSE' as const, label: 'Kho' },
+              { k: 'MACHINE' as const, label: 'Máy' },
+              { k: 'CHAIN' as const, label: 'Dây chuyền' },
+              { k: 'COMPARE' as const, label: 'Đánh giá' },
+              { k: 'DRIFT' as const, label: 'Lệch dự báo' },
+              { k: 'INCIDENT' as const, label: 'Bơm sự cố' },
             ] as const).map((t) => {
               const isActive = rightTab === t.k
-              const Icon = t.icon
               return (
                 <button
-                  key={t.k}
+                  key={t.k} role="tab" aria-selected={isActive}
                   onClick={() => setRightTab(t.k)}
-                  className={`flex flex-1 items-center justify-center gap-1 rounded-md px-0.5 py-1.5 text-[9.5px] font-medium transition ${
-                    isActive
-                      ? 'bg-text text-bg shadow-sm'
-                      : 'text-muted hover:bg-panel-2 hover:text-text-2'
-                  }`}
+                  className={`truncate rounded-md px-1 py-1 text-[11px] ${isActive ? 'bg-raised font-semibold text-text' : 'text-muted hover:bg-panel-2 hover:text-text-2'}`}
                 >
-                  <Icon size={10} strokeWidth={isActive ? 2.1 : 1.8} /> {t.label}
+                  {t.label}
                 </button>
               )
             })}
