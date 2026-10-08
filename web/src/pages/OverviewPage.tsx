@@ -511,6 +511,8 @@ export default function OverviewPage() {
   const quickActions: QuickAction[] = useMemo(() => ([
     { to: defaultVid ? `/versions/${defaultVid}`                 : '/models',    label: 'Mở Sơ đồ',  icon: Workflow,   hint: defaultModel ? `${defaultModel.model_key} v${defaultModel.latest_version}` : 'Chọn model trên trang Mô hình', tone: 'edit', primary: true },
     { to: defaultKey ? `/models/${encodeURIComponent(defaultKey)}/live`       : '/models',    label: 'Trực tiếp', icon: PlayCircle, hint: 'Bấm phát feed realtime, click kho xem tồn popup', tone: 'live' },
+    { to: defaultKey ? '/reports/warehouse-dashboard'                      : '/reports/warehouse-dashboard', label: 'Kho tổng thể', icon: Warehouse,  hint: 'Dashboard KPIs, order sắp tới, cảnh báo, lịch sử 14 ngày', tone: 'runs' },
+    { to: defaultKey ? '/reports/warehouse'                              : '/reports/warehouse', label: 'Điều khiển tồn kho', icon: Boxes, hint: 'Điều chỉnh tay, ép replenish, xem kênh SKU chi tiết', tone: 'lib' },
     { to: defaultVid ? `/versions/${defaultVid}/scenarios`      : '/scenarios', label: 'Kịch bản',  icon: LineChart,  hint: 'Tạo scenario, set tham số, chạy hàng loạt',           tone: 'scenario' },
     { to: defaultKey ? `/models/${encodeURIComponent(defaultKey)}/connect`    : '/models',    label: 'Kết nối DL',icon: Network,    hint: 'Ghép tín hiệu IoT, AGV, MES, ERP vào từng node/edge', tone: 'connect' },
     { to: '/runs',                                         label: 'Lần chạy', icon: CircleDot,  hint: 'Xem trạng thái, so sánh, replay control room',         tone: 'runs' },

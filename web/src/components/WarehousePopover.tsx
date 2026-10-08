@@ -2,16 +2,9 @@ import * as Popover from '@radix-ui/react-popover'
 import { ArrowRight, Package, ShoppingCart, Truck, Warehouse as WarehouseIcon, X } from 'lucide-react'
 import { Bar, BarChart, Cell, ResponsiveContainer, XAxis } from 'recharts'
 import { useEffect, useMemo, type CSSProperties } from 'react'
-import type { WarehouseAdequacy, WarehousePipelineView } from '../api/types'
-import { DEFAULT_THRESHOLDS, NO_USE_COVERAGE, type Thresholds, colorFor } from '../lib/replay'
-
-export type WarehouseSkuRow = {
-  sku: string
-  max: number
-  current: number
-  coverageH?: number
-  thresholds?: Thresholds
-}
+import type { WarehouseAdequacy, WarehousePipelineView, WarehouseSkuRow } from '../api/types'
+import { DEFAULT_THRESHOLDS, NO_USE_COVERAGE, colorFor } from '../lib/replay'
+export type { WarehouseSkuRow } from '../api/types'
 
 export type WarehousePopoverProps = {
   open: boolean

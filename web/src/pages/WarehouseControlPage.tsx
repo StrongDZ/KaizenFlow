@@ -169,15 +169,17 @@ export default function WarehouseControlPage() {
   const graphError = g.status === 'none' && currentModel ? new Error('Mô hình chưa có phiên bản Publish') : null
   const liveError = live.error as Error | null
   const err = modelsError ?? graphError ?? liveError
+  const types = g.types
+  const graph = g.graph
+  const snapshot = live.data
+  // ⚠ Rules of Hooks: useMemo PHẢI gọi TRƯỚC TẤT CẢ conditional returns.
+  // Nếu graph chưa load → rows = [] an toàn, sau đó return <Loading/> đúng logic.
+  const rows = useMemo(() => (graph ? buildRows(graph, types, snapshot, live.dataUpdatedAt) : []), [graph, types, snapshot, live.dataUpdatedAt])
 
   if (models.isLoading) return <Loading />
   if (items.length === 0) return <EmptyState title="Chưa có mô hình nào">Tạo mô hình ở trang Mô hình hoặc chạy scripts/seed_demo.py để có mẫu.</EmptyState>
   if (g.status === 'loading') return <Loading />
   if (g.status === 'none') return <EmptyState title="Mô hình chưa có phiên bản Publish">Mô hình này chưa có phiên bản nào được Publish. Publish một phiên bản rồi quay lại.</EmptyState>
-  const types = g.types
-  const graph = g.graph
-  const snapshot = live.data
-  const rows = useMemo(() => buildRows(graph, types, snapshot, live.dataUpdatedAt), [graph, types, snapshot, live.dataUpdatedAt])
   const totalCapacity = rows.reduce((a, r) => a + r.materials.reduce((b, m) => b + m.max, 0), 0)
   const totalStock = rows.reduce((a, r) => a + r.materials.reduce((b, m) => b + m.current, 0), 0)
   const overallPct = totalCapacity > 0 ? (totalStock / totalCapacity) * 100 : 0

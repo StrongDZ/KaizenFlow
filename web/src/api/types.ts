@@ -1,3 +1,4 @@
+import type { Thresholds } from '../lib/replay'
 export type Archetype = 'SOURCE' | 'STORAGE' | 'PROCESS' | 'SINK' | 'RESOURCE_POOL'
 export type Json = Record<string, unknown>
 
@@ -256,6 +257,59 @@ export type WarehouseSeriesEntry = {
   capacity: number
   coverage_h: number
   color: string
+  inbound_qty?: number
+  outbound_qty?: number
+}
+
+export type WarehouseSkuRow = {
+  sku: string
+  max: number
+  current: number
+  coverageH?: number
+  thresholds?: Thresholds
+}
+
+export type WarehouseAlertKind = 'OVERSTOCK' | 'UNDERSTOCK' | 'OVERLOAD_INBOUND' | 'OVERLOAD_DEMAND' | 'SLA_BREACH'
+export type WarehouseAlertRow = {
+  alert_id: string
+  kind: WarehouseAlertKind
+  sku?: string
+  severity: 'HIGH' | 'MEDIUM' | 'LOW'
+  title: string
+  detail: string
+  value_current: number
+  value_threshold: number
+  started_at: string
+  acknowledged?: boolean
+}
+export type WarehouseEfficiencyRow = {
+  window_days: number
+  oee_pct: number
+  accuracy_pct: number
+  availability_pct: number
+  avg_turnover_per_day: number
+  avg_fill_rate_pct: number
+}
+export type WarehouseDashboardView = {
+  node_key: string
+  node_name: string
+  model_key: string
+  as_of: string
+  hero: {
+    on_hand_total: number
+    capacity_total: number
+    fill_pct: number
+    coverage_remaining_h: number
+    inbound_last_24h: number
+    outbound_last_24h: number
+    net_flow_last_24h: number
+    high_alert_count: number
+  }
+  pipeline: WarehousePipelineView
+  history_14d: WarehouseSeriesEntry[]
+  efficiency: WarehouseEfficiencyRow
+  alerts: WarehouseAlertRow[]
+  sku_rows: WarehouseSkuRow[]
 }
 
 export type BenchmarkReport = {
