@@ -102,7 +102,7 @@ export default function GaugeOverviewPage() {
       )}
 
       <p className="text-xs text-faint">
-        Ảnh trên thẻ minh hoạ loại thiết bị, không phải ảnh chụp tại trạm; ảnh thật từ camera nằm ở trang chi tiết. Nguồn Wikimedia Commons:{' '}
+        Ảnh trên thẻ là vùng đọc của từng đồng hồ, cắt từ một khung hình camera lấy khi mở trang. Camera không trả lời thì thẻ hiện ảnh minh hoạ loại thiết bị, nguồn Wikimedia Commons:{' '}
         {DEVICE_PHOTOS.map((p, i) => (
           <span key={p.src}>
             {i > 0 && ' · '}

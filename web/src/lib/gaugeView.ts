@@ -60,11 +60,12 @@ export function filterStations(stations: GaugeStation[], line: string, kind: Sta
 /** Đồng hồ kim luôn một chữ số thập phân; màn hình số hiện đúng số đọc được. Dấu phẩy thập phân. */
 export function fmtValue(value: number | null, type: string): string {
   if (value === null) return '—'
-  const text = type === 'analog_dial' ? value.toFixed(1) : String(Math.round(value * 10) / 10)
+  // Màn hình số: giữ đủ chữ số như trên màn hình (tối đa 3 chữ số thập phân), không làm tròn bớt.
+  const text = type === 'analog_dial' ? value.toFixed(1) : String(Number(value.toFixed(3)))
   return text.replace('.', ',')
 }
 
-const UNITS: Record<string, string> = { degC: '°C', degF: '°F' }
+const UNITS: Record<string, string> = { degC: '°C', degF: '°F', rpm: 'vòng/phút', pcs: 'sản phẩm' }
 export function unitLabel(unit: string): string {
   return UNITS[unit] ?? unit
 }
@@ -102,6 +103,24 @@ export function roiBox(roi: number[], frameW: number, frameH: number): Box | nul
   return { left: (x0 * 100) / frameW, top: (y0 * 100) / frameH, width: ((x1 - x0) * 100) / frameW, height: ((y1 - y0) * 100) / frameH }
 }
 
+export type RoiCrop = {
+  /** Ô cửa sổ nằm giữa thẻ, giữ đúng tỉ lệ của vùng đọc: phần trăm chiều rộng và chiều cao của thẻ. */
+  window: { width: number; height: number }
+  /** Cả khung hình đặt trong ô cửa sổ sao cho chỉ vùng đọc lộ ra: phần trăm của ô cửa sổ. */
+  image: { width: number; height: number; left: number; top: number }
+}
+
+/** Cắt vùng đọc của một đồng hồ ra khỏi khung hình camera để hiện trong thẻ có tỉ lệ `aspect` (rộng / cao), không méo, không cắt mất phần nào. */
+export function roiCrop(roi: number[], frameW: number, frameH: number, aspect: number): RoiCrop | null {
+  const box = roiBox(roi, frameW, frameH)
+  if (!box || aspect <= 0) return null
+  const ratio = (box.width * frameW) / (box.height * frameH)
+  return {
+    window: ratio > aspect ? { width: 100, height: (aspect * 100) / ratio } : { width: (ratio * 100) / aspect, height: 100 },
+    image: { width: 10000 / box.width, height: 10000 / box.height, left: (-box.left * 100) / box.width, top: (-box.top * 100) / box.height },
+  }
+}
+
 /** Thuộc tính points của <polyline> cho đường xu hướng; cần ít nhất hai điểm có giá trị. */
 export function sparkPoints(points: { value: number | null }[], width: number, height: number): string {
   const values = points.map((p) => p.value).filter((v): v is number => v !== null)
@@ -130,4 +149,19 @@ export function cameraLabel(cameraId: string): string {
 /** Đồng hồ nằm trên một camera của máy. */
 export function gaugesOn<T extends { camera_id: string }>(gauges: T[], cameraId: string): T[] {
   return gauges.filter((g) => g.camera_id === cameraId)
+}
+
+/** Số ô ảnh trên thẻ trạm ở màn tổng quan; máy có nhiều đồng hồ hơn thì phần còn lại hiện thành dòng gọn. */
+export const MAX_TILES = 4
+
+const STATE_RANK: Record<string, number> = { alarm: 0, poor: 1, stale: 2, ok: 3 }
+
+/** Chia đồng hồ của một trạm thành ô ảnh và dòng gọn. Khi phải cắt, đồng hồ cần xem (vượt ngưỡng, ảnh kém, im lặng) được lên ô ảnh trước;
+    thứ tự khai báo giữ nguyên trong mỗi phần. Đủ chỗ thì mọi đồng hồ đều là ô ảnh. */
+export function splitTiles<T extends { state: string }>(gauges: T[], max = MAX_TILES): [T[], T[]] {
+  if (gauges.length <= max) return [gauges, []]
+  const picked = new Set(gauges.map((g, i) => [g, i] as const)
+    .sort((a, b) => (STATE_RANK[a[0].state] ?? 3) - (STATE_RANK[b[0].state] ?? 3) || a[1] - b[1])
+    .slice(0, max).map(([g]) => g))
+  return [gauges.filter((g) => picked.has(g)), gauges.filter((g) => !picked.has(g))]
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { GaugeStation } from '../api/gauge'
 import {
   ageLabel, cameraLabel, countKinds, defaultLine, filterStations, fmtValue, gaugeStateLabel, gaugesOn, lineKey, linesOf, needsAttention,
-  roiBox, sortStations, sparkPoints, stationKind, unitLabel,
+  roiBox, roiCrop, sortStations, splitTiles, sparkPoints, stationKind, unitLabel,
 } from './gaugeView'
 
 function station(id: string, state: GaugeStation['state'], opts: { edge?: boolean; line?: string } = {}): GaugeStation {
@@ -96,6 +96,8 @@ describe('fmtValue', () => {
     expect(fmtValue(36, 'timer_mmss')).toBe('36')
     expect(fmtValue(29.8, 'seg7')).toBe('29,8')
     expect(fmtValue(4812, 'counter')).toBe('4812')
+    expect(fmtValue(54.46, 'seg7')).toBe('54,46')
+    expect(fmtValue(144060.8, 'rolling_counter')).toBe('144060,8')
   })
 
   it('shows a dash without a value', () => {
@@ -107,6 +109,7 @@ describe('labels', () => {
   it('writes units the way people read them', () => {
     expect(unitLabel('degC')).toBe('°C')
     expect(unitLabel('bar')).toBe('bar')
+    expect(unitLabel('rpm')).toBe('vòng/phút')
     expect(unitLabel('')).toBe('')
   })
 
@@ -137,6 +140,29 @@ describe('roiBox', () => {
   it('gives nothing for a malformed ROI', () => {
     expect(roiBox([1, 2, 3], 1920, 1080)).toBeNull()
     expect(roiBox([0, 0, 0, 10], 1920, 1080)).toBeNull()
+  })
+})
+
+describe('roiCrop', () => {
+  it('shows exactly the ROI: the frame is scaled and shifted inside the window', () => {
+    // A quarter of the frame, at its bottom right, in a square tile.
+    expect(roiCrop([500, 500, 500, 500], 1000, 1000, 1)).toEqual({
+      window: { width: 100, height: 100 },
+      image: { width: 200, height: 200, left: -100, top: -100 },
+    })
+  })
+
+  it('keeps the shape of a wide display in a wide tile', () => {
+    // 400 x 100 px: four times as wide as high, so half the height of a 2:1 tile.
+    expect(roiCrop([0, 0, 400, 100], 800, 800, 2)?.window).toEqual({ width: 100, height: 50 })
+  })
+
+  it('keeps the shape of a tall ROI', () => {
+    expect(roiCrop([0, 0, 100, 400], 800, 800, 1)?.window).toEqual({ width: 25, height: 100 })
+  })
+
+  it('gives nothing for a malformed ROI', () => {
+    expect(roiCrop([1, 2, 3], 800, 800, 1)).toBeNull()
   })
 })
 
@@ -178,5 +204,21 @@ describe('cameras of a machine', () => {
     expect(gaugesOn(gauges, '').map((g) => g.id)).toEqual(['a', 'c'])
     expect(gaugesOn(gauges, 'side').map((g) => g.id)).toEqual(['b'])
     expect(gaugesOn(gauges, 'back')).toEqual([])
+  })
+})
+
+describe('splitTiles', () => {
+  const g = (id: string, state: string) => ({ id, state })
+
+  it('shows every gauge as a tile when they fit', () => {
+    const gauges = [g('a', 'ok'), g('b', 'alarm')]
+    expect(splitTiles(gauges)).toEqual([gauges, []])
+  })
+
+  it('gives the tiles to the gauges that need a look, in declared order', () => {
+    const gauges = [g('a', 'ok'), g('b', 'ok'), g('c', 'alarm'), g('d', 'ok'), g('e', 'poor'), g('f', 'ok')]
+    const [tiles, rest] = splitTiles(gauges)
+    expect(tiles.map((x) => x.id)).toEqual(['a', 'b', 'c', 'e'])
+    expect(rest.map((x) => x.id)).toEqual(['d', 'f'])
   })
 })

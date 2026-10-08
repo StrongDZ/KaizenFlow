@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { gaugeApi, type GaugeReading } from '../../api/gauge'
 import { fmtValue, gaugeStateLabel, sparkPoints, unitLabel } from '../../lib/gaugeView'
 import { devicePhoto } from './devicePhotos'
+import { RoiPhoto } from './RoiPhoto'
 import { toneOf } from './tone'
 
 const SPARK = { width: 140, height: 44 }
@@ -22,7 +24,9 @@ export function GaugeCard({ machine, gauge, camera }: { machine: string; gauge: 
     <section className={`flex flex-col gap-3.5 rounded-xl border bg-panel px-4 py-3.5 ${gauge.state === 'ok' ? 'border-panel' : tone.border}`}>
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-3">
-          {photo && <img src={photo.src} alt={photo.kind} title={`Ảnh minh hoạ: ${photo.kind}`} className="h-11 w-14 flex-none rounded-md object-cover" />}
+          <div className="relative h-11 w-14 flex-none overflow-hidden rounded-md bg-panel-2">
+            <RoiPhoto machine={machine} gauge={gauge} aspect={14 / 11} />
+          </div>
           <div className="min-w-0">
             <h3 className="truncate font-mono text-sm">{gauge.gauge_id}</h3>
             <p className="text-xs text-muted">{[photo?.kind, camera].filter(Boolean).join(' · ')}</p>
@@ -33,14 +37,16 @@ export function GaugeCard({ machine, gauge, camera }: { machine: string; gauge: 
         </span>
       </div>
       <div className="flex items-end justify-between gap-3">
-        <div className="flex items-baseline gap-2">
+        <div className="flex min-w-0 items-baseline gap-2">
           <span className={`text-5xl font-bold leading-none tracking-tight ${stale ? 'text-faint' : ''}`}>{fmtValue(gauge.value, gauge.type)}</span>
-          <span className="text-lg text-muted">{unitLabel(gauge.unit)}</span>
+          <span className="whitespace-nowrap text-lg text-muted">{unitLabel(gauge.unit)}</span>
         </div>
-        <svg viewBox={`0 0 ${SPARK.width} ${SPARK.height}`} width={SPARK.width} height={SPARK.height} role="img"
-          aria-label={points ? `Xu hướng ${gauge.gauge_id} 15 phút gần nhất` : `Chưa đủ dữ liệu xu hướng của ${gauge.gauge_id}`}>
-          {points && <polyline fill="none" stroke={tone.stroke} strokeWidth="2" strokeLinejoin="round" points={points} />}
-        </svg>
+        <Link to={`/gauge-twin/${encodeURIComponent(machine)}/history`} title="Xem lịch sử số liệu" className="min-w-12 shrink rounded-md hover:bg-raised">
+          <svg viewBox={`0 0 ${SPARK.width} ${SPARK.height}`} width={SPARK.width} height={SPARK.height} preserveAspectRatio="none" className="block h-11 w-full max-w-[140px]" role="img"
+            aria-label={points ? `Xu hướng ${gauge.gauge_id} 15 phút gần nhất` : `Chưa đủ dữ liệu xu hướng của ${gauge.gauge_id}`}>
+            {points && <polyline fill="none" stroke={tone.stroke} strokeWidth="2" strokeLinejoin="round" points={points} />}
+          </svg>
+        </Link>
       </div>
       <div className="flex items-center gap-2.5 text-xs text-muted">
         <span>Độ tin cậy</span>
