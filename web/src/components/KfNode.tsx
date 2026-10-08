@@ -31,6 +31,12 @@ const DOT: Partial<Record<Badge['color'], string>> = { GREEN: 'bg-ok', YELLOW: '
 const STATUS_TEXT: Record<Badge['color'], string> = { GREEN: 'text-text-2', YELLOW: 'text-warn', RED: 'text-bad-text font-semibold', INFO: 'text-text-2', NONE: 'text-muted' }
 const ROW_TONE: Record<Tone, string> = { ok: 'text-ok', warn: 'text-warn', bad: 'text-bad-text', muted: 'text-muted' }
 
+/** Nền phủ màu trạng thái (đặc, không trong suốt để lưới sơ đồ không lộ qua): khi thu nhỏ cả sơ đồ, chữ không đọc được nhưng mảng màu vẫn thấy. */
+function tintOf(badge: Badge | undefined): string | undefined {
+  const c = badge?.kind === 'MAINTENANCE' || badge?.color === 'YELLOW' ? 'var(--color-warn)' : badge?.color === 'RED' ? 'var(--color-bad)' : undefined
+  return c && `color-mix(in srgb, ${c} ${badge?.color === 'RED' ? 14 : 9}%, var(--color-panel))`
+}
+
 function borderOf(badge: Badge | undefined, issueTone: 'error' | 'warning' | undefined): string {
   if (badge?.kind === 'MAINTENANCE') return 'border-warn'
   if (issueTone === 'error' || badge?.color === 'RED') return 'border-bad/80'
@@ -63,8 +69,10 @@ export function KfNode({ id, data, selected }: NodeProps<FlowNode>) {
   const rows = data.rows ?? (mode === 'design' ? designRows(data.archetype, effectiveParams(data.params, types[data.nodeType])) : [])
   const dot = status && DOT[status.color]
   const body = status || rows.length > 0 || data.issue
+  const tint = tintOf(badge)
   return (
     <div
+      style={tint ? { background: tint } : undefined}
       className={`relative w-[164px] rounded-lg border bg-panel text-left shadow-sm ${pool ? 'border-dashed' : ''} ${borderOf(badge, data.issueTone)} ${
         selected ? 'ring-2 ring-accent/70 ring-offset-1 ring-offset-bg' : ''
       }`}

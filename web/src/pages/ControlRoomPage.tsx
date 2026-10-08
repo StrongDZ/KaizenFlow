@@ -315,13 +315,13 @@ function Room({ run, scenario, graph, types, rows }: {
       <KfNodeContext.Provider value={RUN_NODES}>
       <ReactFlow
         nodes={nodes} edges={edges} nodeTypes={kfNodeTypes} edgeTypes={kfEdgeTypes} nodesConnectable={false} nodesDraggable={false}
-        colorMode={theme} fitView minZoom={0.2} fitViewOptions={{ padding: { top: '56px', right: '40px', bottom: '126px', left: '24px' } }}
+        colorMode={theme} fitView minZoom={0.2} fitViewOptions={{ padding: { top: '56px', right: '40px', bottom: '112px', left: '24px' } }}
         onPaneClick={() => { setOpenPin(null); setPopover(null) }}
         onNodeClick={onNodeClick}
       >
         <Background gap={18} size={1} color="var(--color-line)" />
-        <FitOnResize options={{ padding: { top: '56px', right: '40px', bottom: '126px', left: '24px' } }} />
-        <Controls showInteractive={false} position="bottom-left" style={{ marginBottom: 112 }} />
+        <FitOnResize options={{ padding: { top: '56px', right: '40px', bottom: '112px', left: '24px' } }} />
+        <Controls showInteractive={false} position="bottom-left" style={{ marginBottom: 100 }} />
       </ReactFlow>
       </KfNodeContext.Provider>
 
