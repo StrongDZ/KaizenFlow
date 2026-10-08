@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Token theo spec §2.2. Tối là mặc định; sáng dành cho Báo cáo và bản in. */
+/* Token theo spec §2.2. Tối là mặc định; sáng được dùng khi người dùng chọn. */
 @theme static {
   --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
 
@@ -141,16 +141,38 @@ input::placeholder, textarea::placeholder { color: var(--color-faint); }
 }
 .react-flow__nodesselection-rect { background: transparent; border: 1px dashed var(--color-muted); border-radius: 8px; }
 
-/* Hạt hàng chạy trên edge (Control Room). Màu trung tính vì xanh/vàng/đỏ đã dành cho mức tồn kho. */
-.kf-dot {
-  fill: var(--color-text); fill-opacity: 0.85; pointer-events: none;
-  offset-rotate: 0deg; animation-name: kf-flow; animation-timing-function: linear; animation-iteration-count: infinite;
+/* Hàng trên conveyor: vệt đứt cho biết hướng; hạt có viền và bóng để vẫn thấy rõ trên cả hai theme. */
+.kf-conveyor-motion {
+  fill: none; pointer-events: none; stroke-linecap: round; stroke-dasharray: 2 12;
+  animation-name: kf-conveyor; animation-timing-function: linear; animation-iteration-count: infinite;
 }
-@keyframes kf-flow { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+.kf-flow-particle {
+  fill: currentColor; stroke: var(--color-bg); stroke-width: 1.5px; pointer-events: none;
+  filter: drop-shadow(0 0 2.5px currentColor); offset-rotate: 0deg;
+  animation-name: kf-flow-particle; animation-timing-function: linear; animation-iteration-count: infinite;
+}
+@keyframes kf-conveyor { from { stroke-dashoffset: 14; } to { stroke-dashoffset: 0; } }
+@keyframes kf-flow-particle { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+.react-flow__node.kf-story-focus > div { animation: kf-story-pulse 1.4s ease-in-out infinite; }
+.react-flow__node.kf-story-affected { filter: saturate(1.2); }
+.react-flow__node.kf-story-muted { opacity: 0.32; filter: grayscale(0.65); transition: opacity 180ms ease; }
+@keyframes kf-story-pulse {
+  0%, 100% { filter: drop-shadow(0 0 0 color-mix(in srgb, var(--color-accent) 0%, transparent)); transform: translateY(0); }
+  50% { filter: drop-shadow(0 0 12px color-mix(in srgb, var(--color-accent) 70%, transparent)); transform: translateY(-2px); }
+}
 @keyframes benchBreath { 0%, 100% { opacity: 1; } 50% { opacity: 0.62; } }
 @media (prefers-reduced-motion: reduce) {
-  .kf-dot { animation: none; offset-distance: var(--kf-at); }
+  .kf-conveyor-motion { animation: none; }
+  .kf-flow-particle { animation: none; offset-distance: var(--kf-at); }
+  .react-flow__node.kf-story-focus > div { animation: none; }
   .animate-\[benchBreath_1\.6s_ease-in-out_infinite\] { animation: none; }
+}
+
+/* Báo cáo PDF: dùng khổ giấy phổ biến tại Việt Nam và không để tiêu đề mục 4 nằm lẻ cuối trang. */
+@page { size: A4; margin: 12mm; }
+@media print {
+  .report-page { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .report-section-lead { break-inside: avoid-page; page-break-inside: avoid; }
 }
 
 /* Form sinh từ JSON Schema (@rjsf): phẳng, không hộp lồng nhau. Cấp bậc thể hiện bằng cỡ chữ và độ đậm:

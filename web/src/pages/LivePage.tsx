@@ -604,7 +604,7 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
     const params = e.data?.params ?? {}
     return {
       ...e, type: 'flow',
-      label: inTransit >= 0.5 ? `${String(e.label)}, ${Math.round(inTransit)} đang chạy` : e.label,
+      label: e.label,
       data: {
         material: e.data?.material ?? '', params,
         dots: dotsFromRate(snap?.rate, peak.current),
@@ -612,6 +612,7 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
         cycleS: Math.max(0.8, cycleSeconds(travelSeconds(params)) / Math.sqrt(Math.max(1, speed / 4))),
         running,
         estimated: estimated.has(e.id),
+        statusText: inTransit >= 0.5 ? `${Math.round(inTransit)} đang đi` : undefined,
       },
     }
   }), [flow.edges, snapshot, speed, running, estimated]) // eslint-disable-line react-hooks/exhaustive-deps

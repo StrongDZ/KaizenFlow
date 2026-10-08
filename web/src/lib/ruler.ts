@@ -1,9 +1,10 @@
-import type { EventRow, GraphNode, NodeType } from '../api/types'
+import type { EventRow, GraphNode, Json, NodeType } from '../api/types'
 import { thresholdsFor } from './model'
 import { colorFor, series, type BandIndex } from './replay'
 
 export type Ruler = { start: number; end: number; step: number }
 export type Zone = { from: number; to: number }
+export type MaintenanceWindow = { target: string; from: number; to: number }
 
 const DEFAULT_STEP = 60_000
 
@@ -82,4 +83,23 @@ export function redZones(idx: BandIndex, nodes: GraphNode[], types: Record<strin
 export function failureMarks(events: EventRow[]): number[] {
   const times = events.filter((e) => e.rep === 0 && e.type === 'FAILURE').map((e) => Date.parse(e.t))
   return [...new Set(times)].sort((a, b) => a - b)
+}
+
+/** Đổi planned_stop của scenario thành khoảng thời gian tuyệt đối trên Control Room. */
+export function maintenanceWindows(injections: Json[], simStart: string): MaintenanceWindow[] {
+  const start = Date.parse(simStart)
+  if (!Number.isFinite(start)) return []
+  return injections.flatMap((inj) => {
+    const atS = inj.at_s
+    const durationS = inj.duration_s
+    const target = inj.target
+    if (inj.kind !== 'planned_stop' || typeof target !== 'string' || target === ''
+      || typeof atS !== 'number' || !Number.isFinite(atS)
+      || typeof durationS !== 'number' || !Number.isFinite(durationS) || durationS <= 0) return []
+    return [{ target, from: start + atS * 1000, to: start + (atS + durationS) * 1000 }]
+  }).sort((a, b) => a.from - b.from || a.target.localeCompare(b.target))
+}
+
+export function maintenanceAt(windows: MaintenanceWindow[], target: string, t: number): MaintenanceWindow | undefined {
+  return windows.find((w) => w.target === target && t >= w.from && t < w.to)
 }

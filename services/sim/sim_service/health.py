@@ -128,13 +128,17 @@ class Health:
     def _planned(self, inj):
         env = self.env
         yield env.timeout(max(0.0, self.ctx.warmup + inj.at_s - env.now))
-        self.ctx.rec.event(env.now, self.owner.key, "PLANNED_STOP", {"duration_s": inj.duration_s})
+        self.ctx.rec.event(env.now, self.owner.key, "PLANNED_STOP", {
+            "duration_s": inj.duration_s,
+            "ends_at": self.ctx.rec.ts(env.now + inj.duration_s).isoformat(),
+        })
         # Bảo trì bắt đầu → làm mới mọi failure mode đang suy giảm (kể cả khi dừng trùm qua F).
         self.go_down("PLANNED")
         self.active = None
         self.renewal += 1
         yield env.timeout(inj.duration_s)
         self.go_up("PLANNED")
+        self.ctx.rec.event(env.now, self.owner.key, "PLANNED_STOP_END", {})
 
     # --- sensor & nhãn -----------------------------------------------------
     def _effect(self, name: str, now: float, sd: float):

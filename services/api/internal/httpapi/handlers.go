@@ -457,7 +457,8 @@ func (h *handlers) apply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Rank int `json:"rank"`
+		Rank       int                   `json:"rank"`
+		Adjustment *runs.ApplyAdjustment `json:"adjustment,omitempty"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -465,7 +466,7 @@ func (h *handlers) apply(w http.ResponseWriter, r *http.Request) {
 	if body.Rank == 0 {
 		body.Rank = 1
 	}
-	runID, err := h.Runs.Apply(r.Context(), id, body.Rank)
+	runID, err := h.Runs.Apply(r.Context(), id, body.Rank, body.Adjustment)
 	if err != nil {
 		writeErr(w, err)
 		return

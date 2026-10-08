@@ -27,7 +27,7 @@ export default function ScenariosPage() {
     {
       key: 'setup', header: 'Thiết lập', cell: (s) => (
         <div className="flex flex-wrap gap-1">
-          <Tag>{s.injections.length === 0 ? 'Không lỗi' : `${s.injections.length} lỗi`}</Tag>
+          <Tag>{s.injections.length === 0 ? 'Không sự kiện' : `${s.injections.length} sự kiện`}</Tag>
           <Tag>{s.overrides.length === 0 ? 'Cấu hình nền' : `${s.overrides.length} thay đổi`}</Tag>
         </div>
       ),
@@ -62,7 +62,7 @@ export default function ScenariosPage() {
         rowKey={(s) => s.id}
         onRowClick={(s) => setPeek(String(s.id))}
         selected={(s) => String(s.id) === peek}
-        empty={<EmptyState icon={FlaskConical} title="Chưa có scenario nào">Scenario là một tình huống what-if: thời lượng, lỗi máy tiêm vào, thay đổi nguồn lực. Bấm "Tạo scenario".</EmptyState>}
+        empty={<EmptyState icon={FlaskConical} title="Chưa có scenario nào">Scenario là một tình huống what-if: thời lượng, lỗi máy hoặc dừng có kế hoạch, thay đổi nguồn lực. Bấm "Tạo scenario".</EmptyState>}
       />
     </PageBody>
     </PeekHost>

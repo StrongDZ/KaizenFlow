@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { describeInjection, describeOverride, formatScenarioDuration } from './scenarioView'
+import { describeInjection, describeOverride, formatScenarioDuration, scenarioWarmupSeconds, startStateLabel } from './scenarioView'
 
 describe('describeOverride', () => {
   it('số lượng: nhãn tiếng Việt và một dòng giá trị', () => {
@@ -42,7 +42,22 @@ describe('scenario setup formatting', () => {
       atS: 7200, label: 'STAMP_3', detail: 'Lỗi bearing_wear',
     })
     expect(describeInjection({ target: 'A', kind: 'planned_stop', at_s: 900, duration_s: 1800 })).toEqual({
-      atS: 900, label: 'A', detail: 'Dừng có kế hoạch trong 30 phút',
+      atS: 900, label: 'A', detail: 'Dừng có kế hoạch trong 30 phút', kind: 'planned_stop', durationS: 1800,
     })
+  })
+
+  it('tính warm-up ngoài horizon theo start state và model settings', () => {
+    expect(scenarioWarmupSeconds('WARMUP', {})).toBe(3600)
+    expect(scenarioWarmupSeconds('WARMUP', { warmup_s: 1800 })).toBe(1800)
+    expect(scenarioWarmupSeconds('WARMUP', { warmup_s: null })).toBe(3600)
+    expect(scenarioWarmupSeconds('EMPTY', { warmup_s: 1800 })).toBe(0)
+    expect(scenarioWarmupSeconds('LIVE_SNAPSHOT', { warmup_s: 1800 })).toBe(0)
+  })
+
+  it('dịch start state thống nhất cho setup, detail và report', () => {
+    expect(startStateLabel('WARMUP')).toBe('Làm nóng rồi mới ghi')
+    expect(startStateLabel('EMPTY')).toBe('Nhà máy rỗng')
+    expect(startStateLabel('LIVE_SNAPSHOT')).toBe('Từ ảnh chụp trực tiếp')
+    expect(startStateLabel('CUSTOM')).toBe('CUSTOM')
   })
 })

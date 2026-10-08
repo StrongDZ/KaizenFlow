@@ -12,6 +12,7 @@ import { Inspector } from '../components/editor/Inspector'
 import { DRAG_TYPE, NodePalette } from '../components/editor/NodePalette'
 import { QuickAdd } from '../components/editor/QuickAdd'
 import { ShortcutsDialog } from '../components/editor/ShortcutsDialog'
+import { kfEdgeTypes } from '../components/KfEdge'
 import { kfNodeTypes } from '../components/KfNode'
 import { CheckControl } from '../components/editor/CheckControl'
 import { SaveGuard } from '../components/editor/SaveGuard'
@@ -25,7 +26,7 @@ import { canConnect } from '../lib/connect'
 import { formToEdge, type EdgeForm } from '../lib/edgeForm'
 import { versionStatusLabel } from '../lib/format'
 import { clipboard, copyOf, pasteOf } from '../lib/clipboard'
-import { defaultMaterial, edgeKey, edgeLabel, fromFlow, isEdit, makeNode, toFlow, type FlowEdge, type FlowNode } from '../lib/graph'
+import { FLOW_MARKER, edgeKey, edgeLabel, fromFlow, isEdit, makeNode, prepareConnection, toFlow, type FlowEdge, type FlowNode } from '../lib/graph'
 import { canRedo, canUndo, emptyHistory, record, redo, undo, type History } from '../lib/history'
 import { autoLayout, type Dir } from '../lib/layout'
 import { byCode, thresholdsFor } from '../lib/model'
@@ -135,12 +136,12 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
     if (!readOnly && c.some(isEdit)) setDirty(true)
   }, [readOnly])
   // Một dòng báo ngắn cạnh thanh công cụ khi một thao tác bị từ chối (vd. nối node với chính nó), để không im lặng không làm gì.
-  const [note, setNote] = useState<string | null>(null)
+  const [note, setNote] = useState<{ text: string; tone: 'success' | 'warning' } | null>(null)
   const noteTimer = useRef<number>(undefined)
-  const flash = (m: string) => {
-    setNote(m)
+  const flash = (text: string, durationMs = 4000, tone: 'success' | 'warning' = 'warning') => {
+    setNote({ text, tone })
     window.clearTimeout(noteTimer.current)
-    noteTimer.current = window.setTimeout(() => setNote(null), 4000)
+    noteTimer.current = window.setTimeout(() => setNote(null), durationMs)
   }
   useEffect(() => () => window.clearTimeout(noteTimer.current), [])
   const archetypeOf = useCallback((id: string) => nodes.find((n) => n.id === id)?.data.archetype, [nodes])
@@ -151,14 +152,14 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
     const dst = nodes.find((n) => n.id === c.target)
     if (!src || !dst) return
     remember()
-    // Cặp node này đã có đường nối chở vật tư nào thì điền sẵn vật tư khác, để không tự tạo ra đường nối trùng.
-    const avoid = edges.filter((e) => e.source === c.source && e.target === c.target).map((e) => e.data?.material ?? '')
-    const material = defaultMaterial(src, materials, types, avoid)
+    const setup = prepareConnection(nodes, edges, c.source, c.target, materials, types)
+    setNodes(setup.nodes)
     setEdges((es) => [...es, {
       id: edgeKey(c.source, c.target, es.map((e) => e.id)), source: c.source, target: c.target,
-      data: { material, params: {} }, label: edgeLabel(material, {}),
+      data: { material: setup.material, params: setup.params }, label: edgeLabel(setup.material, setup.params), markerEnd: FLOW_MARKER,
     }])
     setDirty(true)
+    flash(setup.note, 7000, setup.needsReview ? 'warning' : 'success')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodes, edges, materials, types, readOnly, archetypeOf])
 
@@ -171,19 +172,25 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
     if (readOnly) return
     remember()
     const n = makeNode(t, live.current.nodes.map((x) => x.id), position)
-    setNodes((ns) => [...ns.map((x) => ({ ...x, selected: false })), { ...n, selected: true }])
-    setEdges((es) => {
-      const cleared = es.map((e) => ({ ...e, selected: false }))
-      if (!from) return cleared
+    const baseNodes = [...live.current.nodes.map((x) => ({ ...x, selected: false })), { ...n, selected: true }]
+    const baseEdges = live.current.edges.map((edge) => ({ ...edge, selected: false }))
+    if (!from) {
+      setNodes(baseNodes)
+      setEdges(baseEdges)
+    } else {
       const [src, dst] = from.type === 'source' ? [from.nodeId, n.id] : [n.id, from.nodeId]
-      const srcNode = src === n.id ? n : live.current.nodes.find((x) => x.id === src)
-      const material = defaultMaterial(srcNode, materials, types)
-      return [...cleared, { id: edgeKey(src, dst, es.map((e) => e.id)), source: src, target: dst, data: { material, params: {} }, label: edgeLabel(material, {}) }]
-    })
+      const setup = prepareConnection(baseNodes, baseEdges, src, dst, materials, types)
+      setNodes(setup.nodes)
+      setEdges([...baseEdges, {
+        id: edgeKey(src, dst, baseEdges.map((edge) => edge.id)), source: src, target: dst,
+        data: { material: setup.material, params: setup.params }, label: edgeLabel(setup.material, setup.params), markerEnd: FLOW_MARKER,
+      }])
+      flash(setup.note, 7000, setup.needsReview ? 'warning' : 'success')
+    }
     setDirty(true)
   }
-  /** Góc trên-trái để đặt một node sao cho tâm nằm ở điểm cho trước (kích thước thẻ node ~140 x 64). */
-  const centred = (p: { x: number; y: number }) => ({ x: p.x - 70, y: p.y - 32 })
+  /** Góc trên-trái để đặt ký hiệu thiết bị sao cho tâm nằm ở điểm người dùng chọn (~108 x 92). */
+  const centred = (p: { x: number; y: number }) => ({ x: p.x - 54, y: p.y - 46 })
   /** Giữa khung nhìn hiện tại, dịch dần nếu đã có node nằm đúng chỗ đó để các lần thêm liên tiếp không chồng lên nhau. */
   const viewCentre = () => {
     const r = wrap.current?.getBoundingClientRect()
@@ -256,7 +263,11 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
   }), [nodes, view, dir])
   const decoratedEdges = useMemo(() => edges.map((e) => {
     const tone = toneOf(e.id, view)
-    return { ...e, style: tone ? { stroke: tone === 'error' ? 'var(--color-bad)' : 'var(--color-warn)', strokeWidth: 2 } : undefined }
+    return {
+      ...e,
+      type: 'flow',
+      style: tone ? { stroke: tone === 'error' ? 'var(--color-bad)' : 'var(--color-warn)', strokeWidth: 2 } : undefined,
+    }
   }), [edges, view])
 
   /** Chọn một node hoặc đường nối theo khoá và đưa vào giữa khung nhìn (bấm một dòng trong panel Kiểm tra). */
@@ -274,7 +285,7 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
     if (readOnly || nodes.length === 0) return
     remember()
     const pos = autoLayout(
-      nodes.map((n) => ({ id: n.id, w: n.measured?.width ?? 160, h: n.measured?.height ?? 72, pool: n.data.archetype === 'RESOURCE_POOL' })),
+      nodes.map((n) => ({ id: n.id, w: n.measured?.width ?? 108, h: n.measured?.height ?? 92, pool: n.data.archetype === 'RESOURCE_POOL' })),
       edges.map((e) => ({ source: e.source, target: e.target })),
       d,
     )
@@ -400,7 +411,7 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
       </HeaderActions>
 
       <ReactFlow
-        nodes={decorated} edges={decoratedEdges} nodeTypes={kfNodeTypes} colorMode={theme}
+        nodes={decorated} edges={decoratedEdges} nodeTypes={kfNodeTypes} edgeTypes={kfEdgeTypes} colorMode={theme}
         onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={readOnly ? undefined : onConnect} isValidConnection={(c) => canConnect(c, archetypeOf).ok}
         onNodeDragStart={() => remember()} onSelectionDragStart={() => remember()}
         onConnectEnd={(ev, state) => {
@@ -453,7 +464,11 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
       <ShortcutsDialog open={helpOpen} onClose={() => setHelpOpen(false)} />
 
       {error && <div className="absolute left-1/2 top-3 z-20 w-[420px] -translate-x-1/2"><ErrorBox error={error} /></div>}
-      {note && <div role="status" className="absolute bottom-16 left-1/2 z-20 max-w-[460px] -translate-x-1/2 rounded-lg border border-lock-line bg-lock-bg px-3 py-2 text-xs text-lock-text shadow-lg">{note}</div>}
+      {note && (
+        <div role="status" className={`absolute bottom-16 left-1/2 z-20 max-w-[560px] -translate-x-1/2 rounded-lg border px-3 py-2 text-xs shadow-lg ${note.tone === 'success' ? 'border-ok/50 bg-panel text-text-2' : 'border-lock-line bg-lock-bg text-lock-text'}`}>
+          {note.text}
+        </div>
+      )}
       {guard && <SaveGuard report={guard.report} mode={guard.mode} onBack={() => setGuard(null)} onSaveAnyway={() => { setGuard(null); save.mutate() }} />}
 
       {nodes.length === 0 && (

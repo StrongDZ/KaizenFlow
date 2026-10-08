@@ -185,8 +185,150 @@ func toMaps(v any) []map[string]any {
 	return out
 }
 
+// ApplyAdjustment là phần operator được phép tinh chỉnh trước khi chạy lại một đề xuất.
+// Chỉ dùng các field phù hợp với action; service không nhận override/path tuỳ ý từ trình duyệt.
+type ApplyAdjustment struct {
+	ToSlots *int     `json:"to_slots,omitempty"`
+	ToRate  *float64 `json:"to_rate,omitempty"`
+}
+
+func number(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	default:
+		return 0, false
+	}
+}
+
+func cloneCandidate(src map[string]any) map[string]any {
+	out := make(map[string]any, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	if action, ok := src["action"].(map[string]any); ok {
+		copyAction := make(map[string]any, len(action))
+		for k, v := range action {
+			copyAction[k] = v
+		}
+		out["action"] = copyAction
+	}
+	if raw, ok := src["overrides"].([]any); ok {
+		copyOverrides := make([]any, 0, len(raw))
+		for _, item := range raw {
+			if override, ok := item.(map[string]any); ok {
+				copyOverride := make(map[string]any, len(override))
+				for k, v := range override {
+					copyOverride[k] = v
+				}
+				copyOverrides = append(copyOverrides, copyOverride)
+			} else {
+				copyOverrides = append(copyOverrides, item)
+			}
+		}
+		out["overrides"] = copyOverrides
+	}
+	return out
+}
+
+func candidateOverride(cand map[string]any, target, path string) (map[string]any, bool) {
+	for _, override := range toMaps(cand["overrides"]) {
+		if override["target"] == target && override["path"] == path {
+			return override, true
+		}
+	}
+	return nil, false
+}
+
+func scaleDuration(v any, factor float64) (any, bool) {
+	if n, ok := number(v); ok {
+		return n * factor, true
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	out := make(map[string]any, len(m))
+	for k, value := range m {
+		out[k] = value
+	}
+	changed := false
+	for _, key := range []string{"value", "value_s", "mean", "mean_s", "sd", "sd_s", "min", "min_s", "mode", "mode_s", "max", "max_s", "scale", "scale_s"} {
+		if n, ok := number(out[key]); ok {
+			out[key] = n * factor
+			changed = true
+		}
+	}
+	return out, changed
+}
+
+func adjustCandidate(cand map[string]any, adjustment *ApplyAdjustment) error {
+	if adjustment == nil || (adjustment.ToSlots == nil && adjustment.ToRate == nil) {
+		return nil
+	}
+	action, ok := cand["action"].(map[string]any)
+	if !ok {
+		return &store.RefError{Key: "action", Msg: "đề xuất không có action hợp lệ"}
+	}
+	target, _ := action["target"].(string)
+	switch action["type"] {
+	case "INCREASE_PROCESS_CAPACITY":
+		if adjustment.ToSlots == nil || adjustment.ToRate != nil {
+			return &store.RefError{Key: "adjustment", Msg: "đề xuất tăng năng lực chỉ cho phép chỉnh số slot"}
+		}
+		from, ok := number(action["from_slots"])
+		if !ok {
+			return &store.RefError{Key: "action", Msg: "đề xuất thiếu số slot hiện tại"}
+		}
+		to := *adjustment.ToSlots
+		if to <= int(from) || to > 8 {
+			return &store.RefError{Key: "to_slots", Msg: fmt.Sprintf("phải lớn hơn %d và không quá 8", int(from))}
+		}
+		override, ok := candidateOverride(cand, target, "/slots")
+		if !ok {
+			return &store.RefError{Key: "overrides", Msg: "không tìm thấy override slot của node"}
+		}
+		override["value"] = to
+		action["to_slots"] = to
+		action["delta"] = float64(to) - from
+	case "REDUCE_MACHINE_RATE":
+		if adjustment.ToRate == nil || adjustment.ToSlots != nil {
+			return &store.RefError{Key: "adjustment", Msg: "đề xuất giảm nhịp chỉ cho phép chỉnh u/h mục tiêu"}
+		}
+		from, fromOK := number(action["from_rate"])
+		oldTo, toOK := number(action["to_rate"])
+		to := *adjustment.ToRate
+		if !fromOK || !toOK || math.IsNaN(from) || math.IsInf(from, 0) || math.IsNaN(oldTo) || math.IsInf(oldTo, 0) {
+			return &store.RefError{Key: "action", Msg: "đề xuất thiếu nhịp máy hiện tại"}
+		}
+		if math.IsNaN(to) || math.IsInf(to, 0) || to < from*0.5 || to >= from {
+			return &store.RefError{Key: "to_rate", Msg: fmt.Sprintf("phải từ %.1f đến dưới %.1f u/h", from*0.5, from)}
+		}
+		override, ok := candidateOverride(cand, target, "/cycle")
+		if !ok {
+			return &store.RefError{Key: "overrides", Msg: "không tìm thấy override cycle của node"}
+		}
+		scaled, ok := scaleDuration(override["value"], oldTo/to)
+		if !ok {
+			return &store.RefError{Key: "overrides", Msg: "cycle của node không thể tinh chỉnh"}
+		}
+		override["value"] = scaled
+		action["to_rate"] = to
+		action["delta"] = to - from
+	default:
+		return &store.RefError{Key: "adjustment", Msg: "loại action này chưa hỗ trợ chỉnh tham số"}
+	}
+	return nil
+}
+
 // Apply tạo scenario con từ ứng viên `rank` của một insight RECOMMENDATION và chạy nó.
-func (s *Service) Apply(ctx context.Context, insightID int64, rank int) (int64, error) {
+func (s *Service) Apply(ctx context.Context, insightID int64, rank int, adjustment *ApplyAdjustment) (int64, error) {
 	ins, err := s.Store.GetInsight(ctx, insightID)
 	if err != nil {
 		return 0, err
@@ -197,11 +339,14 @@ func (s *Service) Apply(ctx context.Context, insightID int64, rank int) (int64, 
 	var cand map[string]any
 	for _, c := range toMaps(ins.Payload["candidates"]) {
 		if r, _ := c["rank"].(float64); int(r) == rank {
-			cand = c
+			cand = cloneCandidate(c)
 		}
 	}
 	if cand == nil {
 		return 0, &store.RefError{Key: fmt.Sprint(rank), Msg: "no candidate with this rank"}
+	}
+	if err := adjustCandidate(cand, adjustment); err != nil {
+		return 0, err
 	}
 	run, err := s.Store.GetRun(ctx, *ins.SimRunID)
 	if err != nil {
@@ -218,8 +363,8 @@ func (s *Service) Apply(ctx context.Context, insightID int64, rank int) (int64, 
 	action, _ := cand["action"].(map[string]any)
 	child := store.Scenario{
 		ModelVersionID: parent.ModelVersionID, ParentID: &parent.ID, Origin: "RECOMMENDER",
-		Name:       fmt.Sprintf("Đề xuất #%d: %v %v", rank, action["type"], action["target"]),
-		HorizonS:   parent.HorizonS, StartState: parent.StartState,
+		Name:     fmt.Sprintf("Đề xuất #%d: %v %v", rank, action["type"], action["target"]),
+		HorizonS: parent.HorizonS, StartState: parent.StartState,
 		Overrides:  append(append([]map[string]any{}, parent.Overrides...), toMaps(cand["overrides"])...),
 		Injections: parent.Injections, Action: action, Replications: parent.Replications, Seed: &seed,
 	}

@@ -50,6 +50,11 @@ def test_planned_stop_prevents_failure():
         {"target": "M", "kind": "planned_stop", "at_s": 1500, "duration_s": 200}]))
     assert events_of(res, "FAILURE") == []
     assert res.kpis["processes"]["M"]["state_s"]["DOWN"] == pytest.approx(200)
+    assert events_of(res, "PLANNED_STOP", "PLANNED_STOP_END") == [
+        (at(1500), "PLANNED_STOP"), (at(1700), "PLANNED_STOP_END")]
+    start_payload = next(payload for _, subject, typ, payload in res.events
+                         if subject == "M" and typ == "PLANNED_STOP")
+    assert start_payload["ends_at"] == at(1700).isoformat()
 
 
 def test_injection_beyond_horizon_is_harmless():

@@ -8,13 +8,14 @@ import type { Json, Run } from '../../api/types'
 import { axisLine, axisTick, tooltipProps } from '../Charts'
 import { DeleteDialog } from '../DeleteAction'
 import { ScenarioTimeline } from '../scenario/ScenarioTimeline'
+import { DecisionJourney } from '../scenario/DecisionJourney'
 import { DataTable, type Column } from '../table/DataTable'
 import { DetailShell, type DetailVariant } from '../SidePeek'
 import { Card, EmptyState, ErrorBox, Notice, StatusChip, Tag } from '../ui'
 import { fmtDateTime, fmtDuration } from '../../lib/format'
 import { kpiP50 } from '../../lib/insights'
 import { scenarioRules } from '../../lib/rules'
-import { describeInjection, describeOverride, formatScenarioDuration } from '../../lib/scenarioView'
+import { FULL_DETAIL_MAX_HORIZON_S, describeInjection, describeOverride, formatScenarioDuration, scenarioWarmupSeconds, startStateLabel } from '../../lib/scenarioView'
 
 const kv = (label: string, value: string) => (
   <div key={label} className="flex justify-between gap-4 border-t border-line py-1.5 first:border-0">
@@ -55,8 +56,6 @@ function MetricTrend({ runs, metric, title, color, unit }: {
     </div>
   )
 }
-const START_STATE: Record<string, string> = { EMPTY: 'Nhà máy rỗng', WARMUP: 'Làm nóng rồi mới ghi', LIVE_SNAPSHOT: 'Từ ảnh chụp trực tiếp' }
-
 /** Chi tiết một scenario: thông số, lỗi đã tiêm, thay đổi nguồn lực, các lần chạy. Dùng ở trang riêng hoặc khung bên phải của danh sách scenario. */
 export function ScenarioDetail({ id, variant, onClose, onSwitch }: { id: number; variant: DetailVariant; onClose?: () => void; onSwitch?: (id: number) => void }) {
   const navigate = useNavigate()
@@ -84,6 +83,7 @@ export function ScenarioDetail({ id, variant, onClose, onSwitch }: { id: number;
   const latestDone = [...completedRuns].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0]
   const trendRuns = [...completedRuns].sort((a, b) => a.id - b.id)
   const timelineEvents = s.injections.map((i) => describeInjection(i))
+  const warmupS = scenarioWarmupSeconds(s.start_state, graph.data.settings)
   const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
   const runColumns: Column<Run>[] = [
     { key: 'id', header: 'Lần chạy', cell: (r) => <span className="font-medium text-text">#{r.id}</span>, sort: (r) => r.id },
@@ -123,19 +123,25 @@ export function ScenarioDetail({ id, variant, onClose, onSwitch }: { id: number;
       />
       {rules.banner && <Notice tone="lock">{rules.banner}</Notice>}
       {!published && <Notice tone="lock">Mô hình chưa Publish. Publish ở tab Sơ đồ trước khi chạy.</Notice>}
+      {s.horizon_s > FULL_DETAIL_MAX_HORIZON_S && (
+        <Notice>Scenario trên 12 giờ chỉ có KPI tổng hợp và forecast bands; backend không chạy Recommendation, sensor replay hoặc raw events.</Notice>
+      )}
       <ErrorBox error={start.error ?? clone.error} />
+      {variant !== 'peek' && <DecisionJourney active="setup" links={{ observe: latestDone ? `/runs/${latestDone.id}` : undefined, decide: latestDone ? `/runs/${latestDone.id}/recommendations` : undefined, report: latestDone ? `/runs/${latestDone.id}/report` : undefined }} />}
       <div className={`grid gap-4 ${variant === 'peek' ? 'grid-cols-1' : 'md:grid-cols-2 xl:grid-cols-4'}`}>
         <Card title="Thông số">
           <div className="text-xs">
             {kv('Thời lượng', formatScenarioDuration(s.horizon_s))}
+            {kv('Warm-up ngoài KPI', warmupS > 0 ? formatScenarioDuration(warmupS) : 'Không dùng')}
+            {kv('Tổng mỗi lần chạy', formatScenarioDuration(s.horizon_s + warmupS))}
             {kv('Số lần lặp', String(s.replications))}
-            {kv('Khởi đầu', START_STATE[s.start_state] ?? s.start_state)}
+            {kv('Khởi đầu', startStateLabel(s.start_state))}
             {kv('Hạt giống', s.seed === null ? 'ngẫu nhiên' : String(s.seed))}
           </div>
         </Card>
-        <Card title="Lỗi đã tiêm">
+        <Card title="Sự kiện đã thiết lập">
           {s.injections.length === 0 ? (
-            <p className="text-xs text-muted">Không tiêm lỗi nào.</p>
+            <p className="text-xs text-muted">Không có lỗi máy hoặc dừng có kế hoạch.</p>
           ) : (
             <div className="text-xs">
               {s.injections.map((i: Json, n) => {
@@ -179,7 +185,7 @@ export function ScenarioDetail({ id, variant, onClose, onSwitch }: { id: number;
         </Card>
       </div>
       <Card title="Timeline thiết lập">
-        <ScenarioTimeline horizonS={s.horizon_s} events={timelineEvents} startLabel={START_STATE[s.start_state] ?? s.start_state} />
+        <ScenarioTimeline horizonS={s.horizon_s} events={timelineEvents} startLabel={startStateLabel(s.start_state)} />
       </Card>
       <Card title="Xu hướng KPI qua các lần chạy">
         <div className="mb-3 text-xs text-muted">
@@ -210,6 +216,7 @@ export function ScenarioDetail({ id, variant, onClose, onSwitch }: { id: number;
               </div>
               <div className="flex gap-3">
                 <Link className="font-medium text-accent hover:underline" to={`/runs/${latestDone.id}`}>Mở Control Room</Link>
+                <Link className="font-medium text-accent hover:underline" to={`/runs/${latestDone.id}?story=1`}>Trình diễn có hướng dẫn</Link>
                 <Link className="font-medium text-accent hover:underline" to={`/runs/${latestDone.id}/report`}>Xem / lưu PDF</Link>
               </div>
             </div>

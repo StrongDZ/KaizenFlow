@@ -155,8 +155,9 @@ func (s *Store) CloneScenario(ctx context.Context, id int64) (int64, error) {
 	err := s.Pool.QueryRow(ctx, `INSERT INTO scenario (model_version_id, parent_id, origin, name, horizon, start_state,
 		overrides, injections, action, replications, seed)
 		SELECT model_version_id, NULL, 'USER', coalesce(nullif(name, ''), 'Scenario #' || id) || ' (bản sao)', horizon,
-			start_state, overrides, injections, NULL, replications, seed
-		FROM scenario WHERE id = $1 RETURNING id`, id).Scan(&newID)
+			start_state, overrides, injections, NULL, replications,
+			coalesce(seed, (SELECT r.id FROM sim_run r WHERE r.scenario_id = src.id ORDER BY r.id DESC LIMIT 1))
+		FROM scenario AS src WHERE src.id = $1 RETURNING id`, id).Scan(&newID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, ErrNotFound
 	}

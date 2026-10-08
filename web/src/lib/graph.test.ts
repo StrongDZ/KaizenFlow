@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Graph, NodeType } from '../api/types'
-import { defaultMaterial, edgeKey, fromFlow, makeNode, newNodeKey, outputMaterials, toFlow } from './graph'
+import { colorOfType, defaultMaterial, edgeKey, fromFlow, makeNode, newNodeKey, outputMaterials, prepareConnection, toFlow, type FlowNode } from './graph'
 
 const types: Record<string, NodeType> = {
   DOCK_IN: { id: 1, code: 'DOCK_IN', name: 'Cửa nhận hàng', archetype: 'SOURCE', param_schema: {}, default_params: {}, signals: [], failure_modes: [], ui: { color: '#111111' }, is_builtin: true },
@@ -21,7 +21,7 @@ describe('graph conversion', () => {
     const flow = toFlow(graph, types)
     expect(flow.nodes[0].position).toEqual({ x: 10, y: 20 })
     expect(flow.nodes[0].data.name).toBe('Cửa nhận hàng')
-    expect('color' in flow.nodes[0].data).toBe(false)
+    expect(flow.nodes[0].data.accent).toBe('#111111')
     expect(flow.nodes[1].position.x).toBeGreaterThan(0)
     expect(flow.edges[0].label).toBe('RAW-01 · TUG')
     const back = fromFlow(flow.nodes, flow.edges)
@@ -52,7 +52,14 @@ describe('graph conversion', () => {
   it('carries the type icon onto nodes loaded from a saved diagram', () => {
     const withIcon = { ...types, DOCK_IN: { ...types.DOCK_IN, ui: { icon: 'truck', color: '#111111' } } }
     expect(toFlow(graph, withIcon).nodes[0].data.icon).toBe('truck')
+    expect(toFlow(graph, withIcon).nodes[0].data.accent).toBe('#111111')
     expect(toFlow(graph, withIcon).nodes[1].data.icon).toBeUndefined()
+  })
+
+  it('uses only non-empty ui colors as node accents', () => {
+    expect(colorOfType(types.DOCK_IN)).toBe('#111111')
+    expect(colorOfType({ ...types.PACKING, ui: { color: '  ' } })).toBeUndefined()
+    expect(colorOfType(undefined)).toBeUndefined()
   })
 
   it('makes unique keys', () => {
@@ -98,5 +105,114 @@ describe('change detection', () => {
     expect(isEdit({ type: 'position', id: 'a', dragging: false })).toBe(false)
     expect(isEdit({ type: 'position', id: 'a', dragging: true, position: { x: 1, y: 2 } })).toBe(true)
     expect(isEdit({ type: 'remove', id: 'a' })).toBe(true)
+  })
+})
+
+const processNode = (id: string, params: Record<string, unknown> = {}): FlowNode => ({
+  id, type: 'kf', position: { x: 0, y: 0 },
+  data: { key: id, nodeType: 'PACKING', archetype: 'PROCESS', name: id, params },
+})
+
+describe('smart connection setup', () => {
+  it('prefers a material shared by both recipes and uses the destination BOM quantity as lot', () => {
+    const src = processNode('A', { recipes: [{ inputs: [], outputs: [{ material: 'PART', qty: 1 }, { material: 'SUB', qty: 1 }] }] })
+    const dst = processNode('B', { recipes: [{ inputs: [{ material: 'SUB', qty: 2 }], outputs: [{ material: 'BOX', qty: 1 }] }] })
+    const setup = prepareConnection([src, dst], [], 'A', 'B', ['PART', 'SUB', 'BOX'], types)
+    expect(setup.material).toBe('SUB')
+    expect(setup.params).toEqual({ lot: 2 })
+    expect(setup.needsReview).toBe(false)
+  })
+
+  it('fills an empty process input from the upstream output without overwriting its output', () => {
+    const src = processNode('A', { recipes: [{ inputs: [], outputs: [{ material: 'PART', qty: 1 }] }] })
+    const dst = processNode('B', { recipes: [{ inputs: [], outputs: [{ material: 'SUB', qty: 1 }] }] })
+    const setup = prepareConnection([src, dst], [], 'A', 'B', ['PART', 'SUB'], types)
+    const recipe = (setup.nodes.find((node) => node.id === 'B')!.data.params.recipes as { inputs: { material: string; qty: number }[]; outputs: { material: string }[] }[])[0]
+    expect(recipe.inputs).toEqual([{ material: 'PART', qty: 1 }])
+    expect(recipe.outputs[0].material).toBe('SUB')
+    expect(setup.note).toContain('thêm đầu vào PART ×1 mặc định cho B')
+  })
+
+  it('completes both blank process sides with one library material', () => {
+    const setup = prepareConnection([processNode('A'), processNode('B')], [], 'A', 'B', ['RAW-01'], types)
+    const a = setup.nodes.find((node) => node.id === 'A')!
+    const b = setup.nodes.find((node) => node.id === 'B')!
+    expect(outputMaterials(a, types)).toEqual(['RAW-01'])
+    expect((b.data.params.recipes as { inputs: { material: string }[] }[])[0].inputs[0].material).toBe('RAW-01')
+    expect(setup.needsReview).toBe(false)
+  })
+
+  it('preserves an existing conflicting BOM and tells the user what to review', () => {
+    const src = processNode('A', { recipes: [{ inputs: [], outputs: [{ material: 'PART', qty: 1 }] }] })
+    const dst = processNode('B', { recipes: [{ inputs: [{ material: 'SUB', qty: 1 }], outputs: [{ material: 'BOX', qty: 1 }] }] })
+    const setup = prepareConnection([src, dst], [], 'A', 'B', ['PART', 'SUB'], types)
+    expect(setup.material).toBe('PART')
+    expect(setup.nodes.find((node) => node.id === 'B')!.data.params).toEqual(dst.data.params)
+    expect(setup.needsReview).toBe(true)
+    expect(setup.note).toContain('B đang nhận SUB, không nhận PART')
+  })
+
+  it('adds an incoming material to storage tracking automatically', () => {
+    const src = processNode('A', { recipes: [{ inputs: [], outputs: [{ material: 'SUB', qty: 1 }] }] })
+    const store: FlowNode = {
+      id: 'WIP', type: 'kf', position: { x: 0, y: 0 },
+      data: { key: 'WIP', nodeType: 'RACK', archetype: 'STORAGE', name: 'Kho WIP', params: { stock: [{ material: 'PART', initial: 4 }] } },
+    }
+    const setup = prepareConnection([src, store], [], 'A', 'WIP', ['PART', 'SUB'], types)
+    expect(setup.nodes.find((node) => node.id === 'WIP')!.data.params.stock).toEqual([
+      { material: 'PART', initial: 4 }, { material: 'SUB', initial: 0 },
+    ])
+  })
+
+  it('configures an empty upstream storage from the destination recipe', () => {
+    const store: FlowNode = {
+      id: 'WIP', type: 'kf', position: { x: 0, y: 0 },
+      data: { key: 'WIP', nodeType: 'RACK', archetype: 'STORAGE', name: 'Kho WIP', params: {} },
+    }
+    const dst = processNode('B', { recipes: [{ inputs: [{ material: 'PART', qty: 2 }], outputs: [{ material: 'SUB', qty: 1 }] }] })
+    const setup = prepareConnection([store, dst], [], 'WIP', 'B', ['PART', 'SUB'], types)
+    expect(setup.material).toBe('PART')
+    expect(setup.params).toEqual({ lot: 2 })
+    expect(setup.nodes.find((node) => node.id === 'WIP')!.data.params.stock).toEqual([{ material: 'PART', initial: 0 }])
+  })
+
+  it('warns when the only possible material would duplicate an existing edge', () => {
+    const src = processNode('A', { recipes: [{ inputs: [], outputs: [{ material: 'PART', qty: 1 }] }] })
+    const dst = processNode('B', { recipes: [{ inputs: [{ material: 'PART', qty: 1 }], outputs: [{ material: 'SUB', qty: 1 }] }] })
+    const setup = prepareConnection([src, dst], [{ id: 'A>B', source: 'A', target: 'B', data: { material: 'PART', params: {} } }], 'A', 'B', ['PART'], types)
+    expect(setup.material).toBe('PART')
+    expect(setup.needsReview).toBe(true)
+    expect(setup.note).toContain('đường nối trùng')
+  })
+
+  it('does not ask for demand when connecting to a non-throughput scrap sink', () => {
+    const src = processNode('QC', { recipes: [{ inputs: [], outputs: [{ material: 'NG', qty: 1, port: 'NG' }] }] })
+    const scrap: FlowNode = {
+      id: 'SCRAP', type: 'kf', position: { x: 0, y: 0 },
+      data: { key: 'SCRAP', nodeType: 'SCRAP', archetype: 'SINK', name: 'Phế phẩm', params: { throughput: false } },
+    }
+    const setup = prepareConnection([src, scrap], [], 'QC', 'SCRAP', ['NG'], types)
+    expect(setup.needsReview).toBe(false)
+    expect(setup.note).toContain('Tham số hai đầu đã khớp')
+  })
+
+  it('builds PART to SUB for a blank assembly connected between configured neighbours', () => {
+    const wip: FlowNode = {
+      id: 'WIP', type: 'kf', position: { x: 0, y: 0 },
+      data: { key: 'WIP', nodeType: 'RACK', archetype: 'STORAGE', name: 'Kho WIP', params: { stock: [{ material: 'PART', initial: 10 }] } },
+    }
+    const assy = processNode('ASSY')
+    const qc = processNode('QC', { recipes: [{ inputs: [{ material: 'SUB', qty: 1 }], outputs: [{ material: 'SUB_OK', qty: 1 }] }] })
+    const incoming = prepareConnection([wip, assy, qc], [], 'WIP', 'ASSY', ['PART', 'SUB'], types)
+    const outgoing = prepareConnection(incoming.nodes, [
+      { id: 'WIP>ASSY', source: 'WIP', target: 'ASSY', data: { material: incoming.material, params: incoming.params } },
+    ], 'ASSY', 'QC', ['PART', 'SUB'], types)
+    const recipe = (outgoing.nodes.find((node) => node.id === 'ASSY')!.data.params.recipes as {
+      inputs: { material: string; qty: number }[]; outputs: { material: string; qty: number; port: string }[]
+    }[])[0]
+    expect(recipe).toEqual({
+      inputs: [{ material: 'PART', qty: 1 }],
+      outputs: [{ material: 'SUB', qty: 1, port: 'OK' }],
+    })
   })
 })

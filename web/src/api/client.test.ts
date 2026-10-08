@@ -54,6 +54,15 @@ describe('api client', () => {
     expect(fn).toHaveBeenCalledWith(`${API_BASE}/api/insights?kind=RED_RISK&limit=5`, expect.anything())
   })
 
+  it('sends a safe recommendation adjustment when the operator edits capacity', async () => {
+    const fn = mockFetch(202, { run_id: 42 })
+    await expect(api.applyInsight(9, 2, { to_slots: 4 })).resolves.toEqual({ run_id: 42 })
+    expect(fn).toHaveBeenCalledWith(`${API_BASE}/api/insights/9/apply`, expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ rank: 2, adjustment: { to_slots: 4 } }),
+    }))
+  })
+
   it('keeps impact and locked flags from 409 bodies', async () => {
     mockFetch(409, { error: 'has dependents', impact: { scenarios: 3, runs: 12 } })
     const impact = (await api.deleteScenario(1, false).catch((e: unknown) => e)) as ApiError

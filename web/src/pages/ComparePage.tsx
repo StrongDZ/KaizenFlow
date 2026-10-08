@@ -1,13 +1,16 @@
 import { useQueries, useQuery } from '@tanstack/react-query'
+import { CheckCircle2, Download, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
 import { axisLine, axisTick, fmtTime, tooltipProps } from '../components/Charts'
-import { Card, Loading } from '../components/ui'
-import { kpiP50 } from '../lib/insights'
+import { DecisionJourney } from '../components/scenario/DecisionJourney'
+import { Card, Loading, Notice, btn } from '../components/ui'
+import { describeAction, kpiP50, type Action } from '../lib/insights'
 import { byCode, thresholdsFor } from '../lib/model'
 import { clip, indexBands, NO_USE_COVERAGE, series } from '../lib/replay'
+import { comparisonSummarySvg } from '../lib/scenarioExperience'
 
 const KPIS: [string, string, boolean][] = [
   ['throughput', 'Sản lượng xuất', true], ['red_minutes', 'Tổng phút Đỏ', false], ['backorder_end', 'Nợ đơn cuối kỳ', false],
@@ -56,6 +59,14 @@ export default function ComparePage() {
   const scenarioRows = scenarios.map((s) => s.data!)
   const nodeTypes = byCode(types.data)
   const baseline = runRows[0]
+  const effectiveSeeds = runRows.map((run, index) => scenarioRows[index].seed ?? run.id)
+  const comparisonIssues: string[] = []
+  if (effectiveSeeds.some((seed) => seed !== effectiveSeeds[0])) comparisonIssues.push(`seed hiệu lực khác nhau (${effectiveSeeds.join(', ')})`)
+  if (scenarioRows.some((scenario) => scenario.horizon_s !== scenarioRows[0].horizon_s)) comparisonIssues.push('horizon khác nhau')
+  if (scenarioRows.some((scenario) => scenario.replications !== scenarioRows[0].replications)) comparisonIssues.push('số lần lặp khác nhau')
+  if (scenarioRows.some((scenario) => scenario.start_state !== scenarioRows[0].start_state)) comparisonIssues.push('trạng thái khởi đầu khác nhau')
+  if (scenarioRows.some((scenario) => scenario.model_version_id !== scenarioRows[0].model_version_id)) comparisonIssues.push('phiên bản mô hình khác nhau')
+  if (runRows.some((run) => run.sim_start !== runRows[0].sim_start)) comparisonIssues.push('mốc bắt đầu mô phỏng khác nhau')
   const bandIndexes = bands.map((x) => indexBands(x.data!))
   const subjects = [...bandIndexes[0].keys()]
   const subject = focus || baseline.insights.find((i) => i.kind === 'RED_RISK')?.subject_key || subjects[0] || ''
@@ -83,11 +94,66 @@ export default function ComparePage() {
     })
     return row
   })
+  const candidate = runRows[1]
+  const candidateScenario = scenarioRows[1]
+  const verdictMetrics = KPIS.map(([key, label, higherBetter]) => {
+    const before = kpiP50(baseline.kpis, key) ?? 0
+    const after = kpiP50(candidate.kpis, key) ?? 0
+    return { key, label, higherBetter, before, after, delta: after - before }
+  })
+  const improved = verdictMetrics.filter((metric) => metric.delta !== 0 && (metric.higherBetter ? metric.delta > 0 : metric.delta < 0)).length
+  const worsened = verdictMetrics.filter((metric) => metric.delta !== 0 && (metric.higherBetter ? metric.delta < 0 : metric.delta > 0)).length
+  const verdictGood = comparisonIssues.length === 0 && improved > 0 && worsened === 0
+  const action = candidateScenario.action ? candidateScenario.action as unknown as Action : undefined
+  const exportImage = () => {
+    const svg = comparisonSummarySvg({
+      baselineId: baseline.id,
+      candidateId: candidate.id,
+      candidateName: action ? describeAction(action) : candidateScenario.name,
+      metrics: verdictMetrics.map((metric) => ({ label: metric.label, before: metric.before, after: metric.after })),
+    })
+    const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `kaizenflow-run-${baseline.id}-vs-${candidate.id}.svg`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-6">
-      <h1 className="text-lg font-semibold">
-        So sánh nhiều phương án: Run #{baseline.id} làm gốc, {runRows.slice(1).map((r) => `#${r.id}`).join(', ')} là phương án thử
-      </h1>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-lg font-semibold">Kiểm chứng trước và sau</h1>
+          <p className="text-xs text-muted">Run #{baseline.id} làm gốc, {runRows.slice(1).map((r) => `#${r.id}`).join(', ')} là phương án thử</p>
+        </div>
+        <button type="button" className={btn} onClick={exportImage}><Download size={13} /> Tải ảnh tóm tắt</button>
+      </div>
+      <DecisionJourney active="validate" links={{ observe: `/runs/${candidate.id}`, decide: `/runs/${baseline.id}/recommendations`, report: `/runs/${candidate.id}/report` }} />
+      <section className={`overflow-hidden rounded-xl border ${verdictGood ? 'border-ok/55 bg-ok/5' : 'border-warn/55 bg-warn/5'}`}>
+        <div className="flex flex-wrap items-start gap-3 p-4">
+          <span className={`flex h-10 w-10 flex-none items-center justify-center rounded-xl ${verdictGood ? 'bg-ok/15 text-ok' : 'bg-warn/15 text-warn'}`}>
+            {verdictGood ? <CheckCircle2 size={21} /> : <TriangleAlert size={21} />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-bold uppercase tracking-wide text-muted">Kết luận kiểm chứng</div>
+            <h2 className="mt-0.5 text-sm font-semibold text-text">{verdictGood ? 'Phương án cải thiện KPI chính mà không tạo đánh đổi đo được' : worsened > 0 ? 'Phương án có đánh đổi — cần kỹ sư xác nhận trước khi áp dụng thật' : 'Chưa đủ bằng chứng để kết luận phương án tốt hơn'}</h2>
+            <p className="mt-1 text-[11px] text-text-2">{action ? describeAction(action) : candidateScenario.name} · {improved} KPI tốt hơn, {worsened} KPI xấu hơn.</p>
+          </div>
+        </div>
+        <div className="grid border-t border-line sm:grid-cols-3">
+          {verdictMetrics.map((metric) => {
+            const good = metric.delta !== 0 && (metric.higherBetter ? metric.delta > 0 : metric.delta < 0)
+            const bad = metric.delta !== 0 && !good
+            return <div key={metric.key} className="border-t border-line px-4 py-3 first:border-t-0 sm:border-l sm:border-t-0 sm:first:border-l-0"><div className="text-[10px] text-muted">{metric.label}</div><div className="mt-1 text-xs text-text"><span className="text-muted">{metric.before.toFixed(1)}</span> → <b>{metric.after.toFixed(1)}</b> <span className={`ml-1 ${good ? 'text-ok' : bad ? 'text-bad-text' : 'text-muted'}`}>({metric.delta >= 0 ? '+' : ''}{metric.delta.toFixed(1)})</span></div></div>
+          })}
+        </div>
+      </section>
+      {comparisonIssues.length > 0 ? (
+        <Notice tone="lock">So sánh chưa hoàn toàn cùng điều kiện: {comparisonIssues.join('; ')}. Chênh lệch có thể đến từ cấu hình hoặc ngẫu nhiên, không chỉ từ action.</Notice>
+      ) : (
+        <Notice>Các run dùng cùng seed {effectiveSeeds[0]}, phiên bản mô hình, mốc bắt đầu, horizon, số lần lặp và trạng thái khởi đầu; chênh lệch phù hợp để quy cho thay đổi phương án.</Notice>
+      )}
       <Card title="Chỉ số (trung vị)">
         <div className="mb-3 rounded-lg border border-line bg-panel-2 px-3 py-2 text-xs text-text-2">
           Ngoài KPI mô phỏng gốc, bảng này có thêm `Giờ thiếu hàng` và `Giờ tồn dư`. Đây là tổng thời lượng cộng trên toàn bộ các kho storage, suy ra từ `coverage_h`: dưới ngưỡng đỏ là thiếu hàng, trên ngưỡng `yellow_high` là tồn dư.

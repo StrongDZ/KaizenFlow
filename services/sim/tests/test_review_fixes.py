@@ -21,6 +21,15 @@ def test_crn_fleet_change_does_not_shift_exogenous_randomness():
     assert _events(a, "STAMP_3", "FAULT_ONSET") == _events(b, "STAMP_3", "FAULT_ONSET")
 
 
+def test_override_can_update_stock_entry_inside_list():
+    req = load_request("denso_mini")
+    changed = apply_overrides(req, [{"target": "FG", "path": "/stock/0/initial", "value": 17}])
+    fg = next(node for node in changed.nodes if node.key == "FG")
+    assert fg.params["stock"][0]["initial"] == 17
+    original = next(node for node in req.nodes if node.key == "FG")
+    assert original.params["stock"][0]["initial"] == 6
+
+
 # --- C2: overlapping down reasons -------------------------------------------
 FM = {"code": "bearing", "p_to_f": {"dist": "const", "value": 1000},
       "on_fail": {"mttr": {"dist": "const", "value": 500}}}
