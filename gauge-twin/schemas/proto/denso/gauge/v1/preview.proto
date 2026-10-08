@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package denso.gauge.v1;
+
+option go_package = "gauge-twin/gen/go/denso/gauge/v1;gaugev1";
+
+// Live view of a machine, on request. The edge sends numbers; an image only
+// travels while somebody watches, is never buffered on the edge and never
+// stored by the server.
+
+// PreviewRequest is published by the server on
+// denso/{plant}/{line}/{machine}/watch while a user looks at the machine. The
+// edge then publishes a Preview per frame for `seconds`; the request is
+// repeated to keep the view alive.
+message PreviewRequest {
+  uint32 seconds = 1;
+}
+
+// Preview is published by the edge on denso/{plant}/{line}/{machine}/preview,
+// not retained: one frame of one camera of the machine together with what was
+// read on that very frame, so image and numbers always agree.
+message Preview {
+  string machine_id = 1;
+  // camera_id of the config; empty for the default camera.
+  string camera_id = 2;
+  int64 frame_ts_ms = 3;
+  bytes jpeg = 4;
+  // Size of the original frame; roi coordinates are in these pixels.
+  uint32 frame_width = 5;
+  uint32 frame_height = 6;
+  repeated PreviewReading readings = 7;
+}
+
+// PreviewReading is one gauge read on the frame of the Preview (a single
+// frame, not a window).
+message PreviewReading {
+  string gauge_id = 1;
+  // Absent when the gauge could not be read on this frame.
+  optional double value = 2;
+  double confidence = 3;
+}

@@ -52,7 +52,7 @@ service luôn gọi nhau bằng tên: `emqx:1883`, `redpanda:9092`, `timescaledb
 | `make sim-up` / `make sim-down` | Phát lặp các video trong `data/sim/` thành luồng RTSP |
 | `make edge-sim ARGS="..."` | Giả lập N edge-agent bắn tải MQTT (cần `make up`) |
 | `make test-integration` | Test tích hợp với EMQX, Redpanda, TimescaleDB, Redis thật (cần `make up && make migrate`) |
-| `make server-up` / `make server-down` | Chạy các service server: mqtt-bridge ×2, config-api ×2, ingest ×2, state |
+| `make server-up` / `make server-down` | Chạy các service server: mqtt-bridge ×2, config-api ×2, ingest ×2, state, query-api |
 | `make seed-configs MACHINES=200` | Đăng ký config cho các máy mà edge-sim giả lập vào config-api |
 | `make seqcheck` | Đối chiếu log seq của edge-sim với DB: mất, trùng, reject, flag |
 | `make edge-up` / `make edge-down` | Chạy một edge giả lập: `ds-sim` + edge-agent |
@@ -142,7 +142,7 @@ make seqcheck                # mọi bản tin broker đã xác nhận phải c�
 ```
 
 Luồng: edge → EMQX → **mqtt-bridge** → Kafka → **ingest** → TimescaleDB + Redis; **state** theo dõi
-edge; **config-api** quản lý config trạm. Dashboard Grafana: "gauge-twin: server pipeline".
+edge; **config-api** quản lý config trạm; **query-api** cho giao diện đọc dữ liệu. Dashboard Grafana: "gauge-twin: server pipeline".
 
 | Service | Việc làm | Điểm cần biết |
 | --- | --- | --- |
@@ -150,6 +150,7 @@ edge; **config-api** quản lý config trạm. Dashboard Grafana: "gauge-twin: s
 | config-api | REST `GET/PUT/DELETE /v1/stations/{machine_id}` (cổng 8090, 8091) | Server tự tăng `config_version`; publish retained lên MQTT, tự thử lại khi broker sập |
 | ingest | Kafka → `gauge_reading`, Redis `latest:*`, `hourmeter:*` | Commit offset sau khi ghi DB; ghi idempotent. Vi phạm ràng buộc thì vẫn ghi, gắn flag và hạ quality xuống tối đa 0,3 |
 | state | Topic status → `edge_node`, Redis; theo dõi seq theo edge | Seq thiếu chỉ tính là mất sau 10 phút khi edge online và buffer đã rỗng |
+| query-api | REST chỉ đọc cho màn giám sát trực tiếp (cổng 8092): trạm, giá trị mới nhất, xu hướng, một khung hình camera | Chỉ đọc PostgreSQL; mọi truy vấn sắp theo `ts`. Trạng thái `ok`/`poor`/`alarm`/`stale` của từng đồng hồ do service tính, xem `server/query-api/README.md` |
 
 Xử lý lỗi của ingest:
 
@@ -163,6 +164,24 @@ Xử lý lỗi của ingest:
 EMQX được đặt `max_inflight`, `max_mqueue_len` và `force_shutdown.max_heap_size` lớn hơn mặc định
 (xem `infra/compose/dev.yml`). Với mặc định, EMQX bỏ bản tin QoS 1 khi hàng đợi của subscriber đầy mà
 publisher không hề biết.
+## Danh mục camera
+
+Camera là tài nguyên riêng, không thuộc máy nào: khai một lần rồi đồng hồ của máy nào cũng có thể trỏ tới bằng
+`camera_id`. Một camera đọc được đồng hồ của nhiều máy và một máy có thể cần nhiều camera.
+
+| Route (config-api) | Việc làm |
+| --- | --- |
+| `GET /v1/cameras` | Danh sách camera, mỗi camera kèm các máy đang có đồng hồ trên nó |
+| `PUT /v1/cameras/{camera_id}` | Tạo hoặc sửa (`name`, `location`, `url`, `sample_fps`). Đổi `url` hay `sample_fps` thì mọi máy dùng camera đó nhận config phiên bản mới |
+| `DELETE /v1/cameras/{camera_id}` | 409 khi còn đồng hồ nằm trên camera |
+| `POST /v1/commissioning/frame` | Nhận thêm `camera_id` để lấy một khung hình của camera trong danh mục |
+
+Khi lưu config của máy, config-api chép `url` và `sample_fps` của các camera mà đồng hồ trỏ tới vào `cameras` của
+config đó. Config phát xuống edge vì thế tự đủ, edge không cần đọc danh mục. Giao diện khai báo theo camera nằm ở
+web KaizenFlow (mục Đồng hồ → Camera và khai báo); nó gọi config-api từ origin đặt trong `CORS_ALLOWED_ORIGIN`
+(compose: `CONFIG_API_CORS_ORIGIN`, mặc định `http://localhost:5173`). Không đặt biến này thì config-api không
+trả lời trang từ origin khác.
+
 ## Commissioning và nghiệm thu trạm
 
 Trang <http://localhost:8090/commissioning/> (config-api; `?machine=<id>` mở thẳng một trạm): lấy frame từ camera,
@@ -214,8 +233,15 @@ flag) → SQLite → MQTT.
   `cmd/resend`. Giới hạn 500 MB thắng thời gian giữ: đầy thì xóa bản đã PUBACK cũ nhất trước.
 - **Resend**: server publish `ResendRequest` lên `denso/{plant}/edge/{edge_id}/cmd/resend`; edge gửi
   lại với `replayed = true` và trả `ResendAck` (số đã gửi, khoảng seq không còn).
-- **Watchdog**: camera im lặng quá `STALE_AFTER` (30 s) thì báo `FLAG_STALE` và gửi lệnh `RESTART`
-  cho pipeline (tối đa một lần mỗi phút). Trước frame đầu tiên áp dụng `STARTUP_GRACE` (2 phút), vì
+- **Nhiều camera**: một máy có thể khai thêm camera trong `cameras` và gán từng đồng hồ bằng `camera_id`;
+  một camera cũng có thể nằm trong config của nhiều máy (cùng `url`), khi đó `ds-sim` mở luồng một lần và
+  đọc đồng hồ của mọi máy trên cùng khung hình. Chi tiết ở SPEC mục 3.1.
+- **Xem trực tiếp**: bình thường edge chỉ gửi số. Khi có người mở trang một máy, query-api publish `watch`
+  và edge-agent bảo pipeline đính ảnh thu nhỏ (rộng tối đa 960 px) vào khung hình của các camera của máy đó;
+  mỗi khung được publish lên `preview` cùng số đọc trên chính khung đó, nên ảnh và số luôn khớp. Hết người xem
+  thì sau tối đa 60 giây edge ngừng gửi ảnh. Ảnh không được lưu ở đâu.
+- **Watchdog**: camera im lặng quá `STALE_AFTER` (30 s) thì các đồng hồ của camera đó báo `FLAG_STALE` (đồng hồ
+  trên camera khác của cùng máy vẫn có số) và pipeline nhận lệnh `RESTART` (tối đa một lần mỗi phút). Trước frame đầu tiên áp dụng `STARTUP_GRACE` (2 phút), vì
   mở luồng camera mất thời gian.
 - **Tiền xử lý**: `ds-sim` đọc `<model>.preprocess.json` cạnh file ONNX, không tự đặt thông số.
 - **Ngưỡng giải mã** (`DECODE_*`) là giá trị tạm, sẽ hiệu chỉnh ở GD5.
@@ -313,6 +339,19 @@ Trên server GPU dùng cùng lệnh, thêm `TORCH_VARIANT=cu121 DEVICE=cuda ML_D
   make time-displays ARGS="--limit 30 --audit 30"   # chạy thử, xem report.json và audit.html
   make time-displays ARGS="--audit 50"              # phần còn lại (ảnh đã gán nhãn được bỏ qua)
   ```
+
+  **Thêm ô LED giả lập vào dữ liệu thật.** Dữ liệu thật có ít màn hình LED (phần lớn ô `seg7` là LCD), nên
+  `gauge_ml.dataset.led_slots` sinh ô LED 7 đoạn như camera thấy ở xưởng (đoạn tắt vẫn lộ, LED cháy trắng có quầng
+  màu, chữ số bên cạnh lấn vào, ô cắt lệch) và trộn vào tập train/val; tập test giữ nguyên là ảnh thật.
+
+  ```bash
+  python -m gauge_ml.dataset.led_slots --real data/ml-real --out data/ml-led-mix --train 15000 --val 1500   # trong image ml
+  make train-digit ML_DATA=data/ml-led-mix ML_RUNS=data/ml-runs/led-mix
+  ```
+
+  Đo ngày 2026-10-08, exact-match cả màn hình trên `eval-public`, so với cùng cách train chỉ bằng ảnh thật:
+  `seg7-industrial` 26,2% → 33,8% (15.000 ô) hoặc 36,7% (60.000 ô); `trodo` 96,0% → 95,1% hoặc 94,2% (phần giảm
+  nằm ở số lăn); các bộ còn lại lệch dưới 1 điểm. Càng nhiều ô giả lập thì LED càng tốt và số lăn càng giảm.
 
   Chưa có loader (phải tải tay qua trình duyệt hoặc xin phép): SCUT-WMN, WMeter5K (OneDrive), đồng hồ nước
   word-wheel (Dryad, CC0), Copel-AMR/UFPR-AMR/UFPR-ADMR (đơn license có chữ ký tổ chức), các bộ Roboflow cần API

@@ -6,7 +6,7 @@ set -euo pipefail
 
 : "${DATABASE_URL:?DATABASE_URL is required}"
 MIGRATIONS="$(cd "$(dirname "$0")/../sql" && pwd)"
-LATEST=7
+LATEST=9
 
 m() { migrate -path "$MIGRATIONS" -database "$DATABASE_URL" "$@"; }
 q() { psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qAt -c "$1"; }
@@ -30,16 +30,20 @@ expect "schema not dirty" "f" "$(q 'SELECT dirty FROM schema_migrations')"
 expect "hypertables" "gauge_reading" \
   "$(q "SELECT string_agg(hypertable_name, ',' ORDER BY hypertable_name)
         FROM timescaledb_information.hypertables WHERE hypertable_schema = 'public'")"
-expect "auxiliary tables" "edge_node,machine,rejected_reading,station_config" \
+expect "auxiliary tables" "camera,edge_node,machine,rejected_reading,station_config" \
   "$(q "SELECT string_agg(tablename, ',' ORDER BY tablename) FROM pg_tables
-        WHERE schemaname = 'public' AND tablename IN ('machine', 'gauge', 'edge_node', 'station_config', 'rejected_reading')")"
+        WHERE schemaname = 'public' AND tablename IN ('machine', 'gauge', 'edge_node', 'station_config', 'rejected_reading', 'camera')")"
 expect "background policies" \
-  "gauge_reading:policy_compression,policy_refresh_continuous_aggregate" \
+  "gauge_reading:policy_compression,policy_refresh_continuous_aggregate,gauge_reading:policy_retention" \
   "$(q "SELECT string_agg(concat_ws(':', h.hypertable_name, j.proc_name), ',' ORDER BY j.proc_name)
         FROM timescaledb_information.jobs j
         LEFT JOIN timescaledb_information.hypertables h
                ON h.hypertable_schema = j.hypertable_schema AND h.hypertable_name = j.hypertable_name
-        WHERE j.proc_name IN ('policy_compression', 'policy_retention', 'policy_refresh_continuous_aggregate')")"
+        WHERE j.proc_name IN ('policy_compression', 'policy_retention', 'policy_refresh_continuous_aggregate')
+          AND (j.proc_name <> 'policy_retention' OR j.hypertable_schema = 'public')")"
+expect "retention periods (readings, one-minute aggregate)" "30 days,2 years" \
+  "$(q "SELECT string_agg(config ->> 'drop_after', ',' ORDER BY (config ->> 'drop_after')::interval)
+        FROM timescaledb_information.jobs WHERE proc_name = 'policy_retention'")"
 
 echo "== idempotent insert"
 INSERT="INSERT INTO gauge_reading (ts, machine_id, gauge_id, value, v_min, v_max, n_frames, quality, flags, edge_id, seq)

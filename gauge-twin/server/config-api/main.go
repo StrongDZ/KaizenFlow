@@ -66,6 +66,8 @@ func run() int {
 	prefix := env.String("MQTT_TOPIC_PREFIX", topics.DefaultPrefix)
 	publisher := NewPublisher(store, broker, prefix, interval, registry, logger)
 	api := NewAPI(store, broker, publisher, prefix, registry, logger)
+	cameras := NewPgCameraStore(pool)
+	api.cameras = cameras
 
 	health := func() error {
 		pingCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -78,13 +80,17 @@ func run() int {
 	mux := http.NewServeMux()
 	mux.Handle("/", httpserver.Handler(registry, health))
 	api.Register(mux)
+	NewCameras(cameras, store, publisher, api).Register(mux)
 	commissioning := NewCommissioning(store, env.String("PREVIEW_URL", "http://preview-svc:8080"))
+	commissioning.cameras = cameras
 	commissioning.Register(mux)
 	NewAcceptance(commissioning, NewDirSampleStore(env.String("ACCEPTANCE_DIR", "/acceptance")), rules).Register(mux)
 
 	go publisher.Run(ctx)
 	logger.Info("starting")
-	if err := httpserver.Serve(ctx, env.String("HTTP_ADDR", ":8080"), mux, logger); err != nil {
+	// The origin of the web UI that edits cameras and configs, if any.
+	handler := withCORS(env.String("CORS_ALLOWED_ORIGIN", ""), mux)
+	if err := httpserver.Serve(ctx, env.String("HTTP_ADDR", ":8080"), handler, logger); err != nil {
 		logger.Error("http server", "error", err)
 		return 1
 	}

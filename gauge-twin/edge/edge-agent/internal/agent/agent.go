@@ -36,7 +36,22 @@ type Pipeline interface {
 	Do(ctx context.Context, cmd *gaugev1.Command) (*gaugev1.CommandReply, error)
 }
 
-// machine is the per-camera state.
+// camera is what a machine knows about one of the streams its gauges are on.
+type camera struct {
+	lastFrame time.Time
+	// seenFrame is false until the pipeline delivered a frame since the last
+	// config activation or pipeline restart; until then the longer startup
+	// grace applies (opening a camera stream takes a while).
+	seenFrame bool
+	stale     bool
+	// id is the camera_id of the config, empty for the default camera.
+	id string
+	// previewUntil: somebody watches this machine until then, and the frames
+	// of this camera are published as previews.
+	previewUntil time.Time
+}
+
+// machine is the per-machine state.
 type machine struct {
 	ref MachineRef
 
@@ -53,12 +68,10 @@ type machine struct {
 	haveWindow bool
 	window     int64 // index of the open window: frame_ts_ms / windowMs
 	lastEndMs  int64 // end of the last emitted window
-	lastFrame  time.Time
-	// seenFrame is false until the pipeline delivered a frame since the last
-	// config activation or pipeline restart; until then the longer startup
-	// grace applies (opening a camera stream takes a while).
-	seenFrame bool
-	stale     bool
+	// cameras holds the streams the gauges of the active config are read
+	// from, by url. A camera can serve several machines, and a machine can
+	// need several cameras.
+	cameras map[string]*camera
 }
 
 type inbound struct {
@@ -94,6 +107,8 @@ type Agent struct {
 	rng       *rand.Rand
 
 	machines map[string]*machine
+	// byCamera lists the machines with a gauge on each camera url.
+	byCamera map[string][]*machine
 	frames   <-chan *gaugev1.FrameResult
 	inbox    chan inbound
 	commands chan commandResult
@@ -125,6 +140,7 @@ func New(cfg Config, tr Transport, pipeline Pipeline, st *store.Store, frames <-
 		logger:   logger.With("edge_id", cfg.EdgeID),
 		rng:      rand.New(rand.NewSource(time.Now().UnixNano())),
 		machines: map[string]*machine{},
+		byCamera: map[string][]*machine{},
 		frames:   frames,
 		inbox:    make(chan inbound, inboxSize),
 		commands: make(chan commandResult, commandResultSize),
@@ -146,7 +162,6 @@ func (a *Agent) Run(ctx context.Context) {
 	now := time.Now()
 	a.lastStatus = now
 	for _, m := range a.machines {
-		m.lastFrame = now
 		a.loadStoredConfig(m)
 	}
 
@@ -215,36 +230,58 @@ func (a *Agent) Run(ctx context.Context) {
 func (a *Agent) handleFrame(frame *gaugev1.FrameResult) {
 	a.metrics.Frames.Inc()
 	a.framesSinceStatus++
-	m, ok := a.machines[frame.GetCameraId()]
-	if !ok {
+	// A frame belongs to a camera and carries the ROIs of every machine with
+	// a gauge on it. A pipeline that still works per machine names the
+	// machine instead and leaves the ROIs untagged.
+	targets, legacy := a.byCamera[frame.GetCameraId()], false
+	if len(targets) == 0 {
+		if m, ok := a.machines[frame.GetCameraId()]; ok {
+			targets, legacy = []*machine{m}, true
+		}
+	}
+	if len(targets) == 0 {
 		a.metrics.FramesDropped.WithLabelValues("unknown_camera").Inc()
 		return
 	}
-	m.lastFrame, m.seenFrame = time.Now(), true
-	if m.stale {
-		m.stale = false
-		a.metrics.PipelineStale.Dec()
-		a.logger.Info("pipeline is producing frames again", "machine_id", m.ref.Machine)
-	}
-	if m.active == nil {
-		a.metrics.FramesDropped.WithLabelValues("no_config").Inc()
-		return
-	}
-	// Windows follow the frame timestamps, never the local clock.
-	index := frame.GetFrameTsMs() / m.windowMs
-	switch {
-	case !m.haveWindow:
-		m.haveWindow, m.window = true, index
-	case index < m.window:
-		a.metrics.FramesDropped.WithLabelValues("late").Inc()
-		return
-	case index > m.window:
-		a.closeWindow(m, (m.window+1)*m.windowMs, false)
-		m.window = index
-	}
-	for _, roi := range frame.GetRois() {
-		if agg, ok := m.byGauge[roi.GetGaugeId()]; ok {
-			agg.Add(agg.Gauge.Read(frame.GetFrameTsMs(), roi, a.cfg.Decode))
+	now := time.Now()
+	for _, m := range targets {
+		for url, cam := range m.cameras {
+			if !legacy && url != frame.GetCameraId() {
+				continue
+			}
+			cam.lastFrame, cam.seenFrame = now, true
+			if cam.stale {
+				cam.stale = false
+				a.metrics.PipelineStale.Dec()
+				a.logger.Info("camera is producing frames again", "machine_id", m.ref.Machine, "camera", url)
+			}
+		}
+		if m.active == nil {
+			a.metrics.FramesDropped.WithLabelValues("no_config").Inc()
+			continue
+		}
+		if len(frame.GetPreviewJpeg()) > 0 && !legacy {
+			a.publishPreview(m, frame, now)
+		}
+		// Windows follow the frame timestamps, never the local clock.
+		index := frame.GetFrameTsMs() / m.windowMs
+		switch {
+		case !m.haveWindow:
+			m.haveWindow, m.window = true, index
+		case index < m.window:
+			a.metrics.FramesDropped.WithLabelValues("late").Inc()
+			continue
+		case index > m.window:
+			a.closeWindow(m, (m.window+1)*m.windowMs, false)
+			m.window = index
+		}
+		for _, roi := range frame.GetRois() {
+			if roi.GetMachineId() != m.ref.Machine && !(legacy && roi.GetMachineId() == "") {
+				continue
+			}
+			if agg, ok := m.byGauge[roi.GetGaugeId()]; ok {
+				agg.Add(agg.Gauge.Read(frame.GetFrameTsMs(), roi, a.cfg.Decode))
+			}
 		}
 	}
 }
@@ -304,22 +341,38 @@ func modelVersion(cfg *gaugev1.StationConfig) string {
 	return strings.Join(parts, ",")
 }
 
-// watchdog reacts to a silent pipeline: the affected machine reports
-// FLAG_STALE measurements and the pipeline is told to restart.
+// watchdog reacts to a silent camera: its gauges report FLAG_STALE and the
+// pipeline is told to restart.
 func (a *Agent) watchdog(now time.Time) {
 	restart := false
 	for _, m := range a.machines {
-		limit := a.cfg.StaleAfter
-		if !m.seenFrame {
-			limit = a.cfg.StartupGrace
-		}
-		if m.active == nil || now.Sub(m.lastFrame) < limit {
+		if m.active == nil {
 			continue
 		}
-		if !m.stale {
-			m.stale = true
-			a.metrics.PipelineStale.Inc()
-			a.logger.Warn("pipeline produced no frame", "machine_id", m.ref.Machine, "for", now.Sub(m.lastFrame).String())
+		silent := 0
+		for url, cam := range m.cameras {
+			limit := a.cfg.StaleAfter
+			if !cam.seenFrame {
+				limit = a.cfg.StartupGrace
+			}
+			if now.Sub(cam.lastFrame) < limit {
+				continue
+			}
+			silent++
+			if !cam.stale {
+				cam.stale = true
+				a.metrics.PipelineStale.Inc()
+				a.logger.Warn("pipeline produced no frame", "machine_id", m.ref.Machine, "camera", url, "for", now.Sub(cam.lastFrame).String())
+			}
+		}
+		if silent == 0 {
+			continue
+		}
+		restart = true
+		if silent < len(m.cameras) {
+			// The other cameras keep the windows of this machine moving; a
+			// gauge without a reading in a window reports FLAG_STALE itself.
+			continue
 		}
 		// Frames received before the silence belong to their own window.
 		if m.haveWindow {
@@ -331,14 +384,15 @@ func (a *Agent) watchdog(now time.Time) {
 		if endMs-m.lastEndMs >= a.cfg.StaleAfter.Milliseconds() || m.lastEndMs == 0 {
 			a.closeWindow(m, endMs, true)
 		}
-		restart = true
 	}
 	// RESTART restarts the whole pipeline, so it is sent at most once per
 	// period and every camera gets the startup grace again.
 	if restart && now.Sub(a.lastRestart) >= restartEvery {
 		a.lastRestart = now
 		for _, m := range a.machines {
-			m.seenFrame, m.lastFrame = false, now
+			for _, cam := range m.cameras {
+				cam.seenFrame, cam.lastFrame = false, now
+			}
 		}
 		a.command(a.machines[a.cfg.Machines[0].Machine], &gaugev1.Command{Type: gaugev1.CommandType_COMMAND_TYPE_RESTART})
 	}
@@ -366,7 +420,7 @@ func (a *Agent) connect() {
 	if err == nil {
 		topics := []string{a.cfg.resendTopic()}
 		for _, ref := range a.cfg.Machines {
-			topics = append(topics, a.cfg.machineTopic(ref, "config"))
+			topics = append(topics, a.cfg.machineTopic(ref, "config"), a.cfg.machineTopic(ref, "watch"))
 		}
 		if err = sess.Subscribe(ctx, topics); err != nil {
 			sess.Close(false)
@@ -561,6 +615,10 @@ func (a *Agent) handleMessage(msg inbound) {
 			a.handleConfig(m, msg.payload)
 			return
 		}
+		if msg.topic == a.cfg.machineTopic(m.ref, "watch") {
+			a.handleWatch(m, msg.payload)
+			return
+		}
 	}
 	a.logger.Warn("message on unexpected topic", "topic", msg.topic)
 }
@@ -587,6 +645,10 @@ func parseConfig(payload []byte, machineID string) (*gaugev1.StationConfig, []*d
 			return nil, nil, err
 		}
 		gauges = append(gauges, gauge)
+	}
+	// Every gauge must be on a camera the config defines.
+	if _, err := decode.CamerasInUse(&cfg); err != nil {
+		return nil, nil, err
 	}
 	return &cfg, gauges, nil
 }
@@ -714,11 +776,37 @@ func (a *Agent) activate(m *machine) {
 		m.byGauge[gauge.ID] = agg
 	}
 	m.haveWindow = false
-	m.lastFrame, m.seenFrame = time.Now(), false
+	a.setCameras(m)
 	a.metrics.ConfigVersion.WithLabelValues(m.ref.Machine).Set(float64(m.active.GetConfigVersion()))
 	a.logger.Info("config active", "machine_id", m.ref.Machine, "config_version", m.active.GetConfigVersion())
 	// The heartbeat reports the new version only now.
 	a.publishStatus(gaugev1.State_STATE_ONLINE)
+}
+
+// setCameras starts watching the cameras of the config that just became
+// active and rebuilds the camera index.
+func (a *Agent) setCameras(m *machine) {
+	for _, cam := range m.cameras {
+		if cam.stale {
+			a.metrics.PipelineStale.Dec()
+		}
+	}
+	m.cameras = map[string]*camera{}
+	inUse, _ := decode.CamerasInUse(m.active) // checked when the config was parsed
+	now := time.Now()
+	for _, c := range inUse {
+		id := c.GetCameraId()
+		if c == m.active.GetCamera() {
+			id = "" // the views know the default camera by the empty id
+		}
+		m.cameras[c.GetUrl()] = &camera{lastFrame: now, id: id}
+	}
+	a.byCamera = map[string][]*machine{}
+	for _, other := range a.machines {
+		for url := range other.cameras {
+			a.byCamera[url] = append(a.byCamera[url], other)
+		}
+	}
 }
 
 func (a *Agent) retryReloads(now time.Time) {
@@ -726,6 +814,69 @@ func (a *Agent) retryReloads(now time.Time) {
 		if m.pending != nil && !m.reloading && !now.Before(m.retryAt) {
 			a.requestReload(m)
 		}
+	}
+}
+
+// -------------------------------------------------------------- preview ----
+
+// Bounds of a watch: the default when the request gives no length, and the
+// longest a single request can keep images flowing.
+const (
+	defaultWatchSeconds = 10
+	maxWatchSeconds     = 60
+)
+
+// handleWatch starts or extends the live view of a machine: for a while the
+// pipeline attaches an image to the frames of its cameras, and each such
+// frame is published with what was read on it.
+func (a *Agent) handleWatch(m *machine, payload []byte) {
+	var req gaugev1.PreviewRequest
+	if err := proto.Unmarshal(payload, &req); err != nil {
+		a.logger.Warn("watch request rejected", "machine_id", m.ref.Machine, "error", err)
+		return
+	}
+	seconds := req.GetSeconds()
+	if seconds == 0 {
+		seconds = defaultWatchSeconds
+	}
+	seconds = min(seconds, maxWatchSeconds)
+	until := time.Now().Add(time.Duration(seconds) * time.Second)
+	for url, cam := range m.cameras {
+		cam.previewUntil = until
+		a.command(m, &gaugev1.Command{Type: gaugev1.CommandType_COMMAND_TYPE_PREVIEW, CameraUrl: url, PreviewSeconds: seconds})
+	}
+}
+
+// publishPreview sends the image of a frame with the readings of this machine
+// on that same frame. Nothing is buffered: a preview that cannot be sent now
+// is of no use later.
+func (a *Agent) publishPreview(m *machine, frame *gaugev1.FrameResult, now time.Time) {
+	cam := m.cameras[frame.GetCameraId()]
+	if cam == nil || !now.Before(cam.previewUntil) || a.sess == nil {
+		return
+	}
+	pv := &gaugev1.Preview{
+		MachineId: m.ref.Machine, CameraId: cam.id, FrameTsMs: frame.GetFrameTsMs(), Jpeg: frame.GetPreviewJpeg(),
+		FrameWidth: frame.GetFrameWidth(), FrameHeight: frame.GetFrameHeight(),
+	}
+	for _, roi := range frame.GetRois() {
+		agg, ok := m.byGauge[roi.GetGaugeId()]
+		if roi.GetMachineId() != m.ref.Machine || !ok {
+			continue
+		}
+		reading := agg.Gauge.Read(frame.GetFrameTsMs(), roi, a.cfg.Decode)
+		pr := &gaugev1.PreviewReading{GaugeId: roi.GetGaugeId(), Confidence: reading.Confidence}
+		if reading.Valid {
+			pr.Value = proto.Float64(reading.Value)
+		}
+		pv.Readings = append(pv.Readings, pr)
+	}
+	payload, err := proto.Marshal(pv)
+	if err != nil {
+		return
+	}
+	if err := a.publish(a.cfg.machineTopic(m.ref, "preview"), payload, false); err != nil {
+		a.logger.Warn("preview publish failed", "machine_id", m.ref.Machine, "error", err)
 	}
 }
 

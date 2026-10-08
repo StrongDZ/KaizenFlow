@@ -124,6 +124,7 @@ test-integration: proto ## Integration tests against the running stack (needs `m
 		CONFIG_API_TEST_MQTT=emqx:1883 CONFIG_API_TEST_DATABASE_URL="$(DATABASE_URL)" \
 		INGEST_TEST_DATABASE_URL="$(DATABASE_URL)" INGEST_TEST_REDIS=redis:6379 \
 		STATE_TEST_DATABASE_URL="$(DATABASE_URL)" STATE_TEST_REDIS=redis:6379 \
+		QUERY_API_TEST_DATABASE_URL="$(DATABASE_URL)" \
 		go test -tags integration -count=1 -run Integration -v ./...'
 
 EDGE_SIM_IMAGE ?= $(PROJECT)-edge-sim:local

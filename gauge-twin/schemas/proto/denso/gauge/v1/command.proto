@@ -17,6 +17,10 @@ message Command {
   uint32 config_version = 3;
   // RELOAD_CONFIG: the machine (camera) whose config changed.
   string machine_id = 4;
+  // PREVIEW: the camera (its url) whose frames must carry a preview image,
+  // and for how long from now. Sent again to extend the period.
+  string camera_url = 5;
+  uint32 preview_seconds = 6;
 }
 
 enum CommandType {
@@ -25,6 +29,10 @@ enum CommandType {
   COMMAND_TYPE_RELOAD_CONFIG = 1;
   // Exit so the container supervisor starts a fresh pipeline.
   COMMAND_TYPE_RESTART = 2;
+  // Attach a small JPEG of the frame to the FrameResults of one camera for a
+  // while: somebody is watching that camera. Never the default; the edge
+  // sends numbers, an image only while it is asked for.
+  COMMAND_TYPE_PREVIEW = 3;
 }
 
 message CommandReply {

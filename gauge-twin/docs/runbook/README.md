@@ -8,6 +8,7 @@ Mỗi runbook theo cùng khung: triệu chứng → kiểm tra → xử lý → 
 | [kafka-lag.md](kafka-lag.md) | Alert `IngestLagHigh` / `IngestLagHighBrokerView`, dữ liệu vào DB chậm |
 | [quality-drop.md](quality-drop.md) | `reading_quality` tụt, nhiều flag BLUR/GLARE/ROI_DRIFT, nhiều reading rỗng |
 | [model-rollback.md](model-rollback.md) | Model mới đọc sai hoặc quality tụt sau khi rollout |
+| [history-retention.md](history-retention.md) | Đổi thời hạn giữ số liệu, hoặc ổ đĩa TimescaleDB sắp đầy |
 | [loadtest-emergency-stop.md](loadtest-emergency-stop.md) | Test tải trên server dùng chung làm máy quá tải |
 
 Chung cho mọi sự cố:

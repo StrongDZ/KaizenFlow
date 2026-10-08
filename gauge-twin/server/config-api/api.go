@@ -24,6 +24,8 @@ type API struct {
 	prefix    string
 	logger    *slog.Logger
 	requests  *prometheus.CounterVec
+	// cameras is the registry gauges may refer to; nil when there is none.
+	cameras CameraStore
 }
 
 func NewAPI(store Store, broker Broker, publisher *Publisher, prefix string, reg prometheus.Registerer, logger *slog.Logger) *API {
@@ -120,6 +122,13 @@ func (a *API) put(w http.ResponseWriter, r *http.Request) int {
 	}
 	if cfg.GetMachineId() != machineID {
 		return writeJSON(w, http.StatusBadRequest, apiError{Error: "machine_id in the body does not match the URL"})
+	}
+	// A gauge may name a camera of the registry: its url is copied in, so the
+	// stored config is all the edge needs.
+	if a.cameras != nil {
+		if err := resolveCameras(r.Context(), a.cameras, cfg); err != nil {
+			return a.fail(w, err)
+		}
 	}
 	if problems := Validate(cfg); len(problems) > 0 {
 		return writeJSON(w, http.StatusBadRequest, apiError{Error: "invalid station config", Details: problems})

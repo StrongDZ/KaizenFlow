@@ -48,6 +48,12 @@ scrape_configs:
         type: A
         port: 8080
 
+  - job_name: query-api
+    dns_sd_configs:
+      - names: [query-api]
+        type: A
+        port: 8080
+
   - job_name: ingest
     dns_sd_configs:
       - names: [ingest]

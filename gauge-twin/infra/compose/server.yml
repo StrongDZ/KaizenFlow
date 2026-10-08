@@ -69,6 +69,8 @@ services:
       MQTT_BROKER: emqx:1883
       PREVIEW_URL: http://preview-svc:8080
       ACCEPTANCE_DIR: /acceptance
+      # The one web origin allowed to edit cameras and configs (the KaizenFlow dev server by default).
+      CORS_ALLOWED_ORIGIN: ${CONFIG_API_CORS_ORIGIN:-http://localhost:5173}
     depends_on:
       acceptance-init:
         condition: service_completed_successfully
@@ -95,6 +97,31 @@ services:
     ports:
       - "${CONFIG_API_PORT_2:-8091}:8080"
     networks: *config-api-net
+
+  # Read API of the live monitoring UI. Stateless: one replica is enough here.
+  query-api:
+    image: gauge-twin-query-api:local
+    build:
+      context: ../..
+      dockerfile: server/Dockerfile
+      args:
+        SERVICE: query-api
+    restart: unless-stopped
+    environment:
+      # User and password travel apart from the URL, in the variables libpq and pgx read.
+      DATABASE_URL: postgres://timescaledb:5432/${POSTGRES_DB:-gauge}?sslmode=disable
+      PGUSER: ${POSTGRES_USER:-gauge}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?}
+      PREVIEW_URL: http://preview-svc:8080
+      # Live view: asks the edges for previews and receives them; kept in memory only.
+      MQTT_BROKER: emqx:1883
+      STALE_AFTER: ${QUERY_API_STALE_AFTER:-30s}
+      CORS_ALLOWED_ORIGIN: ${QUERY_API_CORS_ORIGIN:-*}
+    ports:
+      - "${QUERY_API_PORT:-8092}:8080"
+    networks:
+      gauge-twin:
+        aliases: [query-api]
 
   # Commissioning helper of config-api: runs the models of ds-sim on single
   # frames. Internal only, no host port.

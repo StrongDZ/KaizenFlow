@@ -13,16 +13,24 @@ message StationConfig {
   string machine_id = 2;
   string plant = 3;
   string line = 4;
+  // The default camera: every gauge without a camera_id is read from it.
   Camera camera = 5;
   uint32 window_sec = 6;
   repeated Gauge gauges = 7;
   // Model name -> version, e.g. "dial_pose" -> "dial-pose-0.3".
   map<string, string> model_versions = 8;
+  // Further cameras of the machine, for gauges one camera cannot see. A
+  // camera may also appear in the configs of several machines: the edge
+  // recognises it by its url and decodes the stream once.
+  repeated Camera cameras = 9;
 }
 
 message Camera {
   string url = 1;
   uint32 sample_fps = 2;
+  // Name the gauges refer to; unique inside one config. May be empty on the
+  // default camera.
+  string camera_id = 3;
 }
 
 message Gauge {
@@ -44,6 +52,10 @@ message Gauge {
   repeated Point quad = 7;
   // Side of the rectified square in pixels; 256 when unset.
   optional uint32 rect_size = 8;
+  // Camera that sees this gauge: the camera_id of an entry of
+  // StationConfig.cameras, or empty for the default camera. roi and quad are
+  // in pixels of that camera's frame.
+  string camera_id = 9;
 }
 
 // Point is a 2D position in pixels.

@@ -221,3 +221,125 @@ def test_process_frame_builds_a_frame_result_in_frame_pixels(tmp_path):
     )
     assert dial.sharpness > 0 and 0 <= dial.glare_ratio <= 1
     assert volt.roi_drift and volt.drift_px == pytest.approx(9.5)
+
+
+def gauge_json(gauge_id: str, camera_id: str = "", x: int = 100) -> dict:
+    gauge = {"gauge_id": gauge_id, "type": "analog_dial", "roi": [x, 50, 200, 200]}
+    return gauge | ({"camera_id": camera_id} if camera_id else {})
+
+
+def two_camera_config(machine_id: str = "press") -> dict:
+    return {
+        "machine_id": machine_id,
+        "camera": {"url": "rtsp://front", "sample_fps": 2},
+        "cameras": [{"camera_id": "side", "url": "rtsp://side", "sample_fps": 5}],
+        "gauges": [gauge_json("FRONT_DIAL"), gauge_json("SIDE_DIAL", "side")],
+    }
+
+
+def test_station_config_puts_every_gauge_on_its_camera():
+    config = station.parse(two_camera_config())
+    assert [g.camera_url for g in config.gauges] == ["rtsp://front", "rtsp://side"]
+    # Only the cameras a gauge is on, with their sampling rate.
+    assert config.cameras == {"rtsp://front": 2.0, "rtsp://side": 5.0}
+    assert (config.camera_url, config.sample_fps) == ("rtsp://front", 2.0)
+
+    named = two_camera_config()
+    named["camera"]["camera_id"] = "front"
+    named["gauges"][0]["camera_id"] = "front"
+    assert station.parse(named).gauges[0].camera_url == "rtsp://front"
+
+    unused = two_camera_config()
+    unused["gauges"].pop()
+    assert station.parse(unused).cameras == {"rtsp://front": 2.0}
+
+
+def test_station_config_rejects_a_gauge_without_a_camera(tmp_path):
+    unknown = two_camera_config()
+    unknown["gauges"][1]["camera_id"] = "back"
+    with pytest.raises(ValueError, match="unknown camera 'back'"):
+        station.parse(unknown)
+    # A draft for the commissioning preview may lack the default camera; the
+    # pipeline does not run such a config.
+    no_default = two_camera_config()
+    del no_default["camera"]
+    assert station.parse(no_default).gauges[0].camera_url == ""
+    path = tmp_path / "press.json"
+    path.write_text(json.dumps(no_default))
+    with pytest.raises(ValueError, match="no default camera"):
+        station.load(path)
+    no_url = two_camera_config()
+    no_url["cameras"][0]["url"] = ""
+    with pytest.raises(ValueError, match="has no url"):
+        station.parse(no_url)
+
+
+def test_cameras_in_use_opens_a_shared_stream_once_at_the_highest_rate():
+    press = station.parse(two_camera_config("press"))
+    # The neighbour has one gauge, on the camera that also sees the press.
+    neighbour = station.parse(
+        {
+            "machine_id": "pump",
+            "camera": {"url": "rtsp://side", "sample_fps": 10},
+            "gauges": [gauge_json("PUMP_DIAL", x=350)],
+        }
+    )
+    assert station.cameras_in_use([press, neighbour]) == {"rtsp://front": 2.0, "rtsp://side": 10.0}
+    assert station.cameras_in_use([]) == {}
+
+
+def test_process_camera_frame_carries_the_gauges_of_every_machine_on_that_camera():
+    press = station.parse(two_camera_config("press"))
+    pump = station.parse(
+        {
+            "machine_id": "pump",
+            "camera": {"url": "rtsp://side", "sample_fps": 2},
+            # Same gauge ID as the press: IDs are only unique inside a machine.
+            "gauges": [gauge_json("SIDE_DIAL", x=350)],
+        }
+    )
+
+    side = pipeline.process_camera_frame(
+        [press, pump], "rtsp://side", textured(), 1_700_000_000_123, StubModels()
+    )
+    assert side.camera_id == "rtsp://side" and side.frame_ts_ms == 1_700_000_000_123
+    assert [(r.machine_id, r.gauge_id) for r in side.rois] == [
+        ("press", "SIDE_DIAL"),
+        ("pump", "SIDE_DIAL"),
+    ]
+    assert (side.rois[0].keypoints[0].x, side.rois[1].keypoints[0].x) == (200.0, 450.0)
+
+    front = pipeline.process_camera_frame(
+        [press, pump], "rtsp://front", textured(), 1_700_000_000_123, StubModels()
+    )
+    assert [(r.machine_id, r.gauge_id) for r in front.rois] == [("press", "FRONT_DIAL")]
+
+
+def test_process_frame_of_one_config_reads_all_its_gauges():
+    # The commissioning preview works on one frame of one draft config.
+    result = pipeline.process_frame(station.parse(two_camera_config()), textured(), 1, StubModels())
+    assert result.camera_id == "press"
+    assert [(r.machine_id, r.gauge_id) for r in result.rois] == [
+        ("press", "FRONT_DIAL"),
+        ("press", "SIDE_DIAL"),
+    ]
+
+
+def test_attach_preview_adds_a_scaled_down_image_and_the_frame_size():
+    press = station.parse(two_camera_config("press"))
+    frame = textured(height=1080, width=1920)
+    result = pipeline.process_camera_frame([press], "rtsp://front", frame, 1, StubModels())
+    assert result.preview_jpeg == b""  # no image unless somebody watches
+
+    pipeline.attach_preview(result, frame)
+    assert (result.frame_width, result.frame_height) == (1920, 1080)
+    image = cv2.imdecode(np.frombuffer(result.preview_jpeg, np.uint8), cv2.IMREAD_COLOR)
+    assert image.shape[:2] == (540, 960)
+    # Far smaller than the frame itself: it travels over MQTT.
+    assert len(result.preview_jpeg) < 400_000
+
+    small = textured(height=480, width=640)
+    result = pipeline.process_camera_frame([press], "rtsp://front", small, 1, StubModels())
+    pipeline.attach_preview(result, small)
+    image = cv2.imdecode(np.frombuffer(result.preview_jpeg, np.uint8), cv2.IMREAD_COLOR)
+    assert image.shape[:2] == (480, 640)  # never scaled up

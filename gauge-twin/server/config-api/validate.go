@@ -73,11 +73,41 @@ func Validate(cfg *gaugev1.StationConfig) []string {
 	if cfg.GetWindowSec() < 1 {
 		add("window_sec must be at least 1")
 	}
-	if cfg.GetCamera().GetUrl() == "" {
+	// The default camera is only needed by a gauge that names no camera.
+	needDefault := len(cfg.GetGauges()) == 0
+	for _, g := range cfg.GetGauges() {
+		needDefault = needDefault || g.GetCameraId() == ""
+	}
+	if needDefault && cfg.GetCamera().GetUrl() == "" {
 		add("camera.url is required")
 	}
-	if fps := cfg.GetCamera().GetSampleFps(); fps < 1 || fps > 30 {
+	if fps := cfg.GetCamera().GetSampleFps(); cfg.GetCamera().GetUrl() != "" && (fps < 1 || fps > 30) {
 		add("camera.sample_fps must be between 1 and 30")
+	}
+	if id := cfg.GetCamera().GetCameraId(); id != "" && !identifier.MatchString(id) {
+		add("camera.camera_id must be 1-64 characters of A-Z a-z 0-9 _ . -")
+	}
+	cameraIDs := map[string]bool{cfg.GetCamera().GetCameraId(): cfg.GetCamera().GetCameraId() != ""}
+	cameraURLs := map[string]bool{cfg.GetCamera().GetUrl(): cfg.GetCamera().GetUrl() != ""}
+	for i, c := range cfg.GetCameras() {
+		if !identifier.MatchString(c.GetCameraId()) {
+			add("cameras[%d].camera_id must be 1-64 characters of A-Z a-z 0-9 _ . -", i)
+		} else if cameraIDs[c.GetCameraId()] {
+			add("cameras[%d]: duplicate camera_id", i)
+		}
+		cameraIDs[c.GetCameraId()] = true
+		switch {
+		case c.GetUrl() == "":
+			add("cameras[%d].url is required", i)
+		case cameraURLs[c.GetUrl()]:
+			// The edge recognises a camera by its url: two names for one
+			// stream would be one camera with two sampling rates.
+			add("cameras[%d]: same url as another camera of this config", i)
+		}
+		cameraURLs[c.GetUrl()] = true
+		if fps := c.GetSampleFps(); fps < 1 || fps > 30 {
+			add("cameras[%d].sample_fps must be between 1 and 30", i)
+		}
 	}
 	if len(cfg.GetGauges()) == 0 {
 		add("at least one gauge is required")
@@ -93,6 +123,9 @@ func Validate(cfg *gaugev1.StationConfig) []string {
 			add("%s: duplicate gauge_id", name)
 		}
 		seen[g.GetGaugeId()] = true
+		if id := g.GetCameraId(); id != "" && !cameraIDs[id] {
+			add("%s: unknown camera %q", name, id)
+		}
 		if roi := g.GetRoi(); len(roi) != 4 || roi[0] < 0 || roi[1] < 0 || roi[2] <= 0 || roi[3] <= 0 {
 			add("%s: roi must be [x, y, width, height] with a positive size", name)
 		}

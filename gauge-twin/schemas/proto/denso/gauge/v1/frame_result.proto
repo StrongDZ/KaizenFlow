@@ -8,10 +8,18 @@ option go_package = "gauge-twin/gen/go/denso/gauge/v1;gaugev1";
 // ZeroMQ. It carries raw model output only; all business logic lives in
 // edge-agent.
 message FrameResult {
+  // The stream the frame comes from: the camera url. One frame carries the
+  // ROIs of every machine that has a gauge on this camera.
   string camera_id = 1;
   // Capture timestamp of the frame, not the send time.
   int64 frame_ts_ms = 2;
   repeated RoiResult rois = 3;
+  // Only while a PREVIEW command is in force for this camera: the frame the
+  // ROIs were read on, scaled down and JPEG-encoded, and the size of the
+  // original frame (the ROI coordinates are in those pixels).
+  bytes preview_jpeg = 4;
+  uint32 frame_width = 5;
+  uint32 frame_height = 6;
 }
 
 message RoiResult {
@@ -33,6 +41,8 @@ message RoiResult {
   bool roi_drift = 7;
   // Displacement measured by that check, in pixels; 0 when not measured yet.
   float drift_px = 8;
+  // Machine the gauge belongs to; gauge_id is only unique inside a machine.
+  string machine_id = 9;
 }
 
 // Keypoint is a point in camera frame pixel coordinates.

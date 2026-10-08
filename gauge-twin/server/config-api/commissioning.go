@@ -34,6 +34,8 @@ type Commissioning struct {
 	store   Store
 	preview string // base URL of preview-svc
 	client  *http.Client
+	// cameras lets a frame be asked for by camera_id; nil without a registry.
+	cameras CameraStore
 }
 
 func NewCommissioning(store Store, previewURL string) *Commissioning {
@@ -110,15 +112,29 @@ func readBody(w http.ResponseWriter, r *http.Request, out any) bool {
 	return true
 }
 
-// frame grabs one frame. The camera is the url in the body, or the one in
-// the stored config of machine_id.
+// frame grabs one frame. The camera is the url in the body, a camera of the
+// registry (camera_id), or the default camera of the stored config of
+// machine_id.
 func (c *Commissioning) frame(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		URL       string `json:"url"`
 		MachineID string `json:"machine_id"`
+		CameraID  string `json:"camera_id"`
 	}
 	if !readBody(w, r, &req) {
 		return
+	}
+	if req.URL == "" && req.CameraID != "" && c.cameras != nil {
+		cam, err := c.cameras.GetCamera(r.Context(), req.CameraID)
+		if err != nil {
+			if errors.Is(err, ErrCameraNotFound) {
+				writeJSON(w, http.StatusNotFound, apiError{Error: "camera not found"})
+				return
+			}
+			c.fail(w, err)
+			return
+		}
+		req.URL = cam.URL
 	}
 	if req.URL == "" && req.MachineID != "" {
 		stored, err := c.store.Get(r.Context(), req.MachineID)
@@ -138,7 +154,7 @@ func (c *Commissioning) frame(w http.ResponseWriter, r *http.Request) {
 		req.URL = cfg.GetCamera().GetUrl()
 	}
 	if req.URL == "" {
-		writeJSON(w, http.StatusBadRequest, apiError{Error: "url or machine_id is required"})
+		writeJSON(w, http.StatusBadRequest, apiError{Error: "url, camera_id or machine_id is required"})
 		return
 	}
 	var out map[string]any

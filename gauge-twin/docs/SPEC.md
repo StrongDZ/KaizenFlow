@@ -83,6 +83,22 @@ Bốn lớp dữ liệu phải chốt trước khi code: config trạm, bản ti
 }
 ```
 
+**Camera và máy là quan hệ nhiều–nhiều.** `camera` là camera mặc định của máy. Khi một camera không nhìn hết các đồng hồ, khai thêm camera trong `cameras` và ghi `camera_id` vào đồng hồ nằm trên camera đó; đồng hồ không có `camera_id` thuộc camera mặc định. `roi` và `quad` luôn tính theo pixel khung hình của camera nhìn thấy đồng hồ.
+
+```json
+{
+  "machine_id": "STAMPING_PRESS_01",
+  "camera": {"url": "rtsp://10.1.3.21/stream1", "sample_fps": 2},
+  "cameras": [{"camera_id": "side", "url": "rtsp://10.1.3.22/stream1", "sample_fps": 2}],
+  "gauges": [
+    {"gauge_id": "MAIN_PRESSURE", "type": "analog_dial", "roi": [812, 344, 260, 260]},
+    {"gauge_id": "OIL_TEMP", "type": "analog_dial", "roi": [300, 120, 240, 240], "camera_id": "side"}
+  ]
+}
+```
+
+Một camera cũng có thể nhìn đồng hồ của nhiều máy: config của từng máy đều khai camera đó với cùng `url`. Edge nhận ra camera qua `url`, mở luồng một lần và đọc mọi vùng của mọi máy trên cùng khung hình. Ràng buộc: các máy dùng chung một camera phải do cùng một edge phục vụ. Trong một config, `camera_id` và `url` của các camera không được trùng nhau.
+
 Tọa độ `calib` tính trong mặt phẳng đã nắn: `quad` (4 điểm TL, TR, BR, BL trong khung hình; với mặt tròn là hình vuông ngoại tiếp mặt đồng hồ) được ánh xạ bằng homography về hình vuông `rect_size` × `rect_size` (mặc định 256). Không có `quad` thì dùng nguyên `roi` (coi như nhìn thẳng); `roi` luôn là hộp bao để crop. Đồng hồ kim: edge-agent đưa keypoint qua homography; 7 đoạn và số lăn: warp ảnh trước khi cắt ô. Edge chỉ áp dụng config khi `config_version` mới hơn bản đang chạy, và gửi lại version đang dùng trong heartbeat.
 
 ### 3.2 Topic MQTT
@@ -93,6 +109,8 @@ Tọa độ `calib` tính trong mặt phẳng đã nắn: `quad` (4 điểm TL, 
 | `denso/{plant}/{line}/{machine}/status` | edge → server | 1 | có | `Status` (mục 3.3b); LWT cũng là `Status` với `STATE_OFFLINE` |
 | `denso/{plant}/{line}/{machine}/config` | server → edge | 1 | có | Config trạm (3.1) |
 | `denso/{plant}/{line}/{machine}/sample` | edge → server | 0 | không | Tham chiếu crop ảnh quality thấp (ảnh nằm trên MinIO) |
+| `denso/{plant}/{line}/{machine}/watch` | server → edge | 1 | không | Có người đang xem máy: edge gửi `preview` trong số giây yêu cầu (tối đa 60), server nhắc lại để giữ |
+| `denso/{plant}/{line}/{machine}/preview` | edge → server | 1 | không | Chỉ khi đang được xem: ảnh JPEG thu nhỏ của một khung hình kèm số đọc trên chính khung hình đó. Không đệm ở edge, không vào Kafka hay DB; server chỉ giữ khung mới nhất trong bộ nhớ |
 | `denso/{plant}/edge/{edge_id}/cmd/resend` | server → edge | 1 | không | `ResendRequest {edge_id, from_seq, to_seq}` (bao gồm hai đầu, ≤ 10.000 seq) |
 | `denso/{plant}/edge/{edge_id}/cmd/resend/ack` | edge → server | 1 | không | `ResendAck`: số seq đã gửi lại, các khoảng không còn trong buffer (service state ghi nhận mất thật) |
 
@@ -207,6 +225,9 @@ SELECT add_continuous_aggregate_policy('gauge_1m',
   schedule_interval => INTERVAL '1 minute');
 ```
 
+**Thời hạn giữ lịch sử** (migration `000009`): `gauge_reading` giữ 30 ngày, đủ để soi lại một sự cố theo từng giây; `gauge_1m` giữ 2 năm cho các khoảng dài hơn. Aggregate chỉ tính lại 2 giờ gần nhất nên xóa reading cũ không làm mất bucket cũ. Màn lịch sử của UI đọc qua query-api `GET /v1/stations/{machine}/history`: khoảng tới 7 ngày lấy từ `gauge_reading`, dài hơn lấy từ `gauge_1m`; mỗi điểm mang trung bình kèm min/max của ô thời gian để một lần vọt ngắn không biến mất khi xem khoảng dài. Đổi thời hạn: xem runbook.
+
+
 Phía đọc: thứ tự ghi không trùng thứ tự `ts` (replay, failover). Mọi truy vấn sắp xếp theo `ts`; reader đọc tăng dần (stream sang Predict) dùng con trỏ theo `ingested_at` và dedup theo khóa chính, không dùng con trỏ theo `ts`. View `gauge_1m` tính lại cửa sổ 2 giờ gần nhất nên tự hấp thụ dòng đến trễ vài phút.
 
 Bảng phụ: `machine` (danh mục máy, line, plant); `station_config` (machine_id, config_version, config jsonb, published_version, updated_at) là nguồn sự thật duy nhất của config; `gauge` là VIEW đọc từ `station_config.config -> 'gauges'`, không phải bảng; `edge_node` (phiên bản phần mềm, last_seen, `machine_ids text[]`); `rejected_reading` (bản tin bị reject kèm lý do, giữ 30 ngày, unique theo (kafka_topic, kafka_partition, kafka_offset)).
@@ -237,7 +258,7 @@ Edge gồm hai tiến trình trong hai container: **ds-pipeline** (DeepStream, C
 5. Probe cuối pipeline đọc metadata thô (keypoint + độ tin cậy, xác suất từng ô), tính độ nét Laplacian và tỷ lệ pixel cháy sáng trên ROI, rồi gửi sang edge-agent. Probe không chứa logic nghiệp vụ.
 6. Mỗi 10 phút, so frame với ảnh tham chiếu bằng ORB hoặc marker ArUco; lệch quá ngưỡng thì gắn cờ `FLAG_ROI_DRIFT`.
 
-Bản tin nội bộ ds-pipeline → edge-agent (Protobuf `FrameResult`): `camera_id`, `frame_ts_ms`, danh sách `RoiResult {gauge_id, keypoints[], kp_conf[], slot_probs[][], sharpness, glare_ratio, roi_drift, drift_px}`. Keypoint tính theo pixel khung hình gốc; edge-agent tự áp homography của `quad`.
+Bản tin nội bộ ds-pipeline → edge-agent (Protobuf `FrameResult`): `camera_id` (url của camera), `frame_ts_ms`, danh sách `RoiResult {machine_id, gauge_id, keypoints[], kp_conf[], slot_probs[][], sharpness, glare_ratio, roi_drift, drift_px}`. Mỗi bản tin là một khung hình của một camera và mang vùng đọc của mọi máy có đồng hồ trên camera đó; `gauge_id` chỉ duy nhất trong một máy nên từng vùng ghi kèm `machine_id`. Keypoint tính theo pixel khung hình gốc; edge-agent tự áp homography của `quad`.
 
 Lệnh edge-agent → ds-pipeline (Protobuf `Command`, socket ZeroMQ riêng, REQ/REP hoặc DEALER/ROUTER có timeout): `RELOAD_CONFIG {config_version}` và `RESTART`; ds-pipeline trả `CommandReply {command_id, ok, error}`. Edge-agent chỉ báo `config_version` mới trong heartbeat sau khi nhận `ok`.
 

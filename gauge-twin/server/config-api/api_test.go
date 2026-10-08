@@ -144,7 +144,10 @@ func newHarness(t *testing.T) *harness {
 	store, broker := newMemStore(), &fakeBroker{retained: map[string][]byte{}}
 	publisher := NewPublisher(store, broker, "denso", time.Hour, registry, logger)
 	mux := http.NewServeMux()
-	NewAPI(store, broker, publisher, "denso", registry, logger).Register(mux)
+	api := NewAPI(store, broker, publisher, "denso", registry, logger)
+	api.cameras = &memCameras{rows: map[string]Camera{}}
+	api.Register(mux)
+	NewCameras(api.cameras, store, publisher, api).Register(mux)
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 	return &harness{server, store, broker, publisher}
