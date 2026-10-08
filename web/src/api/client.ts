@@ -1,9 +1,10 @@
 import type {
-  AgvMap, Binding, Frame, BindingInput, CoverageReport, DataSourceRow, SourceTestResult, CalibrationApplied, CalibrationResp, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
+  AgvMap, Binding, Frame, BindingInput, Benchmark7DayResp, BenchmarkReport, CoverageReport, DataSourceRow, SourceTestResult, CalibrationApplied, CalibrationResp, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
   BandRow, CheckReport, EdgePlan, EventRow, Graph, GraphEdge, GraphNode, InsightRow, Issue, Json, Material, MaterialDetail, MaterialUpdate, ModelSummary,
-  NewMaterial, NewNodeType, NewScenario, NodeType, NodeTypeDetail, NodeTypeUpdate, Run, RunDetail, RunRow, Scenario, ScenarioBody, ScenarioRow,
-  SignalRow, VersionInfo,
+  NewMaterial, NewNodeType, NewScenario, NodeType, NodeTypeDetail, NodeTypeUpdate, PerformanceKpis, Run, RunDetail, RunRow, Scenario, ScenarioBody, ScenarioRow,
+  SignalRow, VersionInfo, WarehouseSeriesEntry, WarehousePipelineView, WarehouseDashboardView,
 } from './types'
+import { buildMockWarehouseDashboard, buildMockPipelineForWarehouse } from '../lib/warehouse'
 
 export const API_BASE: string = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 export const wsUrl = API_BASE.replace(/^http/, 'ws') + '/ws'
@@ -146,5 +147,40 @@ export const api = {
     reset: (model: string) => post<FeedStatus>('/api/feed/reset', { model }),
     addIncident: (body: IncidentInput) => post<Incident>('/api/feed/incidents', body),
     clearIncident: (model: string, id: number) => del(`/api/feed/incidents/${id}?model=${encodeURIComponent(model)}`),
+  },
+
+  benchmark7day: (key: string, body: { step_s: number; warmup_s: number; replications: number; seed: number; benchmark_ready: boolean }) =>
+    post<Benchmark7DayResp>(`/api/models/${encodeURIComponent(key)}/benchmark/7day`, body),
+  benchmarkForecast: (key: string, body: { run_id: number } | { warehouse_series_log: WarehouseSeriesEntry[] }) =>
+    post<BenchmarkReport>(`/api/models/${encodeURIComponent(key)}/benchmark/forecast`, body),
+
+  // Dashboard tổng thể hiệu năng (OverviewPage)
+  // Backend sau này implement endpoint này, trả về shape đúng PerformanceKpis là UI tự động hoạt động.
+  performanceKpis: (q: { window?: '7d' | '14d' | '30d'; top_n?: number } = {}) =>
+    req<PerformanceKpis>(`/api/performance/kpis${qs({ window: q.window, top_n: q.top_n?.toString() })}`),
+
+  // --- Kho tổng thể (Warehouse Dashboard) ---
+  // Ưu tiên gọi API endpoint thật (services/api/internal/httpapi/warehouse.go: handlers.warehousePipeline / warehouseDashboard).
+  // Nếu API chưa deploy (404 / network error) → fallback local mock trong lib/warehouse.
+  // Swap transaparent: backend up → dùng data thật; backend down → demo vẫn chạy không vỡ UI.
+  warehousePipeline: async (modelKey: string, nodeKey: string, horizon_h = 8): Promise<WarehousePipelineView> => {
+    try {
+      return await req<WarehousePipelineView>(
+        `/api/models/${encodeURIComponent(modelKey)}/warehouse-pipeline/${encodeURIComponent(nodeKey)}` +
+        qs({ horizon_h: horizon_h.toString() }),
+      )
+    } catch {
+      return buildMockPipelineForWarehouse(modelKey, nodeKey, [], horizon_h) as WarehousePipelineView
+    }
+  },
+  warehouseDashboard: async (modelKey: string, nodeKey: string, nodeName: string, window_days = 14): Promise<WarehouseDashboardView> => {
+    try {
+      return await req<WarehouseDashboardView>(
+        `/api/models/${encodeURIComponent(modelKey)}/warehouse-dashboard/${encodeURIComponent(nodeKey)}` +
+        qs({ node_name: nodeName, window_days: window_days.toString() }),
+      )
+    } catch {
+      return buildMockWarehouseDashboard(modelKey, nodeKey, nodeName, window_days) as WarehouseDashboardView
+    }
   },
 }

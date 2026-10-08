@@ -147,8 +147,10 @@ input::placeholder, textarea::placeholder { color: var(--color-faint); }
   offset-rotate: 0deg; animation-name: kf-flow; animation-timing-function: linear; animation-iteration-count: infinite;
 }
 @keyframes kf-flow { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+@keyframes benchBreath { 0%, 100% { opacity: 1; } 50% { opacity: 0.62; } }
 @media (prefers-reduced-motion: reduce) {
   .kf-dot { animation: none; offset-distance: var(--kf-at); }
+  .animate-\[benchBreath_1\.6s_ease-in-out_infinite\] { animation: none; }
 }
 
 /* Form sinh từ JSON Schema (@rjsf): phẳng, không hộp lồng nhau. Cấp bậc thể hiện bằng cỡ chữ và độ đậm:

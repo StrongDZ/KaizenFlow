@@ -36,6 +36,8 @@ import ScenarioEditPage from './pages/ScenarioEditPage'
 import ScenarioNewPage from './pages/ScenarioNewPage'
 import ScenariosPage from './pages/ScenariosPage'
 import VersionsPage from './pages/VersionsPage'
+import WarehouseControlPage from './pages/WarehouseControlPage'
+import WarehouseDashboardPage from './pages/WarehouseDashboardPage'
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false, retry: shouldRetry } } })
 
@@ -87,6 +89,8 @@ export default function App() {
             <Route path="/runs/:id/report" element={<ReportPage />} />
             <Route path="/reports/benchmarks" element={<ReportPage mode="benchmarks" />} />
             <Route path="/reports/operations" element={<OperationsDashboardPage />} />
+            <Route path="/reports/warehouse" element={<WarehouseControlPage />} />
+            <Route path="/reports/warehouse-dashboard" element={<WarehouseDashboardPage />} />
             <Route path="/compare" element={<ComparePage />} />
             <Route path="/library" element={<LibraryLayout />}>
               <Route index element={<Navigate to="node-types" replace />} />

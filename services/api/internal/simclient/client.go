@@ -133,3 +133,26 @@ func (c *Client) ExportCSV(ctx context.Context, id int64) (io.ReadCloser, error)
 	}
 	return resp.Body, nil
 }
+
+type warehouseSeriesResp struct {
+	RunID              int64                       `json:"run_id"`
+	WarehouseSeriesLog []simapi.WarehouseSeriesEntry `json:"warehouse_series_log"`
+	Count              int                         `json:"count"`
+}
+
+// WarehouseSeries lấy warehouse_series_log của một run (endpoint riêng, nhẹ hơn /result).
+func (c *Client) WarehouseSeries(ctx context.Context, id int64) ([]simapi.WarehouseSeriesEntry, int, error) {
+	resp, err := c.do(ctx, http.MethodGet, fmt.Sprintf("/runs/%d/warehouse_series", id), nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	b, err := c.expect(resp, http.StatusOK)
+	if err != nil {
+		return nil, 0, err
+	}
+	var r warehouseSeriesResp
+	if err := json.Unmarshal(b, &r); err != nil {
+		return nil, 0, err
+	}
+	return r.WarehouseSeriesLog, r.Count, nil
+}

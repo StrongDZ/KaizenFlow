@@ -12,6 +12,8 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/kaizenflow/api/internal/catalog"
+	"github.com/kaizenflow/api/internal/contracts"
+	"github.com/kaizenflow/api/internal/fmcg"
 	"github.com/kaizenflow/api/internal/resolve"
 	"github.com/kaizenflow/api/internal/runs"
 	"github.com/kaizenflow/api/internal/simapi"
@@ -208,6 +210,15 @@ func (h *handlers) getGraph(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	meta := contracts.SynthesizeGraphContracts(g.Nodes)
+	g.WarehouseCapacities = meta.WarehouseCapacities
+	if len(meta.ProcessIOContracts) > 0 {
+		proc := map[string]any{}
+		for k, v := range meta.ProcessIOContracts {
+			proc[k] = v
+		}
+		g.ProcessIOContracts = proc
+	}
 	writeJSON(w, 200, g)
 }
 
@@ -370,9 +381,16 @@ func (h *handlers) getRun(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	meta := map[string]any{}
+	if run.KPIs != nil {
+		if bm, ok := run.KPIs["benchmark"].(map[string]any); ok {
+			meta["benchmark"] = bm
+		}
+	}
 	writeJSON(w, 200, map[string]any{"id": run.ID, "scenario_id": run.ScenarioID, "status": run.Status,
 		"purpose": run.Purpose, "sim_start": run.SimStart, "kpis": run.KPIs, "error": run.Error,
-		"engine_version": run.EngineVersion, "created_at": run.CreatedAt, "finished_at": run.FinishedAt, "insights": ins})
+		"engine_version": run.EngineVersion, "created_at": run.CreatedAt, "finished_at": run.FinishedAt,
+		"insights": ins, "meta": meta})
 }
 
 func (h *handlers) bands(w http.ResponseWriter, r *http.Request) {
@@ -685,4 +703,291 @@ func (h *handlers) deleteMaterial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(204)
+}
+
+// sevenDayHorizonS: 7 ngày = 7 * 24 * 3600 giây.
+const sevenDayHorizonS = 7 * 24 * 3600
+
+func (h *handlers) benchmark7day(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	modelKey := chi.URLParam(r, "key")
+	var body struct {
+		StepS          float64 `json:"step_s"`
+		WarmupS        float64 `json:"warmup_s"`
+		Replications   int     `json:"replications"`
+		Seed           *int64  `json:"seed"`
+		BenchmarkReady bool    `json:"benchmark_ready"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	if body.StepS <= 0 {
+		body.StepS = 3600
+	}
+	if body.Replications <= 0 {
+		body.Replications = 1
+	}
+
+	versions, err := h.Store.ListVersions(ctx, modelKey)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	var pubID int64 = 0
+	var maxVer = 0
+	for _, v := range versions {
+		if v.Status == "PUBLISHED" && v.Version > maxVer {
+			pubID = v.ID
+			maxVer = v.Version
+		}
+	}
+	if pubID == 0 {
+		writeJSON(w, 409, map[string]string{"error": "no PUBLISHED version for model " + modelKey})
+		return
+	}
+	g, err := h.Store.GetGraph(ctx, pubID)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	types, err := h.Store.NodeTypes(ctx)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	mats, err := h.Store.MaterialCodes(ctx)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+
+	sc := &store.Scenario{
+		ModelVersionID: pubID,
+		Origin:         "BENCHMARK_7D",
+		Name:           "7-day benchmark",
+		HorizonS:       sevenDayHorizonS,
+		StartState:     "WARMUP",
+		Replications:   body.Replications,
+		Seed:           body.Seed,
+		Overrides:      []map[string]any{},
+		Injections:     []map[string]any{},
+	}
+	if body.WarmupS <= 0 {
+		sc.StartState = "EMPTY"
+	} else {
+		if g.Settings == nil {
+			g.Settings = map[string]any{}
+		}
+		g.Settings["warmup_s"] = body.WarmupS
+	}
+	if g.Settings == nil {
+		g.Settings = map[string]any{}
+	}
+	if body.StepS > 0 {
+		g.Settings["sample_s"] = body.StepS
+	}
+	g.Settings["raw_reps"] = []any{0}
+
+	var runID int64 = 0
+	var scenarioID int64 = 0
+	if body.BenchmarkReady {
+		sc := &store.Scenario{
+			ModelVersionID: pubID,
+			Origin:         "USER",
+			Name:           "7-day benchmark",
+			HorizonS:       sevenDayHorizonS,
+			StartState:     func() string { if body.WarmupS <= 0 { return "EMPTY" }; return "WARMUP" }(),
+			Replications:   body.Replications,
+			Seed:           body.Seed,
+			Overrides:      []map[string]any{},
+			Injections:     []map[string]any{},
+		}
+		scenarioID, err = h.Store.CreateScenario(ctx, *sc)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		runID, err = h.Store.InsertRun(ctx, scenarioID, time.Now().Truncate(time.Minute), "FORECAST")
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+	} else {
+		runID = time.Now().UnixNano() & 0x7fffffffffffffff
+	}
+	simStart := time.Now().Truncate(time.Minute)
+	req, err := resolve.Build(ctx, g, types, mats, sc, runID, simStart, h.Store.DailyForecast, resolve.Options{})
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	req.Replications = body.Replications
+	req.HorizonS = sevenDayHorizonS
+	if body.WarmupS > 0 {
+		req.InitialState = simapi.InitialState{Mode: "WARMUP", WarmupS: body.WarmupS}
+	} else {
+		req.InitialState = simapi.InitialState{Mode: "EMPTY"}
+	}
+	req.Outputs.SampleS = body.StepS
+	req.Outputs.RawReps = []int{0}
+	req.Outputs.Sensors = false
+	req.Recommend = false
+
+	if err := h.Sim.StartRun(ctx, req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	_ = h.Store.SetRunStatus(ctx, runID, "RUNNING", nil)
+
+	deadline := time.Now().Add(10 * time.Minute)
+	count := 0
+	var whLog []simapi.WarehouseSeriesEntry
+polling:
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			break polling
+		case <-time.After(time.Second):
+		}
+		st, err := h.Sim.Status(ctx, runID)
+		if err != nil {
+			continue
+		}
+		switch st.Status {
+		case "DONE":
+			whLog, count, err = h.Sim.WarehouseSeries(ctx, runID)
+			if err != nil {
+				writeErr(w, err)
+				return
+			}
+			break polling
+		case "FAILED":
+			writeJSON(w, 502, map[string]string{"error": st.Error})
+			return
+		}
+	}
+
+	resp := map[string]any{
+		"run_id":                   runID,
+		"model_key":                modelKey,
+		"version_id":               pubID,
+		"horizon_s":                sevenDayHorizonS,
+		"step_s":                   body.StepS,
+		"warmup_s":                 body.WarmupS,
+		"replications":             body.Replications,
+		"benchmark_ready":          body.BenchmarkReady,
+		"warehouse_series_log":     whLog,
+		"warehouse_series_log_summary": map[string]any{"count": count},
+	}
+
+	if body.BenchmarkReady && count >= 0 {
+		bm := map[string]any{
+			"warehouse_series_log_summary": map[string]any{"count": count},
+		}
+		if count > 0 && count <= 10000 {
+			bm["warehouse_series_log"] = whLog
+		}
+		kpis := map[string]any{
+			"benchmark": bm,
+		}
+		errMsg := "benchmark saved"
+		_ = h.Store.SetRunStatus(ctx, runID, "DONE", nil)
+		_ = h.Store.SaveResult(ctx, runID, &simapi.Result{
+			RunID:         runID,
+			EngineVersion: "0.1.0-bench",
+			KPIs:          kpis,
+		})
+		resp["meta"] = map[string]any{
+			"benchmark": bm,
+		}
+		_ = errMsg
+	}
+
+	writeJSON(w, 200, resp)
+}
+
+func (h *handlers) benchmarkForecast(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	_ = chi.URLParam(r, "key")
+	var body struct {
+		WarehouseSeriesLog []simapi.WarehouseSeriesEntry `json:"warehouse_series_log"`
+		RunID              *int64                        `json:"run_id"`
+		Rounds             *int                          `json:"rounds"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	var entries []simapi.WarehouseSeriesEntry
+	if len(body.WarehouseSeriesLog) > 0 {
+		entries = body.WarehouseSeriesLog
+	} else if body.RunID != nil {
+		run, err := h.Store.GetRun(ctx, *body.RunID)
+		if err != nil {
+			writeErr(w, err)
+			return
+		}
+		if run.KPIs != nil {
+			if bm, ok := run.KPIs["benchmark"].(map[string]any); ok {
+				if raw, ok := bm["warehouse_series_log"]; ok {
+					if list, ok := raw.([]any); ok {
+						for _, item := range list {
+							if m, ok := item.(map[string]any); ok {
+								entries = append(entries, simapi.WarehouseSeriesEntry{
+									TsS:       toFloat64(m["ts_s"]),
+									SKU:       toString(m["sku"]),
+									NodeKey:   toString(m["node_key"]),
+									Level:     toFloat64(m["level"]),
+									Capacity:  toFloat64(m["capacity"]),
+									CoverageH: toFloat64(m["coverage_h"]),
+									Color:     toString(m["color"]),
+								})
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	if len(entries) == 0 {
+		writeJSON(w, 422, issues(validate.Issue{Key: "warehouse_series_log", Message: "required (or provide run_id with log saved)"}))
+		return
+	}
+	provider := h.FMCGNowcast
+	if provider == nil {
+		provider = fmcg.DefaultNowcastProvider()
+	}
+	rounds := 10
+	if body.Rounds != nil && *body.Rounds > 0 {
+		rounds = *body.Rounds
+	}
+	report, err := fmcg.RunBenchmark(ctx, provider, entries, rounds)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, report)
+}
+
+func toFloat64(v any) float64 {
+	switch x := v.(type) {
+	case float64:
+		return x
+	case float32:
+		return float64(x)
+	case int:
+		return float64(x)
+	case int64:
+		return float64(x)
+	case json.Number:
+		f, _ := x.Float64()
+		return f
+	}
+	return 0
+}
+
+func toString(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
 }

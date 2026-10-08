@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Insight, ModelSummary, RunRow, Scenario } from '../api/types'
 import { axisLine, axisTick, tooltipProps } from '../components/Charts'
+import BenchmarkPanel from '../components/dashboard/BenchmarkPanel'
 import { Card, ErrorBox, Loading, Notice, PageBody, PageHeader, StatusChip, Tag, btn, btnPrimary, input } from '../components/ui'
 import { fmtDateTime, fmtDelta, fmtDuration } from '../lib/format'
 import { candidatesOf, describeAction, kpiP50 } from '../lib/insights'
@@ -418,6 +419,8 @@ export default function OperationsDashboardPage() {
           />
         </div>
       </section>
+
+      <BenchmarkPanel modelKey={modelKey} />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard

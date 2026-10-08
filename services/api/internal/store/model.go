@@ -31,13 +31,15 @@ type GraphEdge struct {
 }
 
 type Graph struct {
-	VersionID int64          `json:"version_id"`
-	ModelKey  string         `json:"model_key"`
-	Version   int            `json:"version"`
-	Status    string         `json:"status"`
-	Settings  map[string]any `json:"settings"`
-	Nodes     []GraphNode    `json:"nodes"`
-	Edges     []GraphEdge    `json:"edges"`
+	VersionID            int64                      `json:"version_id"`
+	ModelKey             string                     `json:"model_key"`
+	Version              int                        `json:"version"`
+	Status               string                     `json:"status"`
+	Settings             map[string]any             `json:"settings"`
+	Nodes                []GraphNode                `json:"nodes"`
+	Edges                []GraphEdge                `json:"edges"`
+	WarehouseCapacities  map[string]map[string]float64 `json:"warehouse_capacities,omitempty"`
+	ProcessIOContracts   map[string]any             `json:"process_io_contracts,omitempty"`
 }
 
 type ModelSummary struct {

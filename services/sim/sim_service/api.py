@@ -73,7 +73,20 @@ def get_result(run_id: int):
         raise HTTPException(status_code=409, detail=f"run is {st['status']}")
     r = st["result"]
     return jsonable_encoder({"run_id": r.run_id, "engine_version": r.engine_version, "kpis": r.kpis,
-                             "bands": r.bands, "insights": r.insights, "signals": r.signals, "events": r.events})
+                             "bands": r.bands, "insights": r.insights, "signals": r.signals, "events": r.events,
+                             "warehouse_series_log": r.warehouse_series_log})
+
+
+@app.get("/runs/{run_id}/warehouse_series")
+def get_warehouse_series(run_id: int):
+    st = _runs.get(run_id)
+    if st is None:
+        raise HTTPException(status_code=404, detail="run not found")
+    if st["status"] != "DONE":
+        raise HTTPException(status_code=409, detail=f"run is {st['status']}")
+    r = st["result"]
+    return jsonable_encoder({"run_id": r.run_id, "warehouse_series_log": r.warehouse_series_log,
+                             "count": len(r.warehouse_series_log)})
 
 
 @app.get("/runs/{run_id}/export.csv")
