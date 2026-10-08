@@ -95,7 +95,7 @@ function TotalsRow({ label, value, tone = 'default', hint }:
     : 'text-text'
   return (
     <div className="flex flex-col gap-0.5 rounded-lg border border-line-2 bg-panel px-2.5 py-2">
-      <span className="text-[10px] font-medium uppercase tracking-wide text-muted">{label}</span>
+      <span className="text-[10px] font-medium text-muted">{label}</span>
       <span className={`text-[14px] font-semibold tabular-nums leading-tight ${toneClassText}`}>{value}</span>
       {hint && <span className="text-[10px] text-muted">{hint}</span>}
     </div>
@@ -179,7 +179,7 @@ export function WarehousePopover({ open, onOpenChange, anchorX, anchorY, title, 
           {/* Header */}
           <header className="flex items-center justify-between border-b border-line bg-panel px-4 py-2.5">
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted">
+              <div className="flex items-center gap-1.5 text-[10px] font-medium text-muted">
                 <WarehouseIcon size={11} />
                 Tình trạng kho chi tiết
                 {pipeline && <span className="ml-1 rounded bg-panel-2 px-1.5 py-0.5 text-[9.5px] font-semibold">Horizon {pipeline.horizon_h}h</span>}

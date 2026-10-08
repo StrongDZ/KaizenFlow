@@ -25,8 +25,8 @@ export function RecommendationList({ insights, pending, error, onApply }: {
             return (
             <div key={c.rank} className={`rounded-lg border p-2 ${best ? 'border-ok/70 bg-panel-2 ring-1 ring-ok/20' : 'border-line-2'}`}>
               <div className="mb-1 flex items-center justify-between gap-2">
-                {enhanced && <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">Đề xuất #{c.rank}</div>}
-                {best && <span className="rounded-full bg-ok-solid px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-on-ok">Hiệu quả nhất</span>}
+                {enhanced && <div className="text-[10px] font-semibold text-muted">Đề xuất #{c.rank}</div>}
+                {best && <span className="rounded-full bg-ok-solid px-2 py-0.5 text-[9px] font-bold text-on-ok">Hiệu quả nhất</span>}
               </div>
               <div className="text-xs font-semibold text-text">{describeAction(c.action)}</div>
               {best && (

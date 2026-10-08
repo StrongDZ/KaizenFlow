@@ -88,7 +88,7 @@ function KpiCard({
 }) {
   return (
     <div className={`rounded-xl border border-line bg-panel/80 p-4 ${loading ? 'animate-[benchBreath_1.6s_ease-in-out_infinite]' : ''}`}>
-      <div className="text-[11px] uppercase tracking-[0.12em] text-muted">{label}</div>
+      <div className="text-[11px] text-muted">{label}</div>
       <div className="mt-2 flex items-baseline gap-2">
         <span
           className={`text-3xl font-semibold tabular-nums ${accent ?? 'text-text'}`}
@@ -220,7 +220,7 @@ export default function BenchmarkPanel({ modelKey }: BenchmarkPanelProps) {
 
       {hasReport && report!.notes.length > 0 && (
         <div className="mb-4 rounded-xl border border-line bg-panel-2 p-3">
-          <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">
+          <div className="mb-1 text-[11px] font-semibold text-muted">
             Sparkline 10 vòng đo latency
           </div>
           <RoundSparkline notes={report!.notes} />
@@ -229,7 +229,7 @@ export default function BenchmarkPanel({ modelKey }: BenchmarkPanelProps) {
 
       <div className="grid gap-3 lg:grid-cols-3">
         <div className="rounded-lg border border-line bg-panel-2 px-3 py-2">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">
+          <div className="text-[11px] font-semibold text-muted">
             Về Latency
           </div>
           <div className="mt-1 text-xs text-text-2">
@@ -238,7 +238,7 @@ export default function BenchmarkPanel({ modelKey }: BenchmarkPanelProps) {
           </div>
         </div>
         <div className="rounded-lg border border-line bg-panel-2 px-3 py-2">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">
+          <div className="text-[11px] font-semibold text-muted">
             Về Throughput
           </div>
           <div className="mt-1 text-xs text-text-2">
@@ -247,7 +247,7 @@ export default function BenchmarkPanel({ modelKey }: BenchmarkPanelProps) {
           </div>
         </div>
         <div className="rounded-lg border border-line bg-panel-2 px-3 py-2">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">
+          <div className="text-[11px] font-semibold text-muted">
             Về P95 non-blocking
           </div>
           <div className="mt-1 text-xs text-text-2">
@@ -259,7 +259,7 @@ export default function BenchmarkPanel({ modelKey }: BenchmarkPanelProps) {
 
       {hasReport && report!.notes.length > 0 && (
         <details className="mt-4 rounded-lg border border-line bg-panel-2 px-3 py-2">
-          <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">
+          <summary className="cursor-pointer text-[11px] font-semibold text-muted">
             Chi tiết kỹ thuật ({report!.notes.length} dòng)
           </summary>
           <ul className="mt-2 space-y-1 pl-1 text-[11px] text-muted">
