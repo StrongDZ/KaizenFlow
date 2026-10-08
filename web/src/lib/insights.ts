@@ -14,6 +14,8 @@ export type Action = {
   to_rate?: number
   from_slots?: number
   to_slots?: number
+  from_level?: number
+  to_level?: number
 }
 type NumericMetrics = Record<string, number | null | undefined>
 export type Candidate = {
@@ -49,7 +51,10 @@ export function describeAction(a: Action): string {
     case 'FLEET_SIZE':
       return `Thêm 1 xe cho ${a.target}`
     case 'REPLENISH':
-      if (typeof a.qty === 'number') return `Bù ${a.qty.toFixed(1).replace('.', ',')} ${a.material ?? ''} vào ${a.target}`.trim()
+      if (typeof a.qty === 'number') {
+        const levels = isFiniteNumber(a.from_level) && isFiniteNumber(a.to_level) ? ` (${formatNumber(a.from_level)} → ${formatNumber(a.to_level)})` : ''
+        return `Bổ sung ${formatNumber(a.qty)} ${a.material ?? ''} vào ${a.target} trước ca${levels}`.trim()
+      }
       return `Nâng điểm đặt hàng của ${a.target} lên ${a.rop ?? '?'}`
     case 'INCREASE_PROCESS_CAPACITY':
       return `Tăng năng lực ${a.target} thêm ${a.delta ?? 1} slot`
@@ -77,6 +82,11 @@ export function evidenceRows(evidence?: NumericMetrics | null): DetailRow[] {
   if (isFiniteNumber(evidence.capacity_gap)) rows.push({ label: 'Chênh năng lực thượng nguồn', value: signed(evidence.capacity_gap, ' u/h') })
   if (isFiniteNumber(evidence.upstream_wip_growth)) rows.push({ label: 'Mức tăng WIP thượng nguồn', value: signed(evidence.upstream_wip_growth) })
   if (isFiniteNumber(evidence.downtime_s)) rows.push({ label: 'Thời gian dừng', value: `${formatNumber(evidence.downtime_s / 60)} phút` })
+  if (isFiniteNumber(evidence.initial_stock)) rows.push({ label: 'Tồn đầu ca hiện tại', value: formatNumber(evidence.initial_stock) })
+  if (isFiniteNumber(evidence.target_stock)) rows.push({ label: 'Tồn mục tiêu', value: formatNumber(evidence.target_stock) })
+  if (isFiniteNumber(evidence.recommended_replenish)) rows.push({ label: 'Lượng cần bổ sung', value: formatNumber(evidence.recommended_replenish) })
+  if (isFiniteNumber(evidence.demand_rate_h)) rows.push({ label: 'Nhu cầu ước tính', value: `${formatNumber(evidence.demand_rate_h)} / giờ` })
+  if (isFiniteNumber(evidence.target_coverage_h)) rows.push({ label: 'Mức phủ mục tiêu', value: `${formatNumber(evidence.target_coverage_h)} giờ` })
   return rows
 }
 

@@ -1,10 +1,11 @@
 import { useMutation } from '@tanstack/react-query'
-import { ArrowLeft, ArrowRight, CheckCircle2, FlaskConical, SlidersHorizontal } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CheckCircle2, Clock3, FlaskConical, Scale, Search, ShieldCheck, SlidersHorizontal, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Insight } from '../api/types'
 import { RunGate } from '../components/controlroom/RunGate'
+import { DecisionJourney } from '../components/scenario/DecisionJourney'
 import { EmptyState, ErrorBox, Notice, PageBody, PageHeader, btn, btnPrimary, input } from '../components/ui'
 import {
   candidatesOf, describeAction, describeInsight, evidenceRows, expectedImpactRows, tradeOffRows,
@@ -143,7 +144,7 @@ function ActionEditor({ candidate, onAdjustment }: { candidate: Candidate; onAdj
   )
 }
 
-function Body({ runId, insights }: { runId: number; insights: Insight[] }) {
+function Body({ runId, insights, replications }: { runId: number; insights: Insight[]; replications: number }) {
   const navigate = useNavigate()
   const recommendations = useMemo<Recommendation[]>(() => insights.flatMap((insight) =>
     candidatesOf(insight).map((candidate) => ({ insight, candidate, key: `${insight.id}:${candidate.rank}` })),
@@ -172,7 +173,7 @@ function Body({ runId, insights }: { runId: number; insights: Insight[] }) {
 
   const apply = useMutation({
     mutationFn: ({ id, rank, tuning }: { id: number; rank: number; tuning?: Adjustment }) => api.applyInsight(id, rank, tuning),
-    onSuccess: (result) => navigate(`/runs/${result.run_id}`),
+    onSuccess: (result) => navigate(`/runs/${result.run_id}?baseline=${runId}&story=1`),
   })
 
   if (!selected) {
@@ -196,9 +197,30 @@ function Body({ runId, insights }: { runId: number; insights: Insight[] }) {
         subtitle={`${recommendations.length} phương án đã được engine kiểm tra cho lần chạy #${runId}`}
         actions={<Link className={btn} to={`/runs/${runId}`}><ArrowLeft size={13} /> Control Room</Link>}
       />
+      <DecisionJourney
+        active="decide"
+        links={{ observe: `/runs/${runId}`, report: `/runs/${runId}/report` }}
+      />
       <Notice>
         Control Room chỉ hiện thông báo ngắn. Đây là nơi operator xem nguyên nhân, bằng chứng, KPI và chỉnh tham số trước khi tạo một scenario con để chạy thử.
       </Notice>
+
+      <section aria-label="Cách engine tạo đề xuất" className="grid overflow-hidden rounded-xl border border-line bg-panel sm:grid-cols-4">
+        {[
+          { icon: Search, label: '1. Phát hiện', detail: 'Rủi ro / bottleneck' },
+          { icon: Sparkles, label: '2. Sinh action', detail: 'Các phương án khả thi' },
+          { icon: FlaskConical, label: '3. Mô phỏng', detail: `${replications} lần lặp` },
+          { icon: Scale, label: '4. Xếp hạng', detail: 'KPI và đánh đổi' },
+        ].map((step, index) => {
+          const Icon = step.icon
+          return (
+            <div key={step.label} className={`relative flex items-center gap-2.5 px-4 py-3 ${index > 0 ? 'border-t border-line sm:border-l sm:border-t-0' : ''}`}>
+              <span className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-accent/10 text-accent"><Icon size={15} /></span>
+              <div><div className="text-[11px] font-semibold text-text">{step.label}</div><div className="text-[10px] text-muted">{step.detail}</div></div>
+            </div>
+          )
+        })}
+      </section>
 
       <div className="grid gap-4 lg:grid-cols-[330px_minmax(0,1fr)]">
         <section className="self-start rounded-xl border border-line bg-panel p-2">
@@ -235,6 +257,10 @@ function Body({ runId, insights }: { runId: number; insights: Insight[] }) {
                   {best && <span className="rounded-full border border-ok/40 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-ok">Hiệu quả tổng thể cao nhất</span>}
                 </div>
                 <p className="mt-1 text-[11px] text-muted">Xếp hạng #{selected.candidate.rank}{typeof selected.candidate.score_v2 === 'number' ? ` · điểm ${selected.candidate.score_v2.toFixed(3)}` : ''}</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-line-2 px-2 py-0.5 text-[9.5px] text-text-2"><ShieldCheck size={10} className="text-ok" /> Đã kiểm chứng qua {replications} lần lặp</span>
+                  {selected.insight.eta && <span className="inline-flex items-center gap-1 rounded-full border border-warn/40 px-2 py-0.5 text-[9.5px] text-warn"><Clock3 size={10} /> Cần xử lý trước {new Date(selected.insight.eta).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>}
+                </div>
               </div>
             </div>
           </header>
@@ -297,7 +323,7 @@ export default function RunRecommendationsPage() {
   const runId = Number(useParams().id)
   return (
     <RunGate runId={runId}>
-      {({ run }) => <Body runId={runId} insights={run.insights.filter((insight) => insight.kind === 'RECOMMENDATION')} />}
+      {({ run, scenario }) => <Body runId={runId} replications={scenario.replications} insights={run.insights.filter((insight) => insight.kind === 'RECOMMENDATION')} />}
     </RunGate>
   )
 }

@@ -1,8 +1,9 @@
 import { useMemo, type ReactNode } from 'react'
+import { Boxes, LoaderCircle } from 'lucide-react'
 import type { BandRow, Graph, NodeType, RunDetail, Scenario } from '../../api/types'
 import { useRunBundle } from '../../hooks/useRunBundle'
 import { byCode } from '../../lib/model'
-import { EmptyState, ErrorBox, Loading, StatusChip } from '../ui'
+import { ErrorBox, Loading, StatusChip } from '../ui'
 import { HeaderActions } from '../shell/ShellContext'
 
 export type RunReady = { run: RunDetail; scenario: Scenario; graph: Graph; types: Record<string, NodeType>; rows: BandRow[] }
@@ -20,7 +21,25 @@ export function RunGate({ runId, needBands = false, children }: { runId: number;
         {run.data.status === 'FAILED' ? (
           <div className="p-6"><ErrorBox error={new Error(run.data.error ?? 'Lần chạy thất bại')} /></div>
         ) : (
-          <EmptyState title="Đang mô phỏng">Trang tự cập nhật khi lần chạy xong.</EmptyState>
+          <div className="flex h-full min-h-[480px] items-center justify-center bg-[radial-gradient(circle_at_center,color-mix(in_srgb,var(--color-accent)_10%,transparent),transparent_58%)] p-6">
+            <section className="w-full max-w-md overflow-hidden rounded-2xl border border-line bg-panel shadow-xl">
+              <div className="flex items-center gap-3 border-b border-line bg-panel-2 px-5 py-4">
+                <span className="relative flex h-11 w-11 items-center justify-center rounded-xl bg-accent/12 text-accent">
+                  <Boxes size={20} />
+                  <LoaderCircle size={44} className="absolute animate-spin opacity-45" />
+                </span>
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-accent">Run #{run.data.id}</div>
+                  <h1 className="text-sm font-semibold text-text">Đang mô phỏng scenario</h1>
+                </div>
+              </div>
+              <div className="space-y-3 px-5 py-4">
+                <div className="h-1.5 overflow-hidden rounded-full bg-panel-2"><i className="block h-full w-1/2 animate-pulse rounded-full bg-accent" /></div>
+                <p className="text-xs leading-5 text-text-2">Engine đang chạy các lần lặp Monte Carlo và đánh giá KPI. Control Room sẽ tự xuất hiện khi dữ liệu hoàn tất.</p>
+                <div className="flex items-center justify-between text-[10.5px] text-muted"><span>Không cần tải lại trang</span><span>Tự kiểm tra mỗi 3 giây</span></div>
+              </div>
+            </section>
+          </div>
         )}
       </>
     )

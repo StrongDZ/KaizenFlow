@@ -82,6 +82,67 @@ def _pool_candidates(req: RunRequest, pool_key: str) -> list[Candidate]:
     return [Candidate(action, [{"target": pool_key, "path": "/count", "value": pool.count + 1}], reason=reason)]
 
 
+def _external_demand_rate_h(req: RunRequest, storage_key: str, material: str) -> float:
+    """Nhu cầu thành phẩm mỗi giờ ở SINK nối trực tiếp; 0 nếu graph chưa đủ bằng chứng."""
+    nodes = {n.key: n for n in req.nodes}
+    rate = 0.0
+    for edge in req.edges:
+        sink = nodes.get(edge.dst)
+        if edge.src != storage_key or edge.material != material or sink is None or sink.archetype != "SINK":
+            continue
+        demands = sink.params.get("demand", [])
+        demands = [demands] if isinstance(demands, dict) else demands
+        for demand in demands:
+            if demand.get("material") != material:
+                continue
+            if demand.get("kind", "TAKT") == "TAKT":
+                takt_s = mean_of(demand.get("takt"))
+                if takt_s > 0:
+                    rate += 3600.0 / takt_s * float(demand.get("qty", 1))
+            elif demand.get("kind") == "FORECAST":
+                hourly = [float(value) for value in demand.get("hourly_rate", [])]
+                if hourly:
+                    rate += sum(hourly) / len(hourly)
+    return rate
+
+
+def _stock_topup_candidates(req: RunRequest, storage_key: str) -> list[Candidate]:
+    """Bù safety stock đầu ca cho kho thành phẩm đang có RED_RISK, rồi để rank mô phỏng kiểm chứng."""
+    storage = next((node for node in req.nodes if node.key == storage_key and node.archetype == "STORAGE"), None)
+    if storage is None:
+        return []
+    thresholds = storage.params.get("coverage_thresholds", {})
+    yellow_low = float(thresholds.get("yellow_low_h", 4.0))
+    yellow_high = float(thresholds.get("yellow_high_h", max(yellow_low, 12.0)))
+    # Nhắm giữa dải Xanh thay vì vừa chạm mép dưới: có buffer cho demand ngẫu nhiên nhưng chưa sang vùng dư tồn.
+    target_coverage = yellow_low + max(0.0, yellow_high - yellow_low) / 2.0
+    out: list[Candidate] = []
+    for index, stock in enumerate(storage.params.get("stock", [])):
+        material = stock.get("material")
+        if not isinstance(material, str):
+            continue
+        demand_rate = _external_demand_rate_h(req, storage_key, material)
+        initial = float(stock.get("initial", 0.0))
+        maximum = float(stock.get("max", storage.params.get("capacity", initial)))
+        if demand_rate <= 0 or maximum <= initial:
+            continue
+        target = min(maximum, math.ceil(demand_rate * target_coverage))
+        qty = target - initial
+        if qty <= 0:
+            continue
+        shown_qty = int(qty) if float(qty).is_integer() else qty
+        out.append(Candidate(
+            {"type": "REPLENISH", "target": storage_key, "material": material, "qty": shown_qty,
+             "from_level": initial, "to_level": target, "cost": max(1.0, qty / 10.0)},
+            [{"target": storage_key, "path": f"/stock/{index}/initial", "value": target}],
+            reason=(f"{storage_key} có nguy cơ thiếu {material}; bù {shown_qty} đơn vị trước ca để đưa tồn kho vào "
+                    f"giữa dải Xanh ({target_coverage:g} giờ phủ nhu cầu), sau đó kiểm chứng bằng mô phỏng."),
+            evidence={"initial_stock": initial, "target_stock": target, "recommended_replenish": qty,
+                      "demand_rate_h": demand_rate, "target_coverage_h": target_coverage},
+        ))
+    return out
+
+
 def _scale_duration(spec, factor: float):
     """Giữ dạng phân phối cycle và nhân mọi tham số có đơn vị thời gian."""
     if isinstance(spec, (int, float)):
@@ -190,6 +251,9 @@ def generate(req: RunRequest, insights: list[dict], failure_impacts: list[dict] 
             continue
         if ins["kind"] not in ("RED_RISK", "BOTTLENECK") or subject not in nodes:
             continue
+        if ins["kind"] == "RED_RISK":
+            for c in _stock_topup_candidates(req, subject):
+                add(c)
         up_nodes, up_edges = upstream(req, subject)
         for e in up_edges:
             if e.mode == "POOL":

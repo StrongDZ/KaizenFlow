@@ -156,6 +156,24 @@ def apply_overrides(req: RunRequest, overrides: list[dict]) -> RunRequest:
             raise ContractError(o["target"], "empty override path")
         cur = base
         for part in parts[:-1]:
-            cur = cur.setdefault(part, {})
-        cur[parts[-1]] = o["value"]
+            if isinstance(cur, list):
+                try:
+                    idx = int(part)
+                    cur = cur[idx]
+                except (ValueError, IndexError):
+                    raise ContractError(o["target"], f"invalid list index '{part}' in override path") from None
+            elif isinstance(cur, dict):
+                cur = cur.setdefault(part, {})
+            else:
+                raise ContractError(o["target"], f"override path cannot traverse '{part}'")
+        leaf = parts[-1]
+        if isinstance(cur, list):
+            try:
+                cur[int(leaf)] = o["value"]
+            except (ValueError, IndexError):
+                raise ContractError(o["target"], f"invalid list index '{leaf}' in override path") from None
+        elif isinstance(cur, dict):
+            cur[leaf] = o["value"]
+        else:
+            raise ContractError(o["target"], f"override path cannot set '{leaf}'")
     return RunRequest.model_validate(data)

@@ -20,11 +20,24 @@ def test_upstream_reaches_tugger_edges():
 def test_generate_catalog_for_red_fg():
     req = load_request("denso_mini")
     acts = [(c.action["type"], c.action["target"]) for c in generate(req, [RED_FG])]
+    assert ("REPLENISH", "FG") in acts
     assert ("REALLOCATE_OPERATOR", "OPS_ZONE_B") in acts
     assert ("FLEET_SIZE", "TUGGER_A") in acts
     stops = [c for c in generate(req, [RED_FG]) if c.action["type"] == "PLANNED_STOP"]
     assert sorted(c.action["at_s"] for c in stops) == [0.0, 1800.0]
     assert len(acts) == len(set(acts)) + 1  # hai PLANNED_STOP cùng target, còn lại không trùng
+
+
+def test_red_fg_topup_targets_middle_of_green_band_and_can_rerun():
+    req = load_request("denso_mini", horizon_s=3600, replications=2)
+    candidate = next(c for c in generate(req, [RED_FG]) if c.action["type"] == "REPLENISH" and c.action["target"] == "FG")
+    assert candidate.action["material"] == "BOX"
+    assert candidate.action["from_level"] == 6
+    assert candidate.action["to_level"] == 41  # ceil((3600 / 330) × giữa dải Xanh 3,75 giờ)
+    changed = candidate_request(req, candidate)
+    fg = next(node for node in changed.nodes if node.key == "FG")
+    assert fg.params["stock"][0]["initial"] == 41
+    assert run_many(changed)[0].kpis["storages"]["FG"]["red_s"] <= run_many(req)[0].kpis["storages"]["FG"]["red_s"]
 
 
 def test_pool_bottleneck_generates_pool_action():

@@ -137,9 +137,17 @@ input::placeholder, textarea::placeholder { color: var(--color-faint); }
 }
 @keyframes kf-conveyor { from { stroke-dashoffset: 14; } to { stroke-dashoffset: 0; } }
 @keyframes kf-flow-particle { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+.react-flow__node.kf-story-focus > div { animation: kf-story-pulse 1.4s ease-in-out infinite; }
+.react-flow__node.kf-story-affected { filter: saturate(1.2); }
+.react-flow__node.kf-story-muted { opacity: 0.32; filter: grayscale(0.65); transition: opacity 180ms ease; }
+@keyframes kf-story-pulse {
+  0%, 100% { filter: drop-shadow(0 0 0 color-mix(in srgb, var(--color-accent) 0%, transparent)); transform: translateY(0); }
+  50% { filter: drop-shadow(0 0 12px color-mix(in srgb, var(--color-accent) 70%, transparent)); transform: translateY(-2px); }
+}
 @media (prefers-reduced-motion: reduce) {
   .kf-conveyor-motion { animation: none; }
   .kf-flow-particle { animation: none; offset-distance: var(--kf-at); }
+  .react-flow__node.kf-story-focus > div { animation: none; }
 }
 
 /* Báo cáo PDF: dùng khổ giấy phổ biến tại Việt Nam và không để tiêu đề mục 4 nằm lẻ cuối trang. */

@@ -16,6 +16,7 @@ import { api } from '../api/client'
 import type { Run, Scenario } from '../api/types'
 import { BandChart, axisLine, axisTick, tooltipProps } from '../components/Charts'
 import { ScenarioTimeline } from '../components/scenario/ScenarioTimeline'
+import { DecisionJourney } from '../components/scenario/DecisionJourney'
 import { DataTable, type Column } from '../components/table/DataTable'
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, Tag, btn, btnPrimary } from '../components/ui'
 import { candidatesOf, describeAction, describeInsight, evidenceRows, kpiBand, kpiP50, tradeOffRows, type Action, type Candidate } from '../lib/insights'
@@ -550,6 +551,23 @@ function RunReportPage() {
   const bandText = (value: number | undefined, percent: boolean) => value === undefined
     ? '—'
     : percent ? `${(value * 100).toFixed(1)}%` : value.toLocaleString('vi-VN', { maximumFractionDigits: 1 })
+  const actualVerdict = applied && baseline ? appliedVerdict(baseline, r) : undefined
+  const bestCandidate = candidateEntries[0]?.candidate
+  const executive = actualVerdict
+    ? {
+        tone: actualVerdict.tone,
+        title: actualVerdict.title,
+        detail: actualVerdict.detail,
+        action: scenario.data.action ? describeAction(scenario.data.action as unknown as Action) : 'Action đã áp dụng',
+      }
+    : bestCandidate
+      ? {
+          tone: tradeOffRows(bestCandidate).length > 0 ? 'warn' as const : 'good' as const,
+          title: tradeOffRows(bestCandidate).length > 0 ? 'Có phương án khả thi nhưng cần xác nhận đánh đổi' : 'Có phương án ưu tiên đã được mô phỏng',
+          detail: bestCandidate.reason || 'Candidate xếp hạng cao nhất theo cải thiện KPI và các guardrail.',
+          action: describeAction(bestCandidate.action),
+        }
+      : { tone: 'neutral' as const, title: 'Chưa có hành động đủ bằng chứng để khuyến nghị', detail: 'Xem các phát hiện vận hành bên dưới và bổ sung dữ liệu nếu cần.', action: 'Chưa đề xuất action' }
   return (
     <div className="report-page min-h-full bg-bg text-text">
       <ReportDocumentTitle runId={r.id} scenarioName={scenario.data.name} />
@@ -564,6 +582,25 @@ function RunReportPage() {
           </div>
           <button className={`${btnPrimary} print:hidden`} onClick={() => window.print()}>In / Lưu PDF</button>
         </div>
+
+        <DecisionJourney
+          active="report"
+          links={{ observe: `/runs/${r.id}`, decide: `/runs/${r.id}/recommendations`, validate: baseline ? `/compare?a=${baseline.id}&b=${r.id}` : undefined }}
+        />
+
+        <section className={`break-inside-avoid rounded-xl border p-4 ${executive.tone === 'good' ? 'border-ok/50 bg-ok/5' : executive.tone === 'warn' ? 'border-warn/50 bg-warn/5' : 'border-line bg-panel'}`}>
+          <div className="flex items-start gap-3">
+            <span className={`flex h-10 w-10 flex-none items-center justify-center rounded-xl ${executive.tone === 'good' ? 'bg-ok/15 text-ok' : executive.tone === 'warn' ? 'bg-warn/15 text-warn' : 'bg-panel-2 text-muted'}`}>
+              {executive.tone === 'good' ? <CheckCircle2 size={21} /> : <TriangleAlert size={21} />}
+            </span>
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted">Tóm tắt điều hành</div>
+              <h2 className="mt-0.5 text-base font-semibold text-text">{executive.title}</h2>
+              <p className="mt-1 text-xs leading-5 text-text-2">{executive.detail}</p>
+              <div className="mt-2 rounded-lg border border-line bg-panel/70 px-3 py-2 text-xs"><span className="text-muted">Hành động:</span> <b className="text-text">{executive.action}</b></div>
+            </div>
+          </div>
+        </section>
 
         <section>
           <h2 className="mb-2 font-semibold">1. Thiết lập scenario</h2>

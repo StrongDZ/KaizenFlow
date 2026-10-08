@@ -8,6 +8,7 @@ import type { Json, Run } from '../../api/types'
 import { axisLine, axisTick, tooltipProps } from '../Charts'
 import { DeleteDialog } from '../DeleteAction'
 import { ScenarioTimeline } from '../scenario/ScenarioTimeline'
+import { DecisionJourney } from '../scenario/DecisionJourney'
 import { DataTable, type Column } from '../table/DataTable'
 import { DetailShell, type DetailVariant } from '../SidePeek'
 import { Card, EmptyState, ErrorBox, Notice, StatusChip, Tag } from '../ui'
@@ -126,6 +127,7 @@ export function ScenarioDetail({ id, variant, onClose, onSwitch }: { id: number;
         <Notice>Scenario trên 12 giờ chỉ có KPI tổng hợp và forecast bands; backend không chạy Recommendation, sensor replay hoặc raw events.</Notice>
       )}
       <ErrorBox error={start.error ?? clone.error} />
+      {variant !== 'peek' && <DecisionJourney active="setup" links={{ observe: latestDone ? `/runs/${latestDone.id}` : undefined, decide: latestDone ? `/runs/${latestDone.id}/recommendations` : undefined, report: latestDone ? `/runs/${latestDone.id}/report` : undefined }} />}
       <div className={`grid gap-4 ${variant === 'peek' ? 'grid-cols-1' : 'md:grid-cols-2 xl:grid-cols-4'}`}>
         <Card title="Thông số">
           <div className="text-xs">
@@ -214,6 +216,7 @@ export function ScenarioDetail({ id, variant, onClose, onSwitch }: { id: number;
               </div>
               <div className="flex gap-3">
                 <Link className="font-medium text-accent hover:underline" to={`/runs/${latestDone.id}`}>Mở Control Room</Link>
+                <Link className="font-medium text-accent hover:underline" to={`/runs/${latestDone.id}?story=1`}>Trình diễn có hướng dẫn</Link>
                 <Link className="font-medium text-accent hover:underline" to={`/runs/${latestDone.id}/report`}>Xem / lưu PDF</Link>
               </div>
             </div>

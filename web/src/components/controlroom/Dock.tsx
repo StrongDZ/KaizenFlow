@@ -3,9 +3,10 @@ import { useMemo, useRef, type PointerEvent } from 'react'
 import { fmtStep, fmtTime } from '../../lib/format'
 import { stepIndex, type Speed } from '../../lib/playback'
 import { hourTicks, minorEvery, nearestIndex, pct, rulerOf, tFromPct, type MaintenanceWindow, type Zone } from '../../lib/ruler'
+import type { StoryBookmark } from '../../lib/scenarioExperience'
 
-function Ruler({ times, ti, onSeek, zones, marks, maintenance }: {
-  times: number[]; ti: number; onSeek: (i: number) => void; zones: Zone[]; marks: number[]; maintenance: MaintenanceWindow[]
+function Ruler({ times, ti, onSeek, zones, marks, maintenance, bookmarks }: {
+  times: number[]; ti: number; onSeek: (i: number) => void; zones: Zone[]; marks: number[]; maintenance: MaintenanceWindow[]; bookmarks: StoryBookmark[]
 }) {
   const r = useMemo(() => rulerOf(times), [times])
   const ref = useRef<HTMLDivElement>(null)
@@ -83,6 +84,20 @@ function Ruler({ times, ti, onSeek, zones, marks, maintenance }: {
       {marks.map((m) => (
         <i key={m} title="Máy hỏng" className="absolute top-5 -ml-[3px] h-[7px] w-[7px] rotate-45 bg-bad" style={{ left: `${pct(r, m)}%` }} />
       ))}
+      {bookmarks.map((bookmark, index) => (
+        <button
+          key={bookmark.id}
+          type="button"
+          title={`${bookmark.label}: ${bookmark.detail}`}
+          aria-label={`Tới mốc ${bookmark.label}`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => { event.stopPropagation(); onSeek(nearestIndex(times, bookmark.t)) }}
+          className={`absolute top-[18px] z-10 -ml-2 flex h-4 min-w-4 items-center justify-center rounded-full border border-bg px-1 text-[8px] font-bold text-white shadow-sm ${
+            bookmark.tone === 'bad' ? 'bg-bad' : bookmark.tone === 'warn' ? 'bg-warn' : bookmark.tone === 'ok' ? 'bg-ok-solid' : 'bg-accent'
+          }`}
+          style={{ left: `${pct(r, bookmark.t)}%` }}
+        >{index + 1}</button>
+      ))}
       {times.length > 0 && (
         <div className="absolute top-[30px] h-5 border-l-2 border-text" style={{ left: `${pct(r, t)}%` }}>
           <span className="absolute -left-5 -top-4 rounded-md bg-text px-1.5 py-px text-[10.5px] font-semibold tabular-nums text-bg">{fmtTime(t)}</span>
@@ -96,9 +111,9 @@ function Ruler({ times, ti, onSeek, zones, marks, maintenance }: {
   )
 }
 
-export function Dock({ times, ti, onSeek, playing, onToggle, speed, onSpeed, zones, marks, maintenance, insetRight }: {
+export function Dock({ times, ti, onSeek, playing, onToggle, speed, onSpeed, zones, marks, maintenance, bookmarks = [], insetRight }: {
   times: number[]; ti: number; onSeek: (i: number) => void; playing: boolean; onToggle: () => void
-  speed: Speed; onSpeed: () => void; zones: Zone[]; marks: number[]; maintenance: MaintenanceWindow[]; insetRight: number
+  speed: Speed; onSpeed: () => void; zones: Zone[]; marks: number[]; maintenance: MaintenanceWindow[]; bookmarks?: StoryBookmark[]; insetRight: number
 }) {
   const step = rulerOf(times).step
   const btn = 'flex h-[18px] w-[22px] items-center justify-center rounded-[5px] border border-line-2 text-muted hover:text-text'
@@ -115,7 +130,7 @@ export function Dock({ times, ti, onSeek, playing, onToggle, speed, onSpeed, zon
         <button className={btn} aria-label="Lùi một bước" onClick={() => onSeek(stepIndex(ti, times.length, 'ArrowLeft', false))}><ChevronLeft size={12} /></button>
         <button className={btn} aria-label="Tiến một bước" onClick={() => onSeek(stepIndex(ti, times.length, 'ArrowRight', false))}><ChevronRight size={12} /></button>
       </div>
-      <Ruler times={times} ti={ti} onSeek={onSeek} zones={zones} marks={marks} maintenance={maintenance} />
+      <Ruler times={times} ti={ti} onSeek={onSeek} zones={zones} marks={marks} maintenance={maintenance} bookmarks={bookmarks} />
       <button onClick={onSpeed} aria-label="Đổi tốc độ phát" title={`Tốc độ phát ×${speed}. Bấm để đổi giữa ×1, ×4 và ×16.`} className="flex-none rounded-md border border-line-2 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-text-2 hover:text-text">
         ×{speed}
       </button>

@@ -1,11 +1,14 @@
-import { useState } from 'react'
+import { BookmarkPlus, Boxes, Clock3, Gauge, Save, Trash2, TriangleAlert, Wrench } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { Graph, NodeType, ScenarioBody } from '../../api/types'
 import { formProblems, formToScenarioBody, type ScenarioForm } from '../../lib/scenarioForm'
+import { affectedNodeNames, applyScenarioTemplate, scenarioTemplates, type ScenarioTemplateKey } from '../../lib/scenarioExperience'
 import { failureModesOf, poolCount } from '../../lib/model'
 import { FULL_DETAIL_MAX_HORIZON_S, formatScenarioDuration, scenarioWarmupSeconds, startStateLabel } from '../../lib/scenarioView'
 import { Card, ErrorBox, Notice, btn, btnLinkDanger, btnPrimary, input } from '../ui'
 import { ScenarioTimeline } from './ScenarioTimeline'
+import { DecisionJourney } from './DecisionJourney'
 
 const HORIZON_PRESETS = [1, 4, 8, 24]
 const REP_PRESETS = [
@@ -13,6 +16,16 @@ const REP_PRESETS = [
   { value: 20, label: 'Khuyến nghị' },
   { value: 50, label: 'Tin cậy cao' },
 ]
+
+type SavedPreset = { id: string; name: string; form: ScenarioForm }
+
+const TEMPLATE_ICON = {
+  baseline: Gauge,
+  failure: TriangleAlert,
+  maintenance: Wrench,
+  resource: Boxes,
+} as const
+
 export function ScenarioFormView({ graph, types, initial, submitLabel, pending, error, cancelTo, onSubmit, onSubmitAndRun }: {
   graph: Graph
   types: Record<string, NodeType>
@@ -25,6 +38,13 @@ export function ScenarioFormView({ graph, types, initial, submitLabel, pending, 
   onSubmitAndRun?: (body: ScenarioBody) => void
 }) {
   const [f, setF] = useState<ScenarioForm>(initial)
+  const presetKey = `kaizenflow:scenario-presets:v1:${graph.version_id}`
+  const [savedPresets, setSavedPresets] = useState<SavedPreset[]>(() => {
+    try {
+      const raw = localStorage.getItem(presetKey)
+      return raw ? JSON.parse(raw) as SavedPreset[] : []
+    } catch { return [] }
+  })
   const set = (patch: Partial<ScenarioForm>) => setF({ ...f, ...patch })
   const faultable = graph.nodes.filter((n) => failureModesOf(n, types).length > 0)
   const processes = graph.nodes.filter((n) => n.archetype === 'PROCESS')
@@ -51,11 +71,62 @@ export function ScenarioFormView({ graph, types, initial, submitLabel, pending, 
     durationS: row.kind === 'planned_stop' ? row.duration_min * 60 : undefined,
   }))
   const fullDetail = horizonS <= FULL_DETAIL_MAX_HORIZON_S
+  const templates = scenarioTemplates(graph, types)
+  const affected = useMemo(() => affectedNodeNames(graph, f.inj.map((row) => row.target).filter(Boolean)), [graph, f.inj])
+  const persistPresets = (rows: SavedPreset[]) => {
+    setSavedPresets(rows)
+    localStorage.setItem(presetKey, JSON.stringify(rows))
+  }
+  const savePreset = () => {
+    const name = f.name.trim() || `Preset ${savedPresets.length + 1}`
+    persistPresets([{ id: `${Date.now()}`, name, form: f }, ...savedPresets].slice(0, 12))
+  }
   const presetClass = (active: boolean) => `rounded-lg border px-2.5 py-1.5 text-[11px] font-medium ${
     active ? 'border-accent bg-accent/10 text-accent' : 'border-line-2 text-muted hover:text-text'
   }`
   return (
-    <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+    <div className="space-y-4">
+      <DecisionJourney active="setup" />
+      <section className="rounded-xl border border-accent/25 bg-gradient-to-br from-accent/10 via-panel to-panel p-4">
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-accent">Bắt đầu nhanh</div>
+            <h2 className="mt-0.5 text-sm font-semibold text-text">Bạn muốn kiểm chứng tình huống nào?</h2>
+            <p className="mt-1 text-[11px] text-muted">Chọn một mẫu để tự điền cấu hình hợp lệ; mọi tham số vẫn có thể chỉnh ở bên dưới.</p>
+          </div>
+          <button type="button" className={btn} onClick={savePreset}><BookmarkPlus size={13} /> Lưu cấu hình hiện tại</button>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {templates.map((template) => {
+            const Icon = TEMPLATE_ICON[template.key]
+            return (
+              <button
+                type="button" key={template.key} disabled={!template.available}
+                onClick={() => setF(applyScenarioTemplate(template.key as ScenarioTemplateKey, f, graph, types))}
+                className="group rounded-xl border border-line-2 bg-panel/80 p-3 text-left transition hover:-translate-y-0.5 hover:border-accent/60 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <span className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-panel-2 text-accent group-hover:bg-accent group-hover:text-on-accent"><Icon size={16} /></span>
+                <span className="block text-xs font-semibold text-text">{template.title}</span>
+                <span className="mt-1 block text-[10.5px] leading-4 text-muted">{template.description}</span>
+              </button>
+            )
+          })}
+        </div>
+        {savedPresets.length > 0 && (
+          <div className="mt-3 border-t border-line pt-3">
+            <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted"><Save size={11} /> Preset của bạn</div>
+            <div className="flex flex-wrap gap-2">
+              {savedPresets.map((preset) => (
+                <span key={preset.id} className="inline-flex overflow-hidden rounded-lg border border-line-2 bg-panel">
+                  <button type="button" className="px-2.5 py-1.5 text-[11px] text-text-2 hover:bg-panel-2 hover:text-text" onClick={() => setF(preset.form)}>{preset.name}</button>
+                  <button type="button" aria-label={`Xoá preset ${preset.name}`} className="border-l border-line px-2 text-muted hover:text-bad-text" onClick={() => persistPresets(savedPresets.filter((item) => item.id !== preset.id))}><Trash2 size={11} /></button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
       <div className="space-y-4">
         <Card title="1. Thiết lập mô phỏng">
           <div className="space-y-5 text-xs">
@@ -206,6 +277,26 @@ export function ScenarioFormView({ graph, types, initial, submitLabel, pending, 
       </div>
 
       <aside className="space-y-4 lg:sticky lg:top-14">
+        {(f.inj.length > 0 || f.ovr.length > 0) && (
+          <Card title="Phạm vi tác động dự kiến">
+            <div className="space-y-3 text-[11px]">
+              {f.inj.map((event, index) => (
+                <div key={`${event.target}-${index}`} className="flex gap-2">
+                  <span className="flex h-6 w-6 flex-none items-center justify-center rounded-md bg-warn/10 text-warn"><Clock3 size={12} /></span>
+                  <div><b className="text-text">Phút {event.at_min}: {event.target}</b><div className="text-muted">{event.kind === 'planned_stop' ? `Bảo trì ${event.duration_min} phút` : `Lỗi ${event.failure || 'chưa chọn'}`}</div></div>
+                </div>
+              ))}
+              {affected.length > 0 && (
+                <div className="border-t border-line pt-2">
+                  <div className="mb-1 text-muted">Luồng có thể bị ảnh hưởng:</div>
+                  <div className="flex flex-wrap gap-1">{affected.map((node) => <span key={node.key} className="rounded-md bg-panel-2 px-2 py-1 font-medium text-text-2">{node.name || node.key}</span>)}</div>
+                  <p className="mt-2 text-[10px] leading-4 text-faint">Phạm vi này đi theo các cạnh downstream từ máy có sự kiện; kết quả thực tế sẽ được engine mô phỏng.</p>
+                </div>
+              )}
+              {f.ovr.map((override) => <div key={override.target} className="rounded-lg border border-line bg-panel-2 px-2.5 py-2 text-text-2">{override.target}: đặt nguồn lực thành <b>{override.count}</b></div>)}
+            </div>
+          </Card>
+        )}
         <Card title="Tóm tắt trước khi lưu">
           <dl className="space-y-2 text-xs">
             <div className="flex justify-between gap-3"><dt className="text-muted">Thời lượng</dt><dd className="font-medium text-text">{formatScenarioDuration(horizonS)}</dd></div>
@@ -243,6 +334,7 @@ export function ScenarioFormView({ graph, types, initial, submitLabel, pending, 
         </div>
         {onSubmitAndRun && graph.status !== 'PUBLISHED' && <p className="text-[11px] text-muted">Cần Publish mô hình trước khi có thể tạo và chạy ngay; bạn vẫn có thể lưu scenario.</p>}
       </aside>
+      </div>
     </div>
   )
 }
