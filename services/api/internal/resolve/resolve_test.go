@@ -104,6 +104,46 @@ func TestOverridesApplyToPoolsNodesAndUnknownTarget(t *testing.T) {
 	}
 }
 
+func TestOverrideAppliesToStockEntryInsideList(t *testing.T) {
+	g := testfix.MiniGraph()
+	for i := range g.Nodes {
+		if g.Nodes[i].Key == "S" {
+			g.Nodes[i].Params["stock"] = []any{
+				map[string]any{"material": "RAW-01", "initial": 6.0, "max": 100.0},
+				map[string]any{"material": "BOX", "initial": 9.0, "max": 50.0},
+			}
+		}
+	}
+	sc := scenario()
+	sc.Overrides = []map[string]any{{"target": "S", "path": "/stock/0/initial", "value": 41.0}}
+	r, err := build(g, sc, nil, resolve.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stock := node(r, "S").Params["stock"].([]any)
+	if stock[0].(map[string]any)["initial"] != 41.0 || stock[1].(map[string]any)["initial"] != 9.0 {
+		t.Fatalf("stock = %+v", stock)
+	}
+	original := g.Nodes[1].Params["stock"].([]any)
+	if original[0].(map[string]any)["initial"] != 6.0 {
+		t.Fatalf("override mutated source graph: %+v", original)
+	}
+}
+
+func TestOverrideRejectsInvalidListIndex(t *testing.T) {
+	g := testfix.MiniGraph()
+	g.Nodes[1].Params["stock"] = []any{map[string]any{"material": "RAW-01", "initial": 6.0}}
+	for _, path := range []string{"/stock/not-a-number/initial", "/stock/2/initial", "/stock/-1/initial"} {
+		sc := scenario()
+		sc.Overrides = []map[string]any{{"target": "S", "path": path, "value": 41.0}}
+		_, err := build(g, sc, nil, resolve.Options{})
+		var issue *resolve.IssueError
+		if !errors.As(err, &issue) || issue.Key != "S" {
+			t.Fatalf("path %s should return an issue for S, got %v", path, err)
+		}
+	}
+}
+
 func TestStartStatesSeedAndRecommend(t *testing.T) {
 	sc := scenario()
 	sc.StartState = "EMPTY"

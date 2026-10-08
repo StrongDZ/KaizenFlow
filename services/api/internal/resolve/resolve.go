@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 	_ "time/tzdata" // container alpine không có tzdata
@@ -104,6 +105,47 @@ func MergeNodeParams(t store.NodeType, n store.GraphNode) (map[string]any, error
 	return deepMerge(base, params), nil
 }
 
+func setPathValue(cur any, parts []string, value any) error {
+	part := parts[0]
+	last := len(parts) == 1
+	switch container := cur.(type) {
+	case map[string]any:
+		if last {
+			container[part] = cloneAny(value)
+			return nil
+		}
+		next, exists := container[part]
+		if !exists {
+			next = map[string]any{}
+			container[part] = next
+		}
+		switch next.(type) {
+		case map[string]any, []any:
+			return setPathValue(next, parts[1:], value)
+		default:
+			return fmt.Errorf("'%s' is not an object or array", part)
+		}
+	case []any:
+		index, err := strconv.Atoi(part)
+		if err != nil || index < 0 || index >= len(container) {
+			return fmt.Errorf("invalid list index '%s'", part)
+		}
+		if last {
+			container[index] = cloneAny(value)
+			return nil
+		}
+		next := container[index]
+		switch next.(type) {
+		case map[string]any, []any:
+			return setPathValue(next, parts[1:], value)
+		default:
+			return fmt.Errorf("list item %d is not an object or array", index)
+		}
+	default:
+		return fmt.Errorf("path cannot traverse '%s'", part)
+	}
+}
+
 func setPath(m map[string]any, path string, value any) error {
 	parts := []string{}
 	for _, p := range strings.Split(path, "/") {
@@ -114,20 +156,7 @@ func setPath(m map[string]any, path string, value any) error {
 	if len(parts) == 0 {
 		return fmt.Errorf("empty path")
 	}
-	cur := m
-	for _, p := range parts[:len(parts)-1] {
-		next, ok := cur[p].(map[string]any)
-		if !ok {
-			if _, exists := cur[p]; exists {
-				return fmt.Errorf("'%s' is not an object", p)
-			}
-			next = map[string]any{}
-			cur[p] = next
-		}
-		cur = next
-	}
-	cur[parts[len(parts)-1]] = cloneAny(value)
-	return nil
+	return setPathValue(m, parts, value)
 }
 
 func num(v any, def float64) float64 {
