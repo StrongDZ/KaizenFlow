@@ -147,6 +147,9 @@ describe('subNavFor (panel phụ cạnh thanh chính)', () => {
     const active = n.groups.flatMap((g) => g.tabs).filter((t) => isTabActive(t, '/runs/12/sensors')).map((t) => t.label)
     expect(active).toEqual(['Lần chạy'])
   })
+  it('lần chạy đang tải (chưa biết mô hình) vẫn giữ chỗ panel phụ', () => {
+    expect(subNavFor('/runs/12', {})).toEqual({ title: '…', groups: [] })
+  })
   it('tab của một lần chạy: so với gốc chỉ có khi có lần chạy gốc, đề xuất mang số lượng', () => {
     expect(runTabs(12).map((t) => t.label)).toEqual(['Control Room', 'Cảm biến', 'Đề xuất', 'Báo cáo'])
     const tabs = runTabs(12, { recommendations: 3, compare: true })

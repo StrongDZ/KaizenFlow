@@ -5,6 +5,7 @@ import { useRunBundle } from '../../hooks/useRunBundle'
 import { fmtDateTime } from '../../lib/format'
 import { candidatesOf } from '../../lib/insights'
 import { runTabs } from '../../lib/nav'
+import { formatScenarioDuration } from '../../lib/scenarioView'
 import { ShellContext, useShell } from '../shell/ShellContext'
 import { TabBar } from '../shell/TabBar'
 import { StatusChip } from '../ui'
@@ -27,18 +28,18 @@ export default function RunLayout() {
 
   return (
     <div className="flex h-full min-h-0 flex-col print:block print:h-auto">
-      <TabBar
+      {!shell.focus && <TabBar
         label={`Các phần của lần chạy #${runId}`} tabs={tabs}
         end={<>
           {run.data && (
             <span className="flex min-w-0 items-center gap-2 text-[11px] text-muted">
               <StatusChip status={run.data.status} />
-              {s && <span className="hidden truncate xl:inline">{s.replications} lần lặp, {Math.round(s.horizon_s / 3600)} giờ mô phỏng, bắt đầu {fmtDateTime(run.data.sim_start)}</span>}
+              {s && <span className="hidden truncate xl:inline">{s.replications} lần lặp, mô phỏng {formatScenarioDuration(s.horizon_s)}, bắt đầu {fmtDateTime(run.data.sim_start)}</span>}
             </span>
           )}
           <div ref={setActionsEl} className="flex flex-none items-center gap-2 empty:hidden" />
         </>}
-      />
+      />}
       <div className="relative min-h-0 flex-1 overflow-auto print:overflow-visible">
         <ShellContext.Provider value={value}>
           <Outlet />

@@ -91,6 +91,8 @@ export function subNavFor(path: string, ctx: NavCtx): SubNav | null {
   if (path.startsWith('/library')) return { title: 'Thư viện', icon: 'library', groups: [{ title: undefined, tabs: LIBRARY_TABS }] }
   if (path.startsWith('/gauge-twin')) return { title: 'Đồng hồ', icon: 'gauge', groups: [{ title: undefined, tabs: GAUGE_TABS }] }
   const tabs = tabsFor(path, ctx)
+  // Lần chạy mà chưa biết thuộc mô hình nào (đang tải): giữ chỗ panel để bố cục không giật khi dữ liệu về.
+  if (tabs.length === 0 && /^\/runs\/\d+/.test(path)) return { title: '…', groups: [] }
   if (tabs.length === 0) return null
   const subtitle = ctx.version !== undefined ? `v${ctx.version}` : ctx.versions?.length ? `${ctx.versions.length} phiên bản` : undefined
   return { title: ctx.modelKey ?? '…', subtitle, groups: groupTabs(tabs) }
