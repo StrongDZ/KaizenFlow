@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { GaugeStation } from '../api/gauge'
 import {
+  attentionHint,
   ageLabel, cameraLabel, countKinds, defaultLine, filterStations, fmtValue, gaugeStateLabel, gaugesOn, lineKey, linesOf, needsAttention,
   roiBox, roiCrop, sortStations, splitTiles, sparkPoints, stationKind, unitLabel,
 } from './gaugeView'
@@ -220,5 +221,24 @@ describe('splitTiles', () => {
     const [tiles, rest] = splitTiles(gauges)
     expect(tiles.map((x) => x.id)).toEqual(['a', 'b', 'c', 'e'])
     expect(rest.map((x) => x.id)).toEqual(['d', 'f'])
+  })
+})
+
+describe('attentionHint', () => {
+  const now = Date.parse('2026-10-09T10:00:00Z')
+  const gauge = (state: string, flags: string[] = []) => ({
+    gauge_id: 'P_HYD', type: 'analog_dial', unit: 'bar', roi: [], camera_id: '', min: 0, max: 10, state, ts: null, value: 11.4,
+    v_min: null, v_max: null, n_frames: null, quality: null, flags,
+  }) as unknown as GaugeStation['gauges'][number]
+  it('nói rõ đồng hồ nào, giá trị bao nhiêu và nên kiểm tra gì', () => {
+    expect(attentionHint({ ...station('m1', 'alarm'), gauges: [gauge('alarm')] }, now)).toBe('P_HYD 11,4 bar ngoài ngưỡng 0–10: kiểm tra máy')
+    expect(attentionHint({ ...station('m1', 'poor'), gauges: [gauge('poor', ['FLAG_GLARE'])] }, now)).toBe('P_HYD bị lóa: kiểm tra camera, đèn, vật che')
+    expect(attentionHint(station('m1', 'stale'), now)).toMatch(/edge/)
+  })
+  it('mất tín hiệu nói lần cuối edge báo về; trạm bình thường hay chưa có dữ liệu thì không có gì', () => {
+    const lost = { ...station('m1', 'offline', { edge: true }), edge: { edge_id: 'e', status: 'offline', last_seen: '2026-10-09T09:55:00Z' } }
+    expect(attentionHint(lost, now)).toBe('Edge im lặng, lần cuối 5 phút trước: kiểm tra nguồn và mạng của edge')
+    expect(attentionHint(station('m1', 'ok'), now)).toBeUndefined()
+    expect(attentionHint(station('m1', 'offline', { edge: false }), now)).toBeUndefined()
   })
 })

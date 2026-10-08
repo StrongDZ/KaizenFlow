@@ -25,7 +25,7 @@ const POINTS: { tool: Exclude<Tool, 'roi'>; label: string; mark: string }[] = [
 ]
 
 function Field({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
-  return <label className={`flex flex-col gap-1.5 text-sm text-text-2 ${wide ? 'col-span-2' : ''}`}>{label}{children}</label>
+  return <label className={`flex flex-col gap-1.5 text-xs text-text-2 ${wide ? 'col-span-2' : ''}`}>{label}{children}</label>
 }
 
 const pct = (v: number, total: number) => `${(v * 100) / total}%`
@@ -144,9 +144,9 @@ export default function GaugeCameraPage() {
     }),
   })
 
-  const back = <Link to="/gauge-twin/cameras" className="text-sm text-muted underline decoration-dotted hover:text-text">← Tất cả camera</Link>
+  const back = <Link to="/gauge-twin/cameras" className="text-xs text-muted underline decoration-dotted hover:text-text">← Tất cả camera</Link>
   if (cameras.data && !camera) {
-    return <GaugeArea>{back}<p className="rounded-xl bg-panel px-5 py-8 text-center text-muted">Không có camera <span className="font-mono text-text">{cameraId}</span>.</p></GaugeArea>
+    return <GaugeArea>{back}<p className="rounded-lg bg-panel px-5 py-8 text-center text-muted">Không có camera <span className="tabular-nums text-text">{cameraId}</span>.</p></GaugeArea>
   }
 
   const dragBox = drag && {
@@ -162,11 +162,10 @@ export default function GaugeCameraPage() {
     <GaugeArea>
       <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
         <div>
-          {back}
-          <h1 className="mt-1 text-3xl font-bold tracking-tight">{camera?.name || cameraId}</h1>
-          <p className="font-mono text-xs text-muted">{cameraId}{camera?.location && ` · ${camera.location}`}</p>
+          <h1 className="text-lg font-semibold text-text">{camera?.name || cameraId}</h1>
+          <p className="text-xs text-muted">{cameraId}{camera?.location && `, ${camera.location}`}</p>
         </div>
-        <p className="ml-auto text-sm text-text-2">
+        <p className="ml-auto text-xs text-text-2">
           {onCamera.length === 0 ? 'Chưa có đồng hồ nào trên camera này' : `${onCamera.length} đồng hồ của ${machineIds.length} máy`}
         </p>
       </div>
@@ -177,7 +176,7 @@ export default function GaugeCameraPage() {
             <button className={gtButton} onClick={() => void frame.refetch()} disabled={frame.isFetching}>
               {frame.isFetching ? 'Đang lấy hình…' : 'Lấy khung hình mới'}
             </button>
-            <span className="text-sm text-text-2">{hint}</span>
+            <span className="text-xs text-text-2">{hint}</span>
           </div>
 
           <div
@@ -185,12 +184,12 @@ export default function GaugeCameraPage() {
             onPointerDown={onDown}
             onPointerMove={(e) => drag && setDrag({ ...drag, to: at(e) })}
             onPointerUp={onUp}
-            className={`relative touch-none select-none overflow-hidden rounded-xl bg-raised ${frame.data ? 'cursor-crosshair' : ''}`}
+            className={`relative touch-none select-none overflow-hidden rounded-lg bg-raised ${frame.data ? 'cursor-crosshair' : ''}`}
             style={{ aspectRatio: `${size.width} / ${size.height}` }}
           >
             {frame.data
               ? <img src={`data:image/jpeg;base64,${frame.data.frame_jpeg}`} alt={`Khung hình từ camera ${cameraId}`} draggable={false} className="absolute inset-0 h-full w-full" />
-              : <p className="absolute inset-x-0 top-1/2 -translate-y-1/2 px-6 text-center font-mono text-sm text-faint">
+              : <p className="absolute inset-x-0 top-1/2 -translate-y-1/2 px-6 text-center tabular-nums text-xs text-faint">
                   {frame.isPending ? 'Đang lấy khung hình từ camera…' : 'Không lấy được khung hình. Kiểm tra địa chỉ camera và kết nối mạng từ server tới camera.'}
                 </p>}
 
@@ -201,7 +200,7 @@ export default function GaugeCameraPage() {
               return (
                 <div key={`${e.machine_id}/${e.gauge.gauge_id}`} className="pointer-events-none absolute rounded-sm border-2"
                   style={{ left: pct(x, size.width), top: pct(y, size.height), width: pct(w, size.width), height: pct(h, size.height), borderColor: colorOf(e.machine_id) }}>
-                  <span className="absolute bottom-full left-0 mb-0.5 whitespace-nowrap rounded px-1.5 py-0.5 font-mono text-[11px] font-bold text-on-accent" style={{ background: colorOf(e.machine_id) }}>
+                  <span className="absolute bottom-full left-0 mb-0.5 whitespace-nowrap rounded px-1.5 py-0.5 tabular-nums text-[11px] font-semibold text-on-accent" style={{ background: colorOf(e.machine_id) }}>
                     {e.machine_id} · {e.gauge.gauge_id}
                   </span>
                 </div>
@@ -217,7 +216,7 @@ export default function GaugeCameraPage() {
               if (!c) return null
               const f = calibToFrame(c, draft.roi!)
               return (
-                <span key={p.tool} className="pointer-events-none absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-text font-mono text-xs font-bold text-bg"
+                <span key={p.tool} className="pointer-events-none absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-text tabular-nums text-xs font-semibold text-bg"
                   style={{ left: pct(f.x, size.width), top: pct(f.y, size.height) }}>
                   {p.mark}
                 </span>
@@ -227,10 +226,10 @@ export default function GaugeCameraPage() {
           </div>
           <ActionError error={frame.error} />
 
-          <section className="rounded-xl bg-panel p-4">
-            <h2 className="text-base font-bold">Đồng hồ trên camera này</h2>
+          <section className="rounded-lg border border-line bg-panel p-3.5">
+            <h2 className="text-[13px] font-semibold text-text">Đồng hồ trên camera này</h2>
             {onCamera.length === 0
-              ? <p className="mt-1 text-sm text-muted">Chưa có. Khoanh đồng hồ đầu tiên trên ảnh rồi lưu ở khung bên phải.</p>
+              ? <p className="mt-1 text-xs text-muted">Chưa có. Khoanh đồng hồ đầu tiên trên ảnh rồi lưu ở khung bên phải.</p>
               : (
                 <ul className="mt-2.5 flex flex-wrap gap-2">
                   {onCamera.map((e) => {
@@ -238,11 +237,11 @@ export default function GaugeCameraPage() {
                     return (
                       <li key={`${e.machine_id}/${e.gauge.gauge_id}`}>
                         <button onClick={() => edit(e)} aria-pressed={active}
-                          className={`flex min-h-11 items-center gap-2 rounded-lg border-2 bg-raised px-3 text-sm ${active ? 'border-text' : 'border-raised hover:border-line-2'}`}>
+                          className={`flex min-h-8 items-center gap-2 rounded-lg border-2 bg-raised px-3 text-xs ${active ? 'border-text' : 'border-raised hover:border-line-2'}`}>
                           <span className="h-3 w-3 flex-none rounded-sm" style={{ background: colorOf(e.machine_id) }} />
-                          <span className="font-mono">{e.machine_id}</span>
+                          <span className="tabular-nums">{e.machine_id}</span>
                           <span className="text-muted">·</span>
-                          <span className="font-mono">{e.gauge.gauge_id}</span>
+                          <span className="tabular-nums">{e.gauge.gauge_id}</span>
                         </button>
                       </li>
                     )
@@ -252,16 +251,16 @@ export default function GaugeCameraPage() {
           </section>
         </div>
 
-        <aside className="flex min-w-0 flex-[1_1_380px] flex-col gap-4 rounded-xl bg-panel p-4">
+        <aside className="flex min-w-0 flex-[1_1_380px] flex-col gap-4 rounded-lg border border-line bg-panel p-3.5">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-xl font-bold">{editing ? 'Sửa đồng hồ' : 'Đồng hồ mới'}</h2>
+            <h2 className="text-xs font-semibold">{editing ? 'Sửa đồng hồ' : 'Đồng hồ mới'}</h2>
             {editing && <button className={gtButton} onClick={startNew}>Thêm đồng hồ khác</button>}
           </div>
 
           <fieldset className="grid grid-cols-2 gap-3">
-            <legend className="mb-2 text-sm font-bold text-text">1. Đồng hồ này của máy nào</legend>
+            <legend className="mb-2 text-xs font-semibold text-text">1. Đồng hồ này của máy nào</legend>
             <Field label="Mã máy" wide>
-              <input className={`${gtField} font-mono`} list="gt-machines" value={machine.machine_id} disabled={editing !== null}
+              <input className={`${gtField} tabular-nums`} list="gt-machines" value={machine.machine_id} disabled={editing !== null}
                 onChange={(e) => pickMachine(e.target.value)} placeholder="Chọn máy có sẵn hoặc gõ mã máy mới" />
               <datalist id="gt-machines">{(stations.data ?? []).map((s) => <option key={s.machine_id} value={s.machine_id} />)}</datalist>
             </Field>
@@ -275,9 +274,9 @@ export default function GaugeCameraPage() {
           </fieldset>
 
           <fieldset className="grid grid-cols-2 gap-3">
-            <legend className="mb-2 text-sm font-bold text-text">2. Đồng hồ</legend>
+            <legend className="mb-2 text-xs font-semibold text-text">2. Đồng hồ</legend>
             <Field label="Mã đồng hồ">
-              <input className={`${gtField} font-mono`} value={draft.gauge_id} disabled={editing !== null} onChange={(e) => patch({ gauge_id: e.target.value })} placeholder="OIL_TEMP" />
+              <input className={`${gtField} tabular-nums`} value={draft.gauge_id} disabled={editing !== null} onChange={(e) => patch({ gauge_id: e.target.value })} placeholder="OIL_TEMP" />
             </Field>
             <Field label="Đơn vị">
               <input className={gtField} value={draft.unit} onChange={(e) => patch({ unit: e.target.value })} placeholder="bar, V, degC…" />
@@ -291,7 +290,7 @@ export default function GaugeCameraPage() {
           </fieldset>
 
           <fieldset className="flex flex-col gap-3">
-            <legend className="mb-2 text-sm font-bold text-text">3. Vị trí trên ảnh</legend>
+            <legend className="mb-2 text-xs font-semibold text-text">3. Vị trí trên ảnh</legend>
             <div className="flex flex-wrap gap-2">
               <button className={`${gtButton} ${tool === 'roi' ? 'border-accent' : ''}`} aria-pressed={tool === 'roi'} onClick={() => setTool('roi')}>
                 {draft.roi ? 'Khoanh lại vùng' : 'Khoanh vùng'}
@@ -302,14 +301,14 @@ export default function GaugeCameraPage() {
                 </button>
               ))}
             </div>
-            <p className="font-mono text-xs text-muted">
+            <p className="tabular-nums text-xs text-muted">
               {draft.roi ? `vùng đọc: x ${draft.roi[0]}, y ${draft.roi[1]}, rộng ${draft.roi[2]}, cao ${draft.roi[3]}` : 'chưa khoanh vùng'}
             </p>
             {draft.type !== 'analog_dial' && <p className="text-xs text-muted">Với màn hình số, khoanh sát mép các chữ số, không lấy viền và nhãn.</p>}
           </fieldset>
 
           <fieldset className="grid grid-cols-2 gap-3">
-            <legend className="mb-2 text-sm font-bold text-text">4. Thang đo</legend>
+            <legend className="mb-2 text-xs font-semibold text-text">4. Thang đo</legend>
             {draft.type === 'analog_dial' && (
               <>
                 <Field label="Giá trị ở vạch min"><input className={gtField} type="number" step="any" value={draft.min_val} onChange={(e) => patch({ min_val: e.target.value })} /></Field>
@@ -340,13 +339,13 @@ export default function GaugeCameraPage() {
             {draft.type === 'rolling_counter' && (
               <Field label="Số chữ số thập phân"><input className={gtField} type="number" min={0} value={draft.decimal_digits} onChange={(e) => patch({ decimal_digits: e.target.value })} /></Field>
             )}
-            {draft.type === 'timer_mmss' && <p className="col-span-2 text-sm text-muted">Bốn chữ số dạng phút:giây; giá trị gửi về tính bằng giây.</p>}
+            {draft.type === 'timer_mmss' && <p className="col-span-2 text-xs text-muted">Bốn chữ số dạng phút:giây; giá trị gửi về tính bằng giây.</p>}
             <Field label="Ngưỡng dưới (tuỳ chọn)"><input className={gtField} type="number" step="any" value={draft.rule_min} onChange={(e) => patch({ rule_min: e.target.value })} /></Field>
             <Field label="Ngưỡng trên (tuỳ chọn)"><input className={gtField} type="number" step="any" value={draft.rule_max} onChange={(e) => patch({ rule_max: e.target.value })} /></Field>
           </fieldset>
 
           {problems.length > 0 && (
-            <ul className="list-disc rounded-lg bg-panel-2 py-2.5 pl-8 pr-3 text-sm text-text-2">
+            <ul className="list-disc rounded-lg bg-panel-2 py-2.5 pl-8 pr-3 text-xs text-text-2">
               {problems.map((p) => <li key={p}>{p}</li>)}
             </ul>
           )}
@@ -366,25 +365,25 @@ export default function GaugeCameraPage() {
             )}
           </div>
           {reading && (
-            <p role="status" className="rounded-lg bg-panel-2 px-3.5 py-2.5 text-sm">
+            <p role="status" className="rounded-lg bg-panel-2 px-3.5 py-2.5 text-xs">
               {reading.error ? <span className="text-warn">Chưa đọc được: {reading.error}</span> : (
                 <>
                   Hệ thống đọc được{' '}
-                  <span className="font-mono text-lg font-bold text-text">{fmtValue(reading.value ?? null, draft.type)} {unitLabel(draft.unit)}</span>
+                  <span className="tabular-nums text-[13px] font-semibold text-text">{fmtValue(reading.value ?? null, draft.type)} {unitLabel(draft.unit)}</span>
                   <span className="text-muted"> · độ tin cậy {Math.round(reading.quality * 100)}%{reading.flags?.length ? ` · ${reading.flags.join(', ')}` : ''}</span>
                 </>
               )}
             </p>
           )}
-          {saved && <p role="status" className="rounded-lg bg-panel-2 px-3.5 py-2.5 text-sm text-ok">{saved}</p>}
+          {saved && <p role="status" className="rounded-lg bg-panel-2 px-3.5 py-2.5 text-xs text-ok">{saved}</p>}
           <ActionError error={preview.error ?? save.error ?? remove.error} />
 
           <fieldset className="flex flex-col gap-3 border-t border-line pt-4">
             <legend className="sr-only">Nghiệm thu</legend>
-            <h3 className="text-sm font-bold text-text">5. Nghiệm thu tại chỗ</h3>
+            <h3 className="text-xs font-semibold text-text">5. Nghiệm thu tại chỗ</h3>
             <p className="text-xs text-muted">Nhập giá trị bạn đang thấy trên đồng hồ thật. Hệ thống lấy một khung hình mới, tự đọc và so sánh. Cần 3 mẫu đúng; mỗi mẫu được lưu kèm ảnh.</p>
             <div className="flex flex-wrap items-end gap-2.5">
-              <label className="flex flex-col gap-1.5 text-sm text-text-2">
+              <label className="flex flex-col gap-1.5 text-xs text-text-2">
                 Giá trị đang thấy
                 <input className={`${gtField} w-36`} type="number" step="any" value={truth} onChange={(e) => setTruth(e.target.value)} />
               </label>
@@ -393,8 +392,8 @@ export default function GaugeCameraPage() {
               </button>
             </div>
             {verdict && (
-              <p role="status" className="rounded-lg bg-panel-2 px-3.5 py-2.5 text-sm">
-                <span className={`font-bold ${verdict.passed ? 'text-ok' : 'text-bad'}`}>{verdict.passed ? 'Mẫu đạt' : 'Mẫu sai'}</span>
+              <p role="status" className="rounded-lg bg-panel-2 px-3.5 py-2.5 text-xs">
+                <span className={`font-semibold ${verdict.passed ? 'text-ok' : 'text-bad'}`}>{verdict.passed ? 'Mẫu đạt' : 'Mẫu sai'}</span>
                 {verdict.value !== undefined && <span> · hệ thống đọc {fmtValue(verdict.value, draft.type)}</span>}
                 {verdict.reason && <span className="text-muted"> · {verdict.reason}</span>}
                 {verdict.summary && <span className="text-muted"> · {verdict.summary.passed} đạt, {verdict.summary.failed} sai, cần {verdict.summary.needed}</span>}

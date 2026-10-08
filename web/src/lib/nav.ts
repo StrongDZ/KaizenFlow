@@ -89,7 +89,7 @@ const LIBRARY_TABS: Tab[] = [
  */
 export function subNavFor(path: string, ctx: NavCtx): SubNav | null {
   if (path.startsWith('/library')) return { title: 'Thư viện', icon: 'library', groups: [{ title: undefined, tabs: LIBRARY_TABS }] }
-  if (path.startsWith('/gauge-twin')) return { title: 'Đồng hồ', subtitle: 'Đọc đồng hồ bằng camera', icon: 'gauge', groups: [{ title: undefined, tabs: GAUGE_TABS }] }
+  if (path.startsWith('/gauge-twin')) return { title: 'Đồng hồ', icon: 'gauge', groups: [{ title: undefined, tabs: GAUGE_TABS }] }
   const tabs = tabsFor(path, ctx)
   if (tabs.length === 0) return null
   const subtitle = ctx.version !== undefined ? `v${ctx.version}` : ctx.versions?.length ? `${ctx.versions.length} phiên bản` : undefined

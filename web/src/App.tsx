@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom'
 import { useLiveRuns } from './api/live'
 import RunLayout from './components/controlroom/RunLayout'
+import StationLayout from './components/gauge/StationLayout'
 import { Shell } from './components/shell/Shell'
 import { EmptyState, PageBody } from './components/ui'
 import { shouldRetry } from './lib/retry'
@@ -70,8 +71,10 @@ export default function App() {
             <Route path="/gauge-twin" element={<GaugeOverviewPage />} />
             <Route path="/gauge-twin/cameras" element={<GaugeCamerasPage />} />
             <Route path="/gauge-twin/cameras/:camera" element={<GaugeCameraPage />} />
-            <Route path="/gauge-twin/:machine" element={<GaugeStationPage />} />
-            <Route path="/gauge-twin/:machine/history" element={<GaugeHistoryPage />} />
+            <Route path="/gauge-twin/:machine" element={<StationLayout />}>
+              <Route index element={<GaugeStationPage />} />
+              <Route path="history" element={<GaugeHistoryPage />} />
+            </Route>
             <Route path="/models" element={<ModelsPage />} />
             <Route path="/models/:key/versions" element={<VersionsPage />} />
             <Route path="/models/:key/sources" element={<SourcesPage />} />
