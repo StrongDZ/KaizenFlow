@@ -34,6 +34,16 @@
   --color-role-process: #6fa3ff;
   --color-role-sink: #8fb0c9;
   --color-role-pool: #e08fd1;
+  /* Bí danh cho các trang dùng tên ok-text / warn-text / info / err (Tổng quan, Trực tiếp, popover kho và máy):
+     cùng bảng màu trạng thái, chữ trạng thái đậm hơn nền để đọc được ở cả hai giao diện. */
+  --color-ok-text: #4fd18c;
+  --color-warn-text: #f5b83d;
+  --color-err: #f0564a;
+  --color-err-text: #ff7a6e;
+  --color-err-bg: #2a1a1e;
+  --color-info: #5aa2ff;
+  --color-info-text: #8cbcff;
+  --color-info-bg: #15243a;
 }
 
 [data-theme='light'] {
@@ -65,6 +75,14 @@
   --color-role-process: #2a64d0;
   --color-role-sink: #4b6a83;
   --color-role-pool: #a8408f;
+  --color-ok-text: #167a45;
+  --color-warn-text: #8a6100;
+  --color-err: #d33a2c;
+  --color-err-text: #bf2e20;
+  --color-err-bg: #fbe9e7;
+  --color-info: #1d5fd1;
+  --color-info-text: #1a4fae;
+  --color-info-bg: #e8f0fd;
 }
 
 /* Bản in luôn ra giấy trắng, kể cả khi đang ở trang tối. */
@@ -95,6 +113,14 @@
     --color-role-process: #2a64d0;
     --color-role-sink: #4b6a83;
     --color-role-pool: #a8408f;
+    --color-ok-text: #167a45;
+    --color-warn-text: #8a6100;
+    --color-err: #d33a2c;
+    --color-err-text: #bf2e20;
+    --color-err-bg: #fbe9e7;
+    --color-info: #1d5fd1;
+    --color-info-text: #1a4fae;
+    --color-info-bg: #e8f0fd;
     color-scheme: light;
   }
 }

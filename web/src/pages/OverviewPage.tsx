@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   ArrowUpRight, Plus, PlayCircle, Workflow, Network, LineChart, Library,
-  Search as SearchIcon, Sparkles, Clock, Boxes, Warehouse,
+  Search as SearchIcon, Clock, Boxes, Warehouse,
   CircleDot, TrendingUp, TrendingDown,
   Factory, Truck, Wallet, type LucideIcon, AlertTriangle,
 } from 'lucide-react'
@@ -353,7 +353,7 @@ function DeltaChip({ metricKey, value, showIcon = true, fallbackGood = true }:
   )
 }
 
-const CARD_BASE = 'rounded-2xl border border-line bg-panel transition hover:border-text/20'
+const CARD_BASE = 'rounded-xl border border-line bg-panel'
 
 function HeroKpiCard({
   icon: Icon, title, value, metricKey, delta, hint, series, tone,
@@ -361,16 +361,12 @@ function HeroKpiCard({
   icon: LucideIcon; title: string; value: React.ReactNode; metricKey: string;
   delta: number; hint?: string; series: PerfSeriesPoint[]; tone?: 'accent' | 'good' | 'warn' | 'err';
 }) {
-  const toneCls =
-    tone === 'accent' ? 'from-accent-soft-2 via-accent-soft/60 to-panel border-accent-line/60'
-    : tone === 'good'   ? 'from-ok-bg/70 via-ok-bg/30 to-panel border-ok/30'
-    : tone === 'warn'   ? 'from-warn-bg/70 via-warn-bg/30 to-panel border-warn/30'
-    : tone === 'err'    ? 'from-err-bg/70 via-err-bg/30 to-panel border-err/30'
-    : 'from-panel-2 via-panel to-panel border-line'
+  // Thẻ không tô nền theo tốt/xấu: chiều tăng giảm đã nằm ở chip chênh lệch và màu đường xu hướng.
+  const toneCls = tone === 'err' ? 'border-err/40' : 'border-line'
   const sparkTone =
     tone === 'good' ? 'good' : tone === 'err' ? 'bad' : 'neutral'
   return (
-    <div className={`${CARD_BASE} relative overflow-hidden bg-gradient-to-br ${toneCls} p-4`}>
+    <div className={`${CARD_BASE} relative overflow-hidden ${toneCls} p-4`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1.5">
           <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted">
@@ -448,7 +444,7 @@ function filterRows<M extends object>(rows: M[], q: string, keys: (m: M) => (str
 
 type QuickAction = { to: string; label: string; icon: LucideIcon; hint?: string; primary?: boolean; tone?: 'edit' | 'live' | 'scenario' | 'connect' | 'runs' | 'lib' }
 const TONE_BADGE: Record<Exclude<QuickAction['tone'], undefined>, string> = {
-  edit:     'bg-accent-soft-2/70 text-accent-text border border-accent-line/60',
+  edit:     'bg-accent/12 text-accent border border-accent/40',
   live:     'bg-ok-bg text-ok-text border border-ok/30',
   scenario: 'bg-warn-bg text-warn-text border border-warn/30',
   connect:  'bg-info-bg text-info-text border border-info/30',
@@ -545,23 +541,17 @@ export default function OverviewPage() {
       {/* ════════════════════════════════════════════════════════════════════
           HERO BANNER — Gradient blur + Tóm tắt điều hành (Executive Summary)
           ════════════════════════════════════════════════════════════════════ */}
-      <section className="relative overflow-hidden rounded-3xl border border-line bg-gradient-to-br from-panel via-panel to-panel-2 px-5 py-5 sm:px-7 sm:py-6">
-        <div aria-hidden className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-accent-2/20 blur-3xl" />
-        <div aria-hidden className="pointer-events-none absolute -bottom-28 -left-12 h-60 w-60 rounded-full bg-ok/10 blur-3xl" />
-        <div aria-hidden className="pointer-events-none absolute right-1/3 top-1/2 h-40 w-40 rounded-full bg-warn/10 blur-3xl" />
+      <section className="relative rounded-xl border border-line bg-panel px-5 py-4">
 
         <div className="relative flex flex-wrap items-start justify-between gap-6">
           <div className="flex max-w-2xl flex-col gap-3">
-            <div className="inline-flex w-fit items-center gap-1.5 rounded-full border border-accent-line/50 bg-accent-soft-2/60 px-2.5 py-1 text-[10.5px] font-medium text-accent-text">
-              <Sparkles size={11} strokeWidth={2} />
-              Tổng quan hiệu năng — Executive Dashboard
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-text sm:text-[27px] leading-tight">
-              Hiệu năng vận hành nhà máy — Cập nhật <span className="text-accent-text">{fmtDateTime(kpis.as_of)}</span>
+            <h1 className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-lg font-semibold leading-tight text-text">
+              Hiệu năng vận hành nhà máy
+              <span className="text-xs font-normal text-muted">cập nhật {fmtDateTime(kpis.as_of)}</span>
+              <span className="rounded-[5px] border border-warn/40 bg-warn/10 px-1.5 py-px text-[10.5px] font-normal text-warn-text" title="Các chỉ số máy, xe, kho và tài chính trên trang này đang sinh từ dữ liệu mẫu, chưa nối API thật">Số liệu minh hoạ</span>
             </h1>
-            <p className="max-w-xl text-sm text-muted leading-relaxed">
-              Tổng hợp chỉ số cốt lõi trên 4 trụ cột: <b className="text-text-2">Máy móc · Xe vận chuyển · Kho lưu trữ · Kinh tế</b>.
-              Mỗi thẻ bên dưới đều link đến nơi xử lý chi tiết; mọi số liệu đều đồng bộ thời gian thực với live engine.
+            <p className="max-w-xl text-xs leading-5 text-muted">
+              Chỉ số cốt lõi theo bốn nhóm: máy móc, xe vận chuyển, kho lưu trữ và tài chính. Mỗi thẻ dẫn tới nơi xem chi tiết và xử lý.
             </p>
             <div className="flex flex-wrap items-center gap-2 pt-0.5">
               <button
@@ -572,33 +562,32 @@ export default function OverviewPage() {
                 <Plus size={13} strokeWidth={1.9} /> Tạo mô hình mới
                 <ArrowUpRight size={11} className="opacity-70" />
               </button>
-              {quickActions.filter((a) => !a.primary).slice(0, 3).map((a) => <QuickNav key={a.label + a.to} {...a} />)}
             </div>
           </div>
 
           {/* Mini recent + quick stats compact bên phải hero */}
           <div className="flex w-full max-w-md flex-col gap-3 sm:w-auto">
             <div className="grid grid-cols-2 gap-2.5">
-              <div className="rounded-2xl border border-line bg-panel px-3 py-2.5 flex flex-col gap-0.5">
+              <div className="flex flex-col gap-0.5 rounded-lg border border-line bg-panel-2 px-3 py-2.5">
                 <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><Boxes size={11} /> Mô hình</div>
                 <div className="text-base font-semibold tabular-nums leading-tight text-text">{models.data?.length ?? 0}</div>
                 <div className="text-[10px] text-muted">{recent.filter((m) => m.last_run_at).length} đã chạy mô phỏng</div>
               </div>
-              <div className="rounded-2xl border border-line bg-panel px-3 py-2.5 flex flex-col gap-0.5">
+              <div className="flex flex-col gap-0.5 rounded-lg border border-line bg-panel-2 px-3 py-2.5">
                 <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><Warehouse size={11} /> Kho & Máy</div>
                 <div className="text-base font-semibold tabular-nums leading-tight text-text">
                   {fmtNumber(kpis.storage.length + kpis.machines.length)}
                 </div>
                 <div className="text-[10px] text-muted">{kpis.fleet.length} phương tiện vận hành</div>
               </div>
-              <div className="rounded-2xl border border-line bg-panel px-3 py-2.5 flex flex-col gap-0.5">
+              <div className="flex flex-col gap-0.5 rounded-lg border border-line bg-panel-2 px-3 py-2.5">
                 <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><AlertTriangle size={11} /> Kho nguy cơ Đỏ</div>
                 <div className="text-base font-semibold tabular-nums leading-tight text-err-text">
                   {kpis.storage.filter((s) => s.band_color === 'RED').length}
                 </div>
                 <div className="text-[10px] text-muted">{kpis.storage.filter((s) => s.band_color === 'YELLOW').length} đang cảnh báo Vàng</div>
               </div>
-              <div className="rounded-2xl border border-line bg-panel px-3 py-2.5 flex flex-col gap-0.5">
+              <div className="flex flex-col gap-0.5 rounded-lg border border-line bg-panel-2 px-3 py-2.5">
                 <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><Factory size={11} /> Máy đang chạy</div>
                 <div className="text-base font-semibold tabular-nums leading-tight text-ok-text">
                   {kpis.machines.filter((m) => m.state === 'RUNNING').length}
@@ -649,7 +638,7 @@ export default function OverviewPage() {
       </section>
 
       {/* Quick-actions bar (dưới hero KPI) */}
-      <section className="flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-panel px-4 py-3" aria-label="Liên kết nhanh">
+      <section className="flex flex-wrap items-center gap-2" aria-label="Liên kết nhanh">
         {quickActions.map((a) => <QuickNav key={a.label + a.to} {...a} />)}
       </section>
 
@@ -820,7 +809,7 @@ export default function OverviewPage() {
       {/* ════════════════════════════════════════════════════════════════════
           DÒNG CUỐI: Các mô hình gần đây (click mở sơ đồ / live / scenario)
           ════════════════════════════════════════════════════════════════════ */}
-      <section className="rounded-2xl border border-line bg-panel p-4">
+      <section className="rounded-xl border border-line bg-panel p-4">
         <header className="mb-3 flex flex-wrap items-end justify-between gap-2">
           <div>
             <h2 className="text-sm font-semibold text-text">Các mô hình của bạn</h2>
@@ -893,9 +882,9 @@ function ModelCard({ m }: { m: ModelSummary }) {
     { label: 'Kết nối',   to: `/models/${mk}/connect`,      icon: Network,    tone: 'connect' },
   ] as const
   return (
-    <li className="group relative overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-panel via-panel to-panel-2 p-3.5 transition hover:border-text/20 hover:-translate-y-0.5 hover:shadow-[0_6px_24px_-12px_rgba(0,0,0,0.35)]">
+    <li className="group relative overflow-hidden rounded-lg border border-line bg-panel p-3.5 hover:border-line-2 hover:shadow-[0_6px_24px_-12px_rgba(0,0,0,0.35)]">
       <div className="flex items-start gap-3">
-        <div className="relative flex h-10 w-10 flex-none items-center justify-center rounded-xl border border-accent-line/60 bg-linear-to-br from-accent-soft-2 via-accent-soft to-accent-2 text-accent-text">
+        <div className="relative flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-accent/12 text-accent">
           <Boxes size={17} strokeWidth={1.8} />
           <span className="absolute -bottom-1 -right-1 rounded-full border border-line bg-panel px-1 text-[9px] font-semibold text-text-2 tabular-nums">v{m.latest_version}</span>
         </div>
