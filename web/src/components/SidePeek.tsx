@@ -35,7 +35,7 @@ export function PeekHost({ peek, onClose, children }: { peek: ReactNode; onClose
     <>
       {children}
       {open && (
-        <aside aria-label="Chi tiết" className="kf-peek-in fixed bottom-0 right-0 top-10 z-30 w-[min(480px,92vw)] border-l border-line bg-panel shadow-2xl print:hidden">
+        <aside aria-label="Chi tiết" className="kf-peek-in fixed bottom-0 right-0 top-10 z-30 w-[min(680px,92vw)] border-l border-line bg-panel shadow-2xl print:hidden">
           {peek}
         </aside>
       )}

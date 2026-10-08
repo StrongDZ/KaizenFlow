@@ -40,7 +40,14 @@ func New(t *testing.T, name string) *pgxpool.Pool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(pool.Close)
+	t.Cleanup(func() {
+		pool.Close()
+		c, err := pgx.Connect(context.Background(), admin)
+		if err == nil {
+			_, _ = c.Exec(context.Background(), "DROP DATABASE IF EXISTS "+dbname+" WITH (FORCE)")
+			_ = c.Close(context.Background())
+		}
+	})
 	if err := db.Migrate(pool); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
