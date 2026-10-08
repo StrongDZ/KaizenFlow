@@ -32,6 +32,10 @@ func TestSignalsForPoolOnlyVehiclesHaveFleet(t *testing.T) {
 	if agv["fleet"] != "fleet" || agv["busy"] != "number" || agv["queue_len"] != "number" {
 		t.Errorf("AGV pool = %v", agv)
 	}
+	amr := names(SignalsFor("RESOURCE_POOL", map[string]any{"kind": "AMR"}))
+	if amr["fleet"] != "fleet" {
+		t.Errorf("AMR pool must report vehicle positions: %v", amr)
+	}
 	op := names(SignalsFor("RESOURCE_POOL", map[string]any{"kind": "OPERATOR"}))
 	if _, ok := op["fleet"]; ok {
 		t.Errorf("operators have no fleet position: %v", op)

@@ -185,19 +185,24 @@ func (s *Service) bindingsOf(model string) []live.Binding {
 // Ingest chuẩn hoá một lô bản tin không nói rõ của mô hình nào: nguồn được ghi nhận cho những mô hình có ghép nối khớp nó.
 func (s *Service) Ingest(msgs []live.Message) IngestResult { return s.IngestFor("", msgs) }
 
-// IngestFor chuẩn hoá một lô bản tin. model (nếu có, do feed gửi kèm) là mô hình mà các nguồn trong lô thuộc về.
-// Bản tin hỏng bị đếm và bỏ, không làm hỏng cả lô.
+// IngestFor chuẩn hoá một lô bản tin. model (nếu có, do feed gửi kèm) là mô hình mà lô thuộc về: bản tin chỉ được áp cho mô hình đó,
+// nên nhiều feed chạy song song (mỗi feed một mô hình, dù chung tên nguồn) không ghi đè trạng thái và giờ ảo của nhau.
+// Không có model (nguồn thật, ví dụ MQTT) thì bản tin áp cho mọi mô hình có ghép nối khớp. Bản tin hỏng bị đếm và bỏ, không làm hỏng cả lô.
 func (s *Service) IngestFor(model string, msgs []live.Message) IngestResult {
 	var res IngestResult
 	wall := s.now()
 	s.mu.Lock()
 	byModel := make(map[string][]live.Binding, len(s.byModel))
-	for k, v := range s.byModel {
-		byModel[k] = v
-	}
 	derived := make(map[string][]live.Binding, len(s.derived))
+	for k, v := range s.byModel {
+		if model == "" || k == model {
+			byModel[k] = v
+		}
+	}
 	for k, v := range s.derived {
-		derived[k] = v
+		if model == "" || k == model {
+			derived[k] = v
+		}
 	}
 	s.mu.Unlock()
 	s.refreshMaps(byModel, wall)
@@ -208,7 +213,7 @@ func (s *Service) IngestFor(model string, msgs []live.Message) IngestResult {
 			continue
 		}
 		res.Accepted++
-		s.state.NoteSource(msg, wall)
+		s.state.NoteSource(model, msg, wall)
 		s.noteSource(model, byModel, msg, wall)
 		for model, bs := range byModel {
 			rs, errs := live.Normalize(model, bs, msg)

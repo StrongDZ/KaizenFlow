@@ -1,11 +1,10 @@
-import { Bell, Gauge, LayoutGrid, Library, Play, Workflow, type LucideIcon } from 'lucide-react'
+import { Bell, Gauge, LayoutGrid, Library, Workflow, type LucideIcon } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import { sectionOf, type Section } from '../../lib/nav'
 
 const ITEMS: { key: Section; label: string; to: string; icon: LucideIcon }[] = [
   { key: 'overview', label: 'Tổng quan', to: '/', icon: LayoutGrid },
   { key: 'models', label: 'Mô hình', to: '/models', icon: Workflow },
-  { key: 'runs', label: 'Lần chạy', to: '/runs', icon: Play },
   { key: 'alerts', label: 'Cảnh báo', to: '/alerts', icon: Bell },
   { key: 'gauge', label: 'Đồng hồ', to: '/gauge-twin', icon: Gauge },
   { key: 'library', label: 'Thư viện', to: '/library/node-types', icon: Library },
@@ -20,11 +19,11 @@ export function NavRail() {
           key={key}
           to={to}
           aria-current={active === key ? 'page' : undefined}
-          className={`flex w-12 flex-col items-center gap-0.5 whitespace-nowrap rounded-lg py-1.5 text-[9.5px] ${
-            active === key ? 'bg-panel text-text' : 'text-muted hover:text-text'
-          }`}
+          className={`group flex w-12 flex-col items-center gap-1 whitespace-nowrap py-1 text-[10px] ${active === key ? 'font-medium text-text' : 'text-muted hover:text-text'}`}
         >
-          <Icon size={18} strokeWidth={1.6} />
+          <span className={`flex h-8 w-10 items-center justify-center rounded-lg ${active === key ? 'bg-accent/15 text-accent' : 'group-hover:bg-panel'}`}>
+            <Icon size={18} strokeWidth={1.7} />
+          </span>
           {label}
         </Link>
       ))}

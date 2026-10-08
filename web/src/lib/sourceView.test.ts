@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DataSourceRow } from '../api/types'
-import { ageText, parseSample, rateText, summarizeSources, validSourceName } from './sourceView'
+import { ageText, parseSample, rateText, summarizeSources, validSourceName, sourceKind } from './sourceView'
 
 const row = (over: Partial<DataSourceRow>): DataSourceRow => ({
   source: 's', desc: '', origin: 'feed', first_seen: '', last_seen: '', count: 1, sample: null, live: true, age_ms: 0, per_min: 0, bindings: [], ...over,
@@ -59,5 +59,18 @@ describe('parseSample', () => {
     const r = parseSample('{n: 3}')
     expect(r.ok).toBe(false)
     expect(r.ok === false && r.error).toContain('JSON')
+  })
+})
+
+describe('sourceKind (biểu tượng của nguồn theo tiền tố topic)', () => {
+  it('nhận ra PLC, kho (WMS), đội xe (FMS/AGV), MES và cảm biến; còn lại là nguồn chung', () => {
+    expect(sourceKind('plc/prs-02/status')).toBe('machine')
+    expect(sourceKind('wms/wh-raw/stock')).toBe('stock')
+    expect(sourceKind('fms/fleet/a')).toBe('fleet')
+    expect(sourceKind('AGV/tug-a/pos')).toBe('fleet')
+    expect(sourceKind('mes/line3/count')).toBe('line')
+    expect(sourceKind('sensor/temp/1')).toBe('sensor')
+    expect(sourceKind('iot/vib')).toBe('sensor')
+    expect(sourceKind('something/else')).toBe('other')
   })
 })

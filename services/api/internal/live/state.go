@@ -75,6 +75,7 @@ type subject struct {
 }
 
 type sourceInfo struct {
+	model        string // mô hình mà feed gửi kèm; rỗng là nguồn thật không thuộc riêng mô hình nào
 	source, desc string
 	lastTS       time.Time
 	seenWall     time.Time
@@ -141,16 +142,18 @@ func (s *State) matchVehicle(model string, v *Vehicle, prevLane string) {
 }
 
 // NoteSource ghi nhận một nguồn đang phát (để UI liệt kê và gợi ý ghép), kể cả khi chưa có binding nào.
-func (s *State) NoteSource(msg Message, wall time.Time) {
+// model là mô hình mà feed gửi kèm (rỗng nếu không rõ): hai feed cùng tên nguồn được đếm riêng, không cộng dồn.
+func (s *State) NoteSource(model string, msg Message, wall time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	so := s.sources[msg.Source]
+	key := model + "\x00" + msg.Source
+	so := s.sources[key]
 	if so == nil {
 		if len(s.sources) >= maxSources {
 			return
 		}
-		so = &sourceInfo{source: msg.Source}
-		s.sources[msg.Source] = so
+		so = &sourceInfo{model: model, source: msg.Source}
+		s.sources[key] = so
 	}
 	if msg.Desc != "" {
 		so.desc = msg.Desc
@@ -393,7 +396,16 @@ func (s *State) Snapshot(model string, wall time.Time, bindings []Binding) Snaps
 			out.Fleet[pool] = list
 		}
 	}
+	pick := map[string]*sourceInfo{} // một nguồn một dòng: bản của chính mô hình này thắng bản không gắn mô hình
 	for _, so := range s.sources {
+		if so.model != "" && so.model != model {
+			continue
+		}
+		if cur := pick[so.source]; cur == nil || (cur.model == "" && so.model != "") {
+			pick[so.source] = so
+		}
+	}
+	for _, so := range pick {
 		bound := false
 		for _, b := range bindings {
 			if b.Enabled && MatchSource(b.Source, so.source) {

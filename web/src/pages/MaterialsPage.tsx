@@ -1,4 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
+import { Package } from 'lucide-react'
+import { ItemIdentity } from '../components/NodeIdentity'
 import { useState } from 'react'
 import { api } from '../api/client'
 import type { Material } from '../api/types'
@@ -11,8 +13,7 @@ import { usedIn } from '../lib/format'
 import { filterRows } from '../lib/table'
 
 const COLUMNS: Column<Material>[] = [
-  { key: 'name', header: 'Tên', cell: (m) => <span className="font-medium text-text">{m.name || m.code}</span>, sort: (m) => m.name || m.code },
-  { key: 'code', header: 'Mã', cell: (m) => <span className="text-muted">{m.code}</span>, sort: (m) => m.code },
+  { key: 'name', header: 'Vật tư', cell: (m) => <ItemIdentity icon={Package} name={m.name || m.code} code={m.name ? m.code : undefined} color="var(--color-role-storage)" />, sort: (m) => m.name || m.code },
   { key: 'unit', header: 'Đơn vị', cell: (m) => m.unit, sort: (m) => m.unit },
   { key: 'used', header: 'Dùng trong', cell: (m) => usedIn(m.used_in_versions), sort: (m) => m.used_in_versions ?? 0 },
 ]
@@ -27,7 +28,7 @@ export default function MaterialsPage() {
   return (
     <PeekHost onClose={() => setPeek(null)} peek={peek ? <MaterialDetail key={peek} code={peek} variant="peek" onClose={() => setPeek(null)} /> : null}>
     <PageBody>
-      <PageHeader
+      <PageHeader icon={Package}
         title="Vật tư"
         subtitle={mats.data ? `${mats.data.length} vật tư` : undefined}
         actions={
@@ -50,7 +51,7 @@ export default function MaterialsPage() {
         rowKey={(m) => m.code}
         onRowClick={(m) => setPeek(m.code)}
         selected={(m) => m.code === peek}
-        initialSort={{ key: 'code', dir: 'asc' }}
+        initialSort={{ key: 'name', dir: 'asc' }}
         empty={<EmptyState title={q ? 'Không có vật tư khớp' : 'Chưa có vật tư nào'}>{q ? 'Thử từ khoá khác.' : 'Bấm "Tạo vật tư" để thêm mã vật tư dùng trong sơ đồ.'}</EmptyState>}
       />
     </PageBody>

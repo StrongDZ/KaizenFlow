@@ -1,4 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { CircleCheck } from 'lucide-react'
+import { AlertKindIcon } from '../AlertKind'
 import { api } from '../../api/client'
 import { describeDrift } from '../../lib/insights'
 import { fmtFactoryTime } from '../../lib/liveFormat'
@@ -31,14 +33,18 @@ export function DriftAlerts({ model, names, horizonS = 86400 }: { model: string;
   return (
     <div className="space-y-2 text-xs">
       {mine.length === 0 ? (
-        <p className="text-[11px] leading-snug text-muted">
-          Chưa có cảnh báo. Cảnh báo hiện ra khi tồn kho thật đi ra ngoài dải của dự báo gần nhất (kiểm nhiều lần liên tiếp), tức thực tế đã khác mô hình.
-        </p>
+        <div className="flex items-center gap-2.5 text-[11px] text-muted" title="Cảnh báo hiện ra khi tồn kho thật đi ra ngoài dải của dự báo gần nhất nhiều lần liên tiếp, tức thực tế đã khác mô hình.">
+          <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-ok/12 text-ok" aria-hidden><CircleCheck size={14} /></span>
+          Thực tế vẫn nằm trong dải dự báo.
+        </div>
       ) : mine.map((i) => (
-        <div key={i.id} className="space-y-1.5 rounded-lg border border-warn/50 bg-panel-2 p-2">
-          <div className="text-[11.5px] font-medium text-text">{describeDrift(i, (k) => names[k] ?? k)}</div>
-          <div className="text-[10.5px] text-muted">
-            phát hiện lúc {fmtFactoryTime(typeof i.payload.at === 'string' ? i.payload.at : i.created_at)}. Dự báo cũ không còn khớp thực tế.
+        <div key={i.id} className="space-y-1.5 rounded-lg bg-accent/8 p-2">
+          <div className="flex gap-2">
+            <AlertKindIcon kind="DRIFT" size={26} />
+            <div className="min-w-0 flex-1">
+              <div className="text-[11.5px] font-medium leading-snug text-text">{describeDrift(i, (k) => names[k] ?? k)}</div>
+              <div className="text-[10.5px] text-muted">lúc {fmtFactoryTime(typeof i.payload.at === 'string' ? i.payload.at : i.created_at)}</div>
+            </div>
           </div>
           <div className="flex gap-1.5">
             <button className={btnAccentOutline} disabled={recast.isPending} onClick={() => recast.mutate(i.id)}>Dự báo lại từ bây giờ</button>

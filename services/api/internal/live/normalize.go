@@ -54,13 +54,18 @@ type Vehicle struct {
 	Heading *float64 `json:"heading,omitempty"`
 	State   string   `json:"state"`
 	// Lane là làn xe tự báo hoặc làn do khớp vị trí tìm ra; S là mét dọc làn; Off là xe không nằm trên làn nào (khi đã có bản đồ).
-	Lane  string    `json:"lane"`
-	S     float64   `json:"s"`
-	Off   bool      `json:"off_map"`
-	Load  float64   `json:"load"`
-	TS    time.Time `json:"ts"`
-	AgeMS int64     `json:"age_ms"`
-	seen  time.Time
+	Lane string  `json:"lane"`
+	S    float64 `json:"s"`
+	Off  bool    `json:"off_map"`
+	Load float64 `json:"load"`
+	// Tuỳ chọn, chỉ có khi thiết bị báo (AMR theo trả lời của BTC: tốc độ, trạng thái pin, đích và tuyến đang thực hiện).
+	Speed   *float64  `json:"speed,omitempty"`   // m/s
+	Battery *float64  `json:"battery,omitempty"` // %
+	Dest    string    `json:"dest,omitempty"`
+	Route   []string  `json:"route,omitempty"` // các điểm còn phải qua tới đích
+	TS      time.Time `json:"ts"`
+	AgeMS   int64     `json:"age_ms"`
+	seen    time.Time
 }
 
 // Reading là một giá trị đã chuẩn hoá của (subject, signal).
@@ -101,7 +106,8 @@ func toFloat(v any) (float64, bool) {
 	return 0, false
 }
 
-var fleetDefaults = map[string]string{"id": "id", "x": "x", "y": "y", "heading": "th", "state": "st", "lane": "seg", "load": "load"}
+var fleetDefaults = map[string]string{"id": "id", "x": "x", "y": "y", "heading": "th", "state": "st", "lane": "seg", "load": "load",
+	"speed": "v", "battery": "batt", "dest": "dst", "route": "route"}
 
 func fleetField(t Transform, name string) string {
 	if p, ok := t.Fields[name]; ok && p != "" {
@@ -142,6 +148,26 @@ func normalizeFleet(b Binding, msg Message) (Reading, error) {
 	}
 	if l, ok := get("load"); ok {
 		v.Load, _ = toFloat(l)
+	}
+	if sp, ok := get("speed"); ok {
+		if f, ok := toFloat(sp); ok {
+			v.Speed = &f
+		}
+	}
+	if bt, ok := get("battery"); ok {
+		if f, ok := toFloat(bt); ok {
+			v.Battery = &f
+		}
+	}
+	if d, ok := get("dest"); ok {
+		v.Dest = fmt.Sprint(d)
+	}
+	if r, ok := get("route"); ok {
+		if list, ok := r.([]any); ok {
+			for _, p := range list {
+				v.Route = append(v.Route, fmt.Sprint(p))
+			}
+		}
 	}
 	return Reading{Subject: b.Subject, Signal: SignalFleet, TS: msg.TS, Fleet: &v}, nil
 }

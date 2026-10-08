@@ -51,7 +51,7 @@ var schemas = map[string]string{
 	    "forecast_ref":{"type":"object","required":["producer"],"properties":{"producer":{"type":"string"}}}}}}},
 	  "$defs":{"dist":__DIST__}}`,
 	"RESOURCE_POOL": `{"type":"object","required":["kind","count"],"properties":{
-	  "kind":{"enum":["AGV","TUGGER","FORKLIFT","OPERATOR"]},"count":{"type":"integer","minimum":1},
+	  "kind":{"enum":["AGV","AMR","TUGGER","FORKLIFT","OPERATOR"]},"count":{"type":"integer","minimum":1},
 	  "service":{"$ref":"#/$defs/dist"}},"$defs":{"dist":__DIST__}}`,
 }
 

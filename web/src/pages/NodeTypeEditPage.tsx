@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Shapes } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
@@ -57,7 +58,7 @@ function NodeTypeEditForm({ d, schema, banner }: { d: NodeTypeDetail; schema?: J
   const hasSensors = d.archetype === 'PROCESS' || signals.length > 0 || modes.length > 0
   return (
     <PageBody>
-      <PageHeader title="Sửa loại node" subtitle={<Tag>{d.code}</Tag>} />
+      <PageHeader icon={Shapes} title="Sửa loại node" subtitle={<Tag>{d.code}</Tag>} />
       {banner && <Notice tone="lock">{banner}</Notice>}
       <Card title="Thông tin chung">
         <label className="flex max-w-md flex-col gap-1 text-xs text-muted">

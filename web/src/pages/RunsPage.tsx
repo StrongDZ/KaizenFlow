@@ -1,9 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Play } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { RunRow } from '../api/types'
 import { DeleteAction } from '../components/DeleteAction'
+import { ItemIdentity } from '../components/NodeIdentity'
 import { DataTable, type Column } from '../components/table/DataTable'
 import { EmptyState, ErrorBox, FilterChip, Loading, PageBody, PageHeader, StatusChip, btn, btnPrimary } from '../components/ui'
 import { fmtDateTime, fmtDuration } from '../lib/format'
@@ -17,6 +19,8 @@ const FILTERS = [
   { key: 'failed', label: 'Lỗi', status: 'FAILED' },
 ] as const
 
+
+const RUN_COLOR: Record<string, string> = { DONE: 'var(--color-ok)', FAILED: 'var(--color-bad)', RUNNING: 'var(--color-accent)', QUEUED: 'var(--color-muted)' }
 export default function RunsPage({ scope }: { scope: 'all' | 'version' }) {
   const params = useParams()
   const versionId = scope === 'version' ? Number(params.id) : undefined
@@ -47,7 +51,7 @@ export default function RunsPage({ scope }: { scope: 'all' | 'version' }) {
         />
       ),
     },
-    { key: 'id', header: 'Lần chạy', cell: (r) => <span className="font-medium text-text">#{r.id}</span>, sort: (r) => r.id },
+    { key: 'id', header: 'Lần chạy', cell: (r) => <ItemIdentity icon={Play} name={`#${r.id}`} size={26} color={RUN_COLOR[r.status]} />, sort: (r) => r.id },
     { key: 'model', header: 'Mô hình', cell: (r) => `${r.model_key} v${r.version}`, sort: (r) => r.model_key },
     { key: 'scenario', header: 'Scenario', cell: (r) => r.scenario_name || `Scenario #${r.scenario_id}`, sort: (r) => r.scenario_name },
     { key: 'status', header: 'Trạng thái', cell: (r) => <StatusChip status={r.status} />, sort: (r) => r.status },
@@ -81,7 +85,7 @@ export default function RunsPage({ scope }: { scope: 'all' | 'version' }) {
   ]
   return (
     <PageBody wide>
-      <PageHeader
+      <PageHeader icon={Play}
         title="Lần chạy"
         subtitle={runs.data ? `${runs.data.length} lần chạy` : undefined}
         actions={compare ? <Link className={btnPrimary} to={compare}>So sánh 2 lần chạy</Link> : <button className={btn} disabled>So sánh 2 lần chạy</button>}
@@ -100,7 +104,7 @@ export default function RunsPage({ scope }: { scope: 'all' | 'version' }) {
         onRowClick={(r) => navigate(`/runs/${r.id}`)}
         initialSort={{ key: 'id', dir: 'desc' }}
         empty={
-          <EmptyState title={filter === 'all' ? 'Chưa có lần chạy nào' : 'Không có lần chạy khớp bộ lọc'}>
+          <EmptyState icon={Play} title={filter === 'all' ? 'Chưa có lần chạy nào' : 'Không có lần chạy khớp bộ lọc'}>
             {filter === 'all' ? 'Chạy một scenario ở tab Scenario của mô hình để thấy kết quả ở đây.' : 'Đổi bộ lọc để xem các lần chạy khác.'}
           </EmptyState>
         }

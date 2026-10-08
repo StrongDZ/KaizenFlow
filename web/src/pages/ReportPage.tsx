@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { FileText } from 'lucide-react'
 import {
   CartesianGrid,
   Legend,
@@ -130,7 +131,7 @@ function BenchmarkPage() {
 
   if ([global, validation, tuner, pareto, perSku].some((q) => q.isLoading)) return <Loading />
   const err = global.error ?? validation.error ?? tuner.error ?? pareto.error ?? perSku.error
-  if (err) return <PageBody wide><PageHeader title="Benchmark FMCG" subtitle="Grupo Bimbo + policy tuning" /><ErrorBox error={err} /></PageBody>
+  if (err) return <PageBody wide><PageHeader icon={FileText} title="Benchmark FMCG" subtitle="Grupo Bimbo + policy tuning" /><ErrorBox error={err} /></PageBody>
 
   const globalRows = (global.data ?? []).filter((r) => r.rank < 90)
   const baseline = globalRows.find((r) => r.method.includes('Baseline')) ?? globalRows[0]
@@ -178,7 +179,7 @@ function BenchmarkPage() {
 
   return (
     <PageBody wide>
-      <PageHeader
+      <PageHeader icon={FileText}
         title="Benchmark FMCG"
         subtitle="Nhúng benchmark Grupo Bimbo/Store-Item từ project M vào KaizenFlow"
         actions={

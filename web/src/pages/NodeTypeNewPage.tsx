@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Shapes } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
@@ -56,7 +57,7 @@ function NodeTypeForm({ types, source }: { types: NodeType[]; source?: NodeTypeD
   const label = 'flex flex-col gap-1 text-xs text-muted'
   return (
     <PageBody>
-      <PageHeader title={from ? 'Nhân bản loại node' : 'Tạo loại node'} />
+      <PageHeader icon={Shapes} title={from ? 'Nhân bản loại node' : 'Tạo loại node'} />
       <Card title="Thông tin chung">
         <div className="grid grid-cols-2 gap-3">
           <label className={label}>Tên<input className={input} value={name} placeholder="Máy dập 200 tấn" onChange={(e) => setName(e.target.value)} autoFocus />

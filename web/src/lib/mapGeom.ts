@@ -1,16 +1,31 @@
 import type { AgvMap, MapLane, MapPoint, Pt, Vehicle } from '../api/types'
+import { bgRect } from './mapImage'
 
 export type Rect = { x: number; y: number; w: number; h: number }
 
-/** Khung bao mọi điểm và điểm uốn cộng lề; bản đồ rỗng vẫn cho khung dùng được. */
+/** Khung bao mọi điểm, điểm uốn, vùng cấm và ảnh nền cộng lề; bản đồ rỗng vẫn cho khung dùng được. */
 export function bounds(m: AgvMap, pad: number): Rect {
-  const pts: Pt[] = [...m.points, ...m.lanes.flatMap((l) => l.path ?? [])]
+  const pts: Pt[] = [...m.points, ...m.lanes.flatMap((l) => l.path ?? []), ...(m.keepouts ?? []).flatMap((k) => k.poly)]
+  if (m.bg) {
+    const r = bgRect(m.bg)
+    pts.push({ x: r.x, y: r.y }, { x: r.x + r.w, y: r.y + r.h })
+  }
   if (pts.length === 0) return { x: -pad, y: -pad, w: 100 + 2 * pad, h: 60 + 2 * pad }
   const xs = pts.map((p) => p.x)
   const ys = pts.map((p) => p.y)
   const x = Math.min(...xs) - pad
   const y = Math.min(...ys) - pad
   return { x, y, w: Math.max(...xs) + pad - x, h: Math.max(...ys) + pad - y }
+}
+
+/**
+ * Đơn vị cỡ của chữ và ký hiệu (trạm, ngã tư, xe, núm kéo) theo mét, tính từ phần đã vẽ (điểm, đường, vùng cấm) chứ không từ ảnh nền:
+ * phóng to, thu nhỏ hay dời ảnh không làm node to nhỏ theo. Chỉ khi chưa vẽ gì mới lấy theo ảnh nền.
+ */
+export function markScale(m: AgvMap): number {
+  const drawn = m.points.length > 0 || m.lanes.length > 0 || (m.keepouts ?? []).length > 0
+  const r = bounds(drawn ? { ...m, bg: undefined } : m, 0)
+  return Math.max(r.w, r.h * 1.5, 40) / 85
 }
 
 /** Đường đi của làn: điểm đầu, các điểm uốn, điểm cuối (mét); undefined nếu làn nối tới điểm không có. */
@@ -151,7 +166,7 @@ export function laneTone(o: Occupancy): LaneTone {
 
 // --- sửa bản đồ: mọi hàm trả bản sao mới ---------------------------------------------------------
 
-function nextId(prefix: string, used: string[]): string {
+export function nextId(prefix: string, used: string[]): string {
   let n = used.length + 1
   while (used.includes(`${prefix}${String(n).padStart(2, '0')}`)) n++
   return `${prefix}${String(n).padStart(2, '0')}`

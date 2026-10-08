@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
+import { Crosshair, Equal, FlipVertical2, Move, RotateCw, Scaling, type LucideIcon } from 'lucide-react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../../api/client'
 import type { AgvMap, Frame, Vehicle } from '../../api/types'
 import { IDENTITY_FRAME, isIdentityFrame, solveFrame, withFrame, type FramePair } from '../../lib/frame'
@@ -28,16 +30,13 @@ function NumField({ label, value, step, onChange }: { label: string; value: numb
   )
 }
 
+function FrameChip({ icon: Icon, children }: { icon: LucideIcon; children: ReactNode }) {
+  return <span className="inline-flex items-center gap-1 rounded-md bg-panel-2 px-1.5 py-0.5 text-[11px] tabular-nums text-text-2"><Icon size={11} className="text-faint" aria-hidden />{children}</span>
+}
+
 const STATE: Record<string, string> = { MOVING: 'đang chạy', WAITING: 'chờ vào làn', LOADING: 'bốc dỡ', IDLE: 'nghỉ' }
 
 const fmt = (n: number) => (Math.abs(n) >= 100 ? n.toFixed(0) : n.toFixed(2).replace(/\.?0+$/, ''))
-
-export function describeFrame(f: Frame): string {
-  if (isIdentityFrame(f)) return 'Không đổi: xe báo thẳng toạ độ bản đồ (mét).'
-  const parts = [`dịch (${fmt(f.dx)}; ${fmt(f.dy)}) m`, `xoay ${fmt(f.rot_deg)}°`, `tỉ lệ ${f.scale}`]
-  if (f.flip_y) parts.push('lật trục Y')
-  return parts.join(', ')
-}
 
 /**
  * Khung toạ độ của đội xe: hãng xe báo vị trí theo hệ toạ độ riêng, khung đổi sang toạ độ bản đồ (mét) trước khi API khớp xe vào làn.
@@ -92,17 +91,36 @@ export function FrameCard({ model, map, names, fleets, draft, onDraft, bare = fa
   const body = (
       <div className="space-y-2.5 text-xs">
         {bare && badge && <div>{badge}</div>}
-        <p className="text-muted">Hãng xe báo vị trí theo hệ toạ độ riêng. Khung này đổi sang toạ độ bản đồ (mét) rồi hệ thống khớp xe vào làn.</p>
         {fleetBindings.length === 0 && bindings.isSuccess && (
-          <Notice tone="lock">Chưa có ghép nối "Vị trí từng xe" nào. Ghép ở trang Kết nối dữ liệu, tab Node, rồi quay lại đây.</Notice>
+          <Notice tone="lock">
+            Chưa ghép tín hiệu "Vị trí từng xe".{' '}
+            <Link to={`/models/${encodeURIComponent(model)}/connect`} className="font-medium underline">Ghép ở Kết nối dữ liệu</Link>
+          </Notice>
         )}
         {share.total > 0 && share.off / share.total > 0.2 && !draft && (
-          <Notice tone="lock">Nhiều xe nằm ngoài mọi làn: nhiều khả năng khung toạ độ chưa đúng. Bấm "Chỉnh khung".</Notice>
+          <Notice tone="lock">Nhiều xe nằm ngoài mọi làn: khung toạ độ có thể chưa đúng.</Notice>
         )}
         {!draft ? (
           <>
-            <p className="text-text-2">{describeFrame(saved)}</p>
-            <button className={btn} disabled={fleetBindings.length === 0} onClick={() => open(saved)}>Chỉnh khung</button>
+            <div className="flex flex-wrap gap-1.5">
+              {isIdentityFrame(saved)
+                ? <FrameChip icon={Equal}>Không đổi: toạ độ bản đồ (m)</FrameChip>
+                : (
+                  <>
+                    <FrameChip icon={Move}>({fmt(saved.dx)}; {fmt(saved.dy)}) m</FrameChip>
+                    <FrameChip icon={RotateCw}>{fmt(saved.rot_deg)}°</FrameChip>
+                    <FrameChip icon={Scaling}>×{saved.scale}</FrameChip>
+                    {saved.flip_y && <FrameChip icon={FlipVertical2}>lật Y</FrameChip>}
+                  </>
+                )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button className={btn} disabled={fleetBindings.length === 0} onClick={() => open(saved)}><Crosshair size={13} aria-hidden />Chỉnh khung</button>
+              <details className="group min-w-0 flex-1 text-[11px] text-muted">
+                <summary className="cursor-pointer list-none text-right hover:text-text">Khung toạ độ là gì?</summary>
+                <p className="mt-1.5 leading-snug">Hãng xe báo vị trí theo hệ toạ độ riêng (thường là mm, trục xoay). Khung đổi vị trí đó sang mét trên bản đồ, rồi hệ thống khớp xe vào làn.</p>
+              </details>
+            </div>
           </>
         ) : (
           <>
@@ -115,11 +133,15 @@ export function FrameCard({ model, map, names, fleets, draft, onDraft, bare = fa
             <label className="flex items-center gap-1.5 text-text-2">
               <input type="checkbox" checked={draft.flip_y} onChange={(e) => set({ flip_y: e.target.checked })} /> Hãng xe có trục Y ngược chiều
             </label>
-            <p className="text-muted">Chấm nét đứt xanh trên bản đồ là vị trí xe nếu dùng khung đang nhập; chỉnh cho chúng nằm trên làn rồi Lưu.</p>
+            <p className="text-[11px] text-muted">Chấm nét đứt trên bản đồ là vị trí xe theo khung đang nhập: chỉnh cho chúng nằm trên làn.</p>
 
             <div className="space-y-1.5 rounded-lg border border-line bg-panel-2 p-2">
-              <div className="font-semibold text-text">Căn chỉnh bằng điểm mẫu</div>
-              <p className="text-muted">Chọn một xe đang đứng yên (nghỉ hoặc đang bốc dỡ) đúng ở một điểm đã biết (ví dụ đỗ ở kho), chọn điểm đó, bấm Thêm cặp. Xe đang chạy sẽ cho cặp sai. Cần ít nhất 2 cặp; thêm cặp thứ ba để biết sai số.</p>
+              <div className="font-semibold text-text">Hoặc tính tự động từ điểm mẫu</div>
+              <ol className="space-y-0.5 text-[11px] text-muted">
+                <li><b className="text-text-2">1.</b> Chọn một xe đang đứng yên ở chỗ đã biết (vd. đỗ ở kho).</li>
+                <li><b className="text-text-2">2.</b> Chọn đúng điểm đó trên bản đồ, bấm Thêm cặp.</li>
+                <li><b className="text-text-2">3.</b> Làm từ 2 cặp trở lên (3 cặp để biết sai số), rồi Tính khung.</li>
+              </ol>
               <div className="grid grid-cols-1 gap-1.5">
                 <select className={input} aria-label="Xe" value={chosenVehicle?.id ?? ''} onChange={(e) => setVehicleId(e.target.value)}>
                   {vehicles.map((v) => <option key={v.id} value={v.id}>{v.id}</option>)}
@@ -164,7 +186,7 @@ export function FrameCard({ model, map, names, fleets, draft, onDraft, bare = fa
               <button className={btn} onClick={() => { onDraft(null); setPairs([]); setFit(null) }}>Huỷ</button>
               <button className={btn} onClick={() => { onDraft({ ...IDENTITY_FRAME }); setFit(null) }}>Về không đổi</button>
             </div>
-            <p className="text-faint">Lưu áp dụng cho mọi ghép nối "Vị trí từng xe" của mô hình ({fleetBindings.length}).</p>
+            <p className="text-[11px] text-faint">Áp dụng cho {fleetBindings.length} ghép nối "Vị trí từng xe".</p>
           </>
         )}
       </div>

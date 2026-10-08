@@ -63,7 +63,7 @@ describe('labelSchema', () => {
     expect(s.properties.demand.items.properties.qty.title).toBe('Số lượng mỗi lần lấy')
     expect(s.properties.replenish.properties.qty.title).toBe('Số lượng mỗi lần bổ sung')
     expect(s.properties.demand.items.properties.kind.oneOf[0].title).toBe('Đều theo takt')
-    expect(s.properties.kind.oneOf.map((o: S) => o.title)).toEqual(['AGV', 'Xe kéo (tugger)'])
+    expect(s.properties.kind.oneOf.map((o: S) => o.title)).toEqual(['AGV (băng từ, tuyến cố định)', 'Xe kéo (tugger)'])
   })
   it('orders fields for reading, whatever order jsonb stored them in: single fields before groups, material before quantity', () => {
     const s = labelSchema({

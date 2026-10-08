@@ -28,6 +28,12 @@
   --color-ok-solid: #3dbe7a;
   --color-on-ok: #0b1a12;
   --color-on-warn: #1a2233;
+  /* Màu vai trò node: cho biết node LÀ GÌ (nguồn, kho, trạm, đích, đội xe). Tránh xanh lá/vàng/đỏ vì các màu đó nói node ĐANG THẾ NÀO. */
+  --color-role-source: #5cc4e6;
+  --color-role-storage: #a993f0;
+  --color-role-process: #6fa3ff;
+  --color-role-sink: #8fb0c9;
+  --color-role-pool: #e08fd1;
 }
 
 [data-theme='light'] {
@@ -54,6 +60,11 @@
   --color-ok-solid: #167a45;
   --color-on-ok: #ffffff;
   --color-on-warn: #1a2233;
+  --color-role-source: #0f7fa8;
+  --color-role-storage: #6d4fc9;
+  --color-role-process: #2a64d0;
+  --color-role-sink: #4b6a83;
+  --color-role-pool: #a8408f;
 }
 
 /* Bản in luôn ra giấy trắng, kể cả khi đang ở trang tối. */
@@ -79,6 +90,11 @@
     --color-ok-solid: #167a45;
     --color-on-ok: #ffffff;
     --color-on-warn: #1a2233;
+    --color-role-source: #0f7fa8;
+    --color-role-storage: #6d4fc9;
+    --color-role-process: #2a64d0;
+    --color-role-sink: #4b6a83;
+    --color-role-pool: #a8408f;
     color-scheme: light;
   }
 }

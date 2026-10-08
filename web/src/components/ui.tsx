@@ -1,3 +1,4 @@
+import { Inbox, Info, Search, TriangleAlert, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { ApiError } from '../api/client'
 import type { Issue, RunStatus } from '../api/types'
@@ -78,11 +79,11 @@ export function StatusChip({ status }: { status: RunStatus }) {
   )
 }
 
-export function Card({ title, children, actions }: { title: string; children: ReactNode; actions?: ReactNode }) {
+export function Card({ title, icon: Icon, children, actions }: { title: string; icon?: LucideIcon; children: ReactNode; actions?: ReactNode }) {
   return (
     <section className="rounded-xl border border-line bg-panel">
-      <header className="flex items-center justify-between border-b border-line px-4 py-2">
-        <h2 className="text-xs font-semibold text-text">{title}</h2>
+      <header className="flex items-center justify-between gap-2 border-b border-line px-4 py-2.5">
+        <h2 className="flex items-center gap-2 text-xs font-semibold text-text">{Icon && <Icon size={14} className="text-muted" aria-hidden />}{title}</h2>
         {actions}
       </header>
       <div className="p-4">{children}</div>
@@ -90,9 +91,11 @@ export function Card({ title, children, actions }: { title: string; children: Re
   )
 }
 
-export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
+/** Trạng thái trống: một biểu tượng, một câu nói chuyện gì, và (trong children) bước tiếp theo. */
+export function EmptyState({ title, icon: Icon = Inbox, children }: { title: string; icon?: LucideIcon; children?: ReactNode }) {
   return (
-    <div className="flex h-full min-h-60 flex-col items-center justify-center gap-1 p-8 text-center">
+    <div className="flex h-full min-h-60 flex-col items-center justify-center gap-1.5 p-8 text-center">
+      <span className="mb-1.5 flex h-11 w-11 items-center justify-center rounded-full border border-line-2 bg-panel-2 text-muted" aria-hidden><Icon size={20} strokeWidth={1.7} /></span>
       <div className="text-sm font-semibold text-text">{title}</div>
       {children && <div className="max-w-md text-xs text-muted">{children}</div>}
     </div>
@@ -103,9 +106,10 @@ export function PageBody({ children, wide = false }: { children: ReactNode; wide
   return <div className={`mx-auto space-y-4 p-6 ${wide ? 'max-w-7xl' : 'max-w-6xl'}`}>{children}</div>
 }
 
-export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {
+export function PageHeader({ title, icon: Icon, subtitle, actions }: { title: string; icon?: LucideIcon; subtitle?: ReactNode; actions?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-center gap-3">
+      {Icon && <span className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-accent/12 text-accent" aria-hidden><Icon size={18} strokeWidth={1.8} /></span>}
       <h1 className="text-lg font-semibold text-text">{title}</h1>
       {subtitle && <span className="text-xs text-muted">{subtitle}</span>}
       <div className="ml-auto flex items-center gap-2">{actions}</div>
@@ -125,25 +129,48 @@ export function FilterChip({ active, onClick, children }: { active: boolean; onC
   )
 }
 
-export function Tag({ children }: { children: ReactNode }) {
-  return <span className="whitespace-nowrap rounded-[5px] border border-line-2 px-1.5 py-px text-[10.5px] text-text-2">{children}</span>
+const TAG_TONE = {
+  neutral: 'border-line-2 text-text-2',
+  ok: 'border-ok/40 bg-ok/10 text-ok',
+  warn: 'border-warn/40 bg-warn/10 text-warn',
+  bad: 'border-bad/40 bg-bad/10 text-bad-text',
+  accent: 'border-accent/40 bg-accent/10 text-accent',
+} as const
+
+/** Nhãn nhỏ. `tone` chỉ khi màu mang nghĩa (trạng thái); `color` là màu vai trò hay loại (vd. var(--color-role-storage)). */
+export function Tag({ children, tone = 'neutral', icon: Icon, color }: { children: ReactNode; tone?: keyof typeof TAG_TONE; icon?: LucideIcon; color?: string }) {
+  const style = color ? { color, borderColor: `color-mix(in srgb, ${color} 40%, transparent)`, background: `color-mix(in srgb, ${color} 10%, transparent)` } : undefined
+  return (
+    <span style={style} className={`inline-flex items-center gap-1 whitespace-nowrap rounded-[5px] border px-1.5 py-px text-[10.5px] ${color ? '' : TAG_TONE[tone]}`}>
+      {Icon && <Icon size={11} aria-hidden />}{children}
+    </span>
+  )
 }
 
 /** Dải thông báo: `lock` cho object bị khoá, `info` cho chỉ dẫn trung tính. */
 export function Notice({ tone = 'info', children }: { tone?: 'lock' | 'info'; children: ReactNode }) {
   const style = tone === 'lock' ? 'border-lock-line bg-lock-bg text-lock-text' : 'border-line-2 bg-panel-2 text-text-2'
-  return <div role="note" className={`rounded-lg border px-3 py-2 text-xs ${style}`}>{children}</div>
+  const Icon = tone === 'lock' ? TriangleAlert : Info
+  return (
+    <div role="note" className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${style}`}>
+      <Icon size={14} className="mt-px flex-none opacity-80" aria-hidden />
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  )
 }
 
-export function SearchBox({ value, onChange, placeholder = 'Tìm theo tên hoặc mã' }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+export function SearchBox({ value, onChange, placeholder = 'Tìm theo tên hoặc mã', className = 'w-56' }: { value: string; onChange: (v: string) => void; placeholder?: string; className?: string }) {
   return (
-    <input
-      type="search"
-      aria-label={placeholder}
-      className={`${input} w-56`}
-      placeholder={placeholder}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-    />
+    <label className={`relative inline-block ${className}`}>
+      <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-faint" aria-hidden />
+      <input
+        type="search"
+        aria-label={placeholder}
+        className={`${input} w-full pl-8`}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
   )
 }

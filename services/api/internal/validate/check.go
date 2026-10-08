@@ -41,6 +41,8 @@ type CheckInput struct {
 	Types     map[string]store.NodeType
 	Materials []string
 	MapTravel func(src, dst string) (seconds float64, ok bool)
+	// MapRoute: đường nối src→dst của xe có chạy được trên bản đồ AGV không ("ok", "no_station", "no_path", "no_return"); nil nghĩa là không có bản đồ.
+	MapRoute func(src, dst string) string
 }
 
 type checker struct {
@@ -156,6 +158,7 @@ func (c *checker) run() {
 	c.processInputs()
 	c.warnings()
 	c.inferred()
+	c.mapRoutes()
 }
 
 func nodeLabel(name, key string) string {
@@ -417,6 +420,30 @@ func (c *checker) inferred() {
 			continue
 		}
 		c.warnf("travel_unset", e.Key, "Đường nối %s chạy bằng xe nhưng chưa đặt thời gian đi: mô phỏng coi xe đến ngay (0 giây).", c.edgeName(e))
+	}
+}
+
+// mapRoutes cảnh báo đường nối do xe chở mà bản đồ AGV không cho chạy: thiếu trạm, không có đường đi, hoặc không có đường về.
+func (c *checker) mapRoutes() {
+	if c.in.MapRoute == nil {
+		return
+	}
+	for _, e := range c.in.Graph.Edges {
+		if _, ok := c.arche[e.Src]; !ok {
+			continue
+		}
+		if mode, _ := e.Params["mode"].(string); mode != "POOL" {
+			continue
+		}
+		src, dst := c.nodeName(e.Src), c.nodeName(e.Dst)
+		switch c.in.MapRoute(e.Src, e.Dst) {
+		case "no_station":
+			c.warnf("map_station_missing", e.Key, "Đường nối %s chạy bằng xe nhưng %s hoặc %s chưa có trạm trên bản đồ AGV: xe chạy theo thời gian ước tính, không theo bản đồ.", c.edgeName(e), src, dst)
+		case "no_path":
+			c.warnf("map_unreachable", e.Key, "Đường nối %s: bản đồ AGV không có đường đi từ %s tới %s, xe sẽ chờ mãi.", c.edgeName(e), src, dst)
+		case "no_return":
+			c.warnf("map_unreachable", e.Key, "Đường nối %s: xe tới được %s nhưng bản đồ AGV không có đường về %s, xe sẽ kẹt sau chuyến đầu.", c.edgeName(e), dst, src)
+		}
 	}
 }
 

@@ -125,8 +125,8 @@ func TestStatePrunesHistoryToWindow(t *testing.T) {
 func TestSnapshotMarksBoundSources(t *testing.T) {
 	s := NewState()
 	wall := time.Now()
-	s.NoteSource(Message{Source: "plc/prs-02/status", TS: t0, Desc: "Máy dập 2", Payload: map[string]any{"st": "RUN"}}, wall)
-	s.NoteSource(Message{Source: "plc/prs-03/status", TS: t0, Payload: map[string]any{"st": "RUN"}}, wall)
+	s.NoteSource("", Message{Source: "plc/prs-02/status", TS: t0, Desc: "Máy dập 2", Payload: map[string]any{"st": "RUN"}}, wall)
+	s.NoteSource("", Message{Source: "plc/prs-03/status", TS: t0, Payload: map[string]any{"st": "RUN"}}, wall)
 	bs := []Binding{{Subject: "STAMP_2", Signal: "state", Source: "plc/prs-02/status", Enabled: true}}
 	snap := s.Snapshot("m", wall, bs)
 	if len(snap.Sources) != 2 {
@@ -141,6 +141,45 @@ func TestSnapshotMarksBoundSources(t *testing.T) {
 	}
 	if snap.Sources[0].Desc == "" && snap.Sources[1].Desc == "" {
 		t.Error("desc lost")
+	}
+}
+
+func TestSnapshotListsOnlyTheSourcesOfItsOwnModelPlusUntaggedOnes(t *testing.T) {
+	s := NewState()
+	wall := time.Now()
+	s.NoteSource("a", Message{Source: "feed-a/x", TS: t0, Payload: 1.0}, wall)
+	s.NoteSource("b", Message{Source: "feed-b/y", TS: t0, Payload: 1.0}, wall)
+	s.NoteSource("", Message{Source: "mqtt/z", TS: t0, Payload: 1.0}, wall)
+	names := func(model string) map[string]bool {
+		out := map[string]bool{}
+		for _, so := range s.Snapshot(model, wall, nil).Sources {
+			out[so.Source] = true
+		}
+		return out
+	}
+	if got := names("a"); !got["feed-a/x"] || got["feed-b/y"] || !got["mqtt/z"] || len(got) != 2 {
+		t.Errorf("a sees %v", got)
+	}
+	if got := names("b"); got["feed-a/x"] || !got["feed-b/y"] || !got["mqtt/z"] || len(got) != 2 {
+		t.Errorf("b sees %v", got)
+	}
+}
+
+func TestSameSourceFromTwoModelsIsCountedPerModel(t *testing.T) {
+	s := NewState()
+	wall := time.Now()
+	for i := 0; i < 3; i++ {
+		s.NoteSource("a", Message{Source: "plc/m/status", TS: t0, Payload: 1.0}, wall)
+	}
+	s.NoteSource("b", Message{Source: "plc/m/status", TS: t0, Payload: 1.0}, wall)
+	count := func(model string) int64 {
+		for _, so := range s.Snapshot(model, wall, nil).Sources {
+			return so.Count
+		}
+		return -1
+	}
+	if count("a") != 3 || count("b") != 1 {
+		t.Errorf("a=%d b=%d, muốn 3 và 1", count("a"), count("b"))
 	}
 }
 

@@ -1,96 +1,127 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { Ban, Check, PackageMinus, Route, Wrench, X, type LucideIcon } from 'lucide-react'
 import { useState } from 'react'
 import { api } from '../../api/client'
 import type { Incident, IncidentInput, MapLane } from '../../api/types'
 import { fmtFactoryTime } from '../../lib/liveFormat'
-import { ErrorBox, btn, btnWarn, input } from '../ui'
+import { ItemIdentity, NodeIdentity } from '../NodeIdentity'
+import { ErrorBox, SearchBox, btn, btnWarn } from '../ui'
 
-export type IncidentNode = { key: string; name: string; archetype: string; materials: string[] }
+export type IncidentNode = { key: string; name: string; archetype: string; materials: string[]; icon?: string }
 
-const KINDS: { kind: Incident['kind']; label: string; hint: string }[] = [
-  { kind: 'machine_down', label: 'Máy hỏng', hint: 'Dừng một máy trong khoảng thời gian đã chọn. Kho phía trước máy sẽ đầy lên, kho phía sau cạn dần.' },
-  { kind: 'lane_block', label: 'Chặn làn', hint: 'Chặn một làn của bản đồ AGV. Xe tự đi đường vòng, nếu hết đường thì chờ; hàng ứ lại phía sau.' },
-  { kind: 'stock_drain', label: 'Rút kho', hint: 'Rút bớt một phần tồn của một kho (kiểm kê lệch, hàng lỗi bị loại bỏ). Kho có thể chuyển Vàng hoặc Đỏ.' },
+const KINDS: { kind: Incident['kind']; label: string; icon: LucideIcon; hint: string }[] = [
+  { kind: 'machine_down', label: 'Máy hỏng', icon: Wrench, hint: 'Máy dừng: kho trước đầy lên, kho sau cạn dần.' },
+  { kind: 'lane_block', label: 'Chặn làn', icon: Ban, hint: 'Xe đi đường vòng, hết đường thì chờ.' },
+  { kind: 'stock_drain', label: 'Rút kho', icon: PackageMinus, hint: 'Rút bớt tồn (kiểm kê lệch, hàng lỗi).' },
 ]
 const DURATIONS = [10, 30, 120, 480]
+const FRACTIONS = [30, 50, 80, 100]
 
-const label = (kind: Incident['kind']) => KINDS.find((k) => k.kind === kind)?.label ?? kind
+const kindOf = (kind: Incident['kind']) => KINDS.find((k) => k.kind === kind)
 
-/** Bảng bơm sự cố cho demo: chọn loại, đối tượng, thời lượng; danh sách sự cố còn hiệu lực kèm nút gỡ. */
-export function IncidentPanel({ nodes, lanes, incidents, ready }: { nodes: IncidentNode[]; lanes: MapLane[]; incidents: Incident[]; ready: boolean }) {
+/** Nhóm nút chọn một: thay cho ô chọn của trình duyệt khi chỉ có vài lựa chọn. */
+function Segmented<T extends string | number>({ label, value, options, onChange }: { label: string; value: T; options: { v: T; text: string }[]; onChange: (v: T) => void }) {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex gap-1 rounded-lg bg-panel-2 p-0.5">
+      {options.map((o) => (
+        <button key={String(o.v)} type="button" role="radio" aria-checked={value === o.v} onClick={() => onChange(o.v)}
+          className={`flex-1 rounded-md px-1.5 py-1 text-[11px] tabular-nums ${value === o.v ? 'bg-raised font-semibold text-text shadow-sm' : 'text-muted hover:text-text'}`}>
+          {o.text}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** Bảng bơm sự cố cho demo: chọn loại, chọn đối tượng trong danh sách có biểu tượng, chọn thời lượng; dưới là sự cố còn hiệu lực. */
+export function IncidentPanel({ model, nodes, lanes, incidents, ready }: { /** Mô hình có feed nhận sự cố này */ model: string; nodes: IncidentNode[]; lanes: MapLane[]; incidents: Incident[]; ready: boolean }) {
   const qc = useQueryClient()
   const [kind, setKind] = useState<Incident['kind']>('machine_down')
   const [target, setTarget] = useState('')
+  const [q, setQ] = useState('')
   const [minutes, setMinutes] = useState(30)
   const [material, setMaterial] = useState('')
   const [fraction, setFraction] = useState(80)
-  const refresh = () => void qc.invalidateQueries({ queryKey: ['feed-status'] })
-  const add = useMutation({ mutationFn: (b: IncidentInput) => api.feed.addIncident(b), onSuccess: refresh })
-  const clear = useMutation({ mutationFn: (id: number) => api.feed.clearIncident(id), onSuccess: refresh })
+  const refresh = () => void qc.invalidateQueries({ queryKey: ['feed-status', model] })
+  const add = useMutation({ mutationFn: (b: IncidentInput) => api.feed.addIncident(b), onSuccess: () => { refresh(); setTarget('') } })
+  const clear = useMutation({ mutationFn: (id: number) => api.feed.clearIncident(model, id), onSuccess: refresh })
 
   const machines = nodes.filter((n) => n.archetype === 'PROCESS')
   const stores = nodes.filter((n) => n.archetype === 'STORAGE' && n.materials.length > 0)
-  const nameOf = (key: string) => nodes.find((n) => n.key === key)?.name ?? key
-  const hint = KINDS.find((k) => k.kind === kind)?.hint
+  const nodeOf = (key: string) => nodes.find((n) => n.key === key)
+  const meta = kindOf(kind)!
   const storeMaterials = stores.find((n) => n.key === target)?.materials ?? []
   const effMaterial = storeMaterials.includes(material) ? material : storeMaterials[0] ?? ''
   const canGo = ready && target !== '' && (kind !== 'stock_drain' || effMaterial !== '')
   const go = () => {
-    const body: IncidentInput = { kind, target }
+    const body: IncidentInput = { model, kind, target }
     if (kind !== 'stock_drain') body.duration_s = minutes * 60
     else { body.material = effMaterial; body.fraction = fraction / 100 }
     add.mutate(body)
   }
   const active = incidents.filter((i) => i.active)
+  const needle = q.trim().toLowerCase()
+  const match = (...t: string[]) => needle === '' || t.some((x) => x.toLowerCase().includes(needle))
+  const options = kind === 'lane_block'
+    ? lanes.filter((l) => match(l.id, l.from, l.to)).map((l) => ({ key: l.id, body: <ItemIdentity icon={Route} name={`Làn ${l.id}`} code={`${l.from} → ${l.to}`} color="var(--color-muted)" size={26} /> }))
+    : (kind === 'machine_down' ? machines : stores).filter((n) => match(n.key, n.name)).map((n) => ({ key: n.key, body: <NodeIdentity name={n.name} code={n.key} icon={n.icon} archetype={n.archetype} size={26} /> }))
+  const total = kind === 'lane_block' ? lanes.length : kind === 'machine_down' ? machines.length : stores.length
 
   return (
     <div className="space-y-2.5 text-xs">
-      <div className="flex gap-1" role="tablist" aria-label="Loại sự cố">
-        {KINDS.map((k) => (
-          <button key={k.kind} role="tab" aria-selected={kind === k.kind} onClick={() => { setKind(k.kind); setTarget('') }}
-            className={`flex-1 rounded-md border px-1.5 py-1 text-[11px] ${kind === k.kind ? 'border-text bg-text font-semibold text-bg' : 'border-line-2 text-muted hover:text-text'}`}>
-            {k.label}
-          </button>
+      <Segmented label="Loại sự cố" value={kind} onChange={(k) => { setKind(k); setTarget(''); setQ('') }}
+        options={KINDS.map((k) => ({ v: k.kind, text: k.label }))} />
+      <p className="flex items-center gap-1.5 text-[11px] text-muted"><meta.icon size={12} className="flex-none" aria-hidden />{meta.hint}</p>
+      {total > 6 && <SearchBox value={q} onChange={setQ} placeholder={kind === 'lane_block' ? 'Tìm làn' : 'Tìm theo tên hoặc mã'} className="w-full" />}
+      <ul role="listbox" aria-label="Đối tượng" className="-mx-1 max-h-48 overflow-auto">
+        {options.map((o) => (
+          <li key={o.key} role="option" aria-selected={target === o.key}>
+            <button type="button" onClick={() => setTarget(target === o.key ? '' : o.key)}
+              className={`flex w-full items-center rounded-lg px-1.5 py-1 text-left ${target === o.key ? 'bg-raised ring-1 ring-warn/70' : 'hover:bg-panel-2'}`}>
+              {o.body}
+              {target === o.key && <Check size={14} className="ml-2 flex-none text-warn" aria-hidden />}
+            </button>
+          </li>
         ))}
-      </div>
-      <p className="text-[11px] leading-snug text-muted">{hint}</p>
-      <select className={`${input} w-full`} aria-label="Đối tượng" value={target} onChange={(e) => setTarget(e.target.value)}>
-        <option value="">{kind === 'lane_block' ? 'Chọn làn…' : kind === 'machine_down' ? 'Chọn máy…' : 'Chọn kho…'}</option>
-        {kind === 'machine_down' && machines.map((n) => <option key={n.key} value={n.key}>{n.name}</option>)}
-        {kind === 'stock_drain' && stores.map((n) => <option key={n.key} value={n.key}>{n.name}</option>)}
-        {kind === 'lane_block' && lanes.map((l) => <option key={l.id} value={l.id}>Làn {l.id} ({l.from} → {l.to})</option>)}
-      </select>
-      {kind === 'lane_block' && lanes.length === 0 && <p className="text-[11px] text-warn">Mô hình chưa có bản đồ AGV. Chạy scripts/seed_demo.py hoặc vẽ ở tab Bản đồ AGV.</p>}
+        {total === 0 && (
+          <li className="px-1.5 py-2 text-[11px] text-muted">
+            {kind === 'lane_block' ? 'Mô hình chưa có bản đồ AGV: vẽ ở tab Bản đồ AGV.' : kind === 'machine_down' ? 'Sơ đồ không có máy nào.' : 'Không có kho nào khai báo vật tư.'}
+          </li>
+        )}
+        {total > 0 && options.length === 0 && <li className="px-1.5 py-2 text-[11px] text-muted">Không có gì khớp "{q}".</li>}
+      </ul>
       {kind === 'stock_drain' ? (
-        <div className="grid grid-cols-2 gap-2">
-          <select className={input} aria-label="Vật tư" value={effMaterial} onChange={(e) => setMaterial(e.target.value)} disabled={storeMaterials.length === 0}>
-            {storeMaterials.length === 0 && <option value="">Vật tư</option>}
-            {storeMaterials.map((m) => <option key={m} value={m}>{m}</option>)}
-          </select>
-          <select className={input} aria-label="Tỉ lệ rút" value={fraction} onChange={(e) => setFraction(Number(e.target.value))}>
-            {[30, 50, 80, 100].map((f) => <option key={f} value={f}>Rút {f}% tồn</option>)}
-          </select>
-        </div>
+        <>
+          {storeMaterials.length > 1 && <Segmented label="Vật tư" value={effMaterial} onChange={setMaterial} options={storeMaterials.map((m) => ({ v: m, text: m }))} />}
+          <Segmented label="Tỉ lệ rút" value={fraction} onChange={setFraction} options={FRACTIONS.map((f) => ({ v: f, text: `${f}%` }))} />
+        </>
       ) : (
-        <select className={`${input} w-full`} aria-label="Thời lượng" value={minutes} onChange={(e) => setMinutes(Number(e.target.value))}>
-          {DURATIONS.map((d) => <option key={d} value={d}>{d >= 60 ? `${d / 60} giờ` : `${d} phút`} (giờ nhà máy)</option>)}
-        </select>
+        <Segmented label="Thời lượng (giờ nhà máy)" value={minutes} onChange={setMinutes}
+          options={DURATIONS.map((d) => ({ v: d, text: d >= 60 ? `${d / 60} giờ` : `${d} phút` }))} />
       )}
-      <button className={`${btnWarn} w-full justify-center`} disabled={!canGo || add.isPending} onClick={go}>Bơm sự cố</button>
-      {!ready && <p className="text-[11px] text-faint">Bật feed để bơm sự cố.</p>}
+      <button className={`${btnWarn} w-full justify-center`} disabled={!canGo || add.isPending} onClick={go}>
+        <meta.icon size={13} aria-hidden />Bơm sự cố
+      </button>
+      {!ready && <p className="text-center text-[11px] text-faint">Bật feed để bơm sự cố.</p>}
       <ErrorBox error={add.error ?? clear.error} />
       {active.length > 0 && (
-        <div className="space-y-1 border-t border-line pt-2">
-          <div className="text-[11px] font-semibold text-text-2">Đang hiệu lực</div>
-          {active.map((i) => (
-            <div key={i.id} className="flex items-center gap-2 rounded-md border border-line px-2 py-1.5">
-              <span className="min-w-0 flex-1 text-[11.5px] text-text">
-                {label(i.kind)}: <b>{i.kind === 'lane_block' ? `làn ${i.target}` : nameOf(i.target)}</b>
-                <span className="block text-[10.5px] text-muted">đến {fmtFactoryTime(i.until)}</span>
-              </span>
-              <button className={btn} disabled={clear.isPending} onClick={() => clear.mutate(i.id)}>Gỡ</button>
-            </div>
-          ))}
+        <div className="space-y-1 border-t border-line pt-2.5">
+          <div className="text-[11px] font-semibold text-text-2">Đang hiệu lực <span className="font-normal text-muted">{active.length}</span></div>
+          {active.map((i) => {
+            const k = kindOf(i.kind)
+            const Icon = k?.icon ?? Wrench
+            const n = nodeOf(i.target)
+            return (
+              <div key={i.id} className="flex items-center gap-2 rounded-lg bg-warn/8 px-2 py-1.5">
+                <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-warn/15 text-warn" aria-hidden><Icon size={13} /></span>
+                <span className="min-w-0 flex-1 leading-tight">
+                  <span className="block truncate text-[11.5px] font-medium text-text">{i.kind === 'lane_block' ? `Làn ${i.target}` : n?.name ?? i.target}</span>
+                  <span className="block text-[10.5px] text-muted">{k?.label ?? i.kind}, đến {fmtFactoryTime(i.until)}</span>
+                </span>
+                <button className={`${btn} !px-2`} disabled={clear.isPending} onClick={() => clear.mutate(i.id)} aria-label="Gỡ sự cố"><X size={12} aria-hidden />Gỡ</button>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

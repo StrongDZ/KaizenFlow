@@ -124,3 +124,39 @@ func TestNormalizeFleetWithoutHeadingLeavesItNil(t *testing.T) {
 		t.Errorf("không có trường hướng thì Heading phải nil: %v", *rs[0].Fleet.Heading)
 	}
 }
+
+func amrReading(t *testing.T, tr Transform, payload map[string]any) *Vehicle {
+	t.Helper()
+	b := Binding{Subject: "TUG", Signal: SignalFleet, Source: "agv/tug/01/pos", Enabled: true, Transform: tr}
+	rs, errs := Normalize("m", []Binding{b}, Message{Source: "agv/tug/01/pos", TS: t0, Payload: payload})
+	if len(errs) != 0 || len(rs) != 1 || rs[0].Fleet == nil {
+		t.Fatalf("rs=%+v errs=%v", rs, errs)
+	}
+	return rs[0].Fleet
+}
+
+func TestFleetCarriesAMRTelemetryWhenTheDeviceSendsIt(t *testing.T) {
+	v := amrReading(t, Transform{}, map[string]any{"id": "AMR-01", "x": 3.0, "y": 4.0, "st": "moving", "v": 1.15, "batt": 72.5,
+		"dst": "PB", "route": []any{"J2", "PB"}})
+	if v.Speed == nil || *v.Speed != 1.15 || v.Battery == nil || *v.Battery != 72.5 || v.Dest != "PB" {
+		t.Errorf("telemetry = %+v", v)
+	}
+	if len(v.Route) != 2 || v.Route[0] != "J2" || v.Route[1] != "PB" {
+		t.Errorf("route = %v", v.Route)
+	}
+}
+
+func TestFleetTelemetryIsOptionalAndNeverInvented(t *testing.T) {
+	v := amrReading(t, Transform{}, map[string]any{"id": "AGV-01", "x": 1.0, "y": 2.0, "st": "IDLE"})
+	if v.Speed != nil || v.Battery != nil || v.Dest != "" || len(v.Route) != 0 {
+		t.Errorf("fields the device did not send must stay empty: %+v", v)
+	}
+}
+
+func TestFleetTelemetryFieldsCanBeRenamed(t *testing.T) {
+	v := amrReading(t, Transform{Fields: map[string]string{"battery": "pin.percent", "speed": "toc_do"}},
+		map[string]any{"id": "AMR-02", "x": 1.0, "y": 2.0, "pin": map[string]any{"percent": "64"}, "toc_do": 0.8})
+	if v.Battery == nil || *v.Battery != 64 || v.Speed == nil || *v.Speed != 0.8 {
+		t.Errorf("renamed telemetry = %+v", v)
+	}
+}

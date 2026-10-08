@@ -19,7 +19,7 @@ export function SetupChecklist({ model, versions }: { model: string; versions: V
     queryFn: async () => { try { await api.agvMap(model); return true } catch (e) { if (e instanceof ApiError && e.status === 404) return false; throw e } },
     retry: false,
   })
-  const feed = useQuery({ queryKey: ['feed-status'], queryFn: api.feed.status, retry: false, refetchInterval: 4000 })
+  const feed = useQuery({ queryKey: ['feed-status', model], queryFn: () => api.feed.status(model), retry: false, refetchInterval: 4000 })
   const steps = setupSteps({
     model,
     materials: materials.data?.length ?? 0,
@@ -30,7 +30,7 @@ export function SetupChecklist({ model, versions }: { model: string; versions: V
       liveReady: coverage.data.readiness.find((r) => r.feature === 'live')?.ok ?? false,
     } : undefined,
     hasMap: map.data,
-    feed: feed.data ? { state: feed.data.state, model: feed.data.model } : undefined,
+    feed: feed.data ? { state: feed.data.state } : undefined,
   })
   const next = nextStep(steps)
   const done = steps.filter((s) => s.done).length

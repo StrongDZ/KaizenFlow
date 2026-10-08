@@ -103,6 +103,36 @@ func (s *Store) PutAgvMap(ctx context.Context, modelKey string, graph json.RawMe
 	return err
 }
 
+// MapImage là ảnh mặt bằng làm nền của bản đồ AGV; Rev đổi mỗi lần tải ảnh mới.
+type MapImage struct {
+	Mime          string
+	Data          []byte
+	Width, Height int
+	Rev           int64
+}
+
+func (s *Store) PutAgvMapImage(ctx context.Context, modelKey string, img MapImage) error {
+	_, err := s.Pool.Exec(ctx, `INSERT INTO agv_map_image (model_key, mime, data, width, height, rev) VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (model_key) DO UPDATE SET mime = EXCLUDED.mime, data = EXCLUDED.data, width = EXCLUDED.width,
+		  height = EXCLUDED.height, rev = EXCLUDED.rev, updated_at = now()`, modelKey, img.Mime, img.Data, img.Width, img.Height, img.Rev)
+	return err
+}
+
+func (s *Store) GetAgvMapImage(ctx context.Context, modelKey string) (*MapImage, error) {
+	var img MapImage
+	if err := s.Pool.QueryRow(ctx, `SELECT mime, data, width, height, rev FROM agv_map_image WHERE model_key = $1`, modelKey).
+		Scan(&img.Mime, &img.Data, &img.Width, &img.Height, &img.Rev); err != nil {
+		return nil, notFound(err)
+	}
+	return &img, nil
+}
+
+// DeleteAgvMapImage xoá ảnh nền; không có ảnh thì không làm gì.
+func (s *Store) DeleteAgvMapImage(ctx context.Context, modelKey string) error {
+	_, err := s.Pool.Exec(ctx, `DELETE FROM agv_map_image WHERE model_key = $1`, modelKey)
+	return err
+}
+
 type LiveSignal struct {
 	Time    time.Time
 	Model   string
@@ -208,7 +238,7 @@ func clearLiveTx(ctx context.Context, tx pgx.Tx, model string) error {
 
 // deleteLiveConfig xoá mapping, nguồn dữ liệu, bản đồ AGV và dữ liệu live của một mô hình (gọi khi xoá mô hình).
 func deleteLiveConfig(ctx context.Context, tx pgx.Tx, model string) error {
-	for _, q := range []string{`DELETE FROM data_binding WHERE model_key = $1`, `DELETE FROM agv_map WHERE model_key = $1`, `DELETE FROM data_source WHERE model_key = $1`} {
+	for _, q := range []string{`DELETE FROM data_binding WHERE model_key = $1`, `DELETE FROM agv_map WHERE model_key = $1`, `DELETE FROM agv_map_image WHERE model_key = $1`, `DELETE FROM data_source WHERE model_key = $1`} {
 		if _, err := tx.Exec(ctx, q, model); err != nil {
 			return err
 		}

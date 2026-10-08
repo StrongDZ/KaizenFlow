@@ -5,7 +5,7 @@ const full: SetupInput = {
   model: 'm', materials: 6,
   versions: [{ id: 1, status: 'PUBLISHED', nodes: 12 }, { id: 2, status: 'DRAFT', nodes: 14 }],
   sources: 63, coverage: { source: 130, derived: 2, signals: 138, liveReady: true }, hasMap: true,
-  feed: { state: 'running', model: 'm' },
+  feed: { state: 'running' },
 }
 
 describe('setupSteps', () => {
@@ -16,7 +16,7 @@ describe('setupSteps', () => {
     expect(nextStep(steps)).toBeUndefined()
   })
   it('mô hình mới tinh: chưa có gì, bước kế tiếp là vật tư', () => {
-    const steps = setupSteps({ model: 'm', materials: 0, versions: [{ id: 1, status: 'DRAFT', nodes: 0 }], sources: 0, coverage: { source: 0, derived: 0, signals: 0, liveReady: false }, hasMap: false, feed: { state: 'idle', model: null } })
+    const steps = setupSteps({ model: 'm', materials: 0, versions: [{ id: 1, status: 'DRAFT', nodes: 0 }], sources: 0, coverage: { source: 0, derived: 0, signals: 0, liveReady: false }, hasMap: false, feed: { state: 'idle' } })
     expect(steps.filter((s) => s.done)).toHaveLength(0)
     expect(nextStep(steps)?.key).toBe('materials')
   })
@@ -52,10 +52,10 @@ describe('setupSteps', () => {
     for (const k of ['sources', 'bindings', 'map', 'live']) expect(steps.find((s) => s.key === k)?.done).toBe(false)
     expect(steps.find((s) => s.key === 'sources')?.detail).toContain('…')
   })
-  it('feed đang phát mô hình khác thì chưa tính là chạy trực tiếp', () => {
-    const l = setupSteps({ ...full, feed: { state: 'running', model: 'khac' } }).find((s) => s.key === 'live')!
+  it('feed của mô hình này tạm dừng thì chưa tính là đang chạy trực tiếp', () => {
+    const l = setupSteps({ ...full, feed: { state: 'paused' } }).find((s) => s.key === 'live')!
     expect(l.done).toBe(false)
-    expect(l.detail).toContain('khac')
+    expect(l.detail).toContain('tạm dừng')
   })
   it('liên kết mã hoá khoá mô hình', () => {
     const s = setupSteps({ ...full, model: 'a b' }).find((x) => x.key === 'sources')!

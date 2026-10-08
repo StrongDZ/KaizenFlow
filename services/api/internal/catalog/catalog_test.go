@@ -60,6 +60,19 @@ func TestPoolSchemaRejectsBadCount(t *testing.T) {
 	}
 }
 
+func TestPoolSchemaAcceptsEveryVehicleKind(t *testing.T) {
+	raw, _ := catalog.SchemaFor("RESOURCE_POOL")
+	sc := compile(t, raw)
+	for _, kind := range []string{"AGV", "AMR", "TUGGER", "FORKLIFT", "OPERATOR"} {
+		if err := sc.Validate(map[string]any{"kind": kind, "count": 2.0}); err != nil {
+			t.Errorf("kind %s rejected: %v", kind, err)
+		}
+	}
+	if err := sc.Validate(map[string]any{"kind": "DRONE", "count": 2.0}); err == nil {
+		t.Error("unknown kind accepted")
+	}
+}
+
 func TestSeedIsIdempotent(t *testing.T) {
 	pool := testdb.New(t, "catalog")
 	ctx := context.Background()

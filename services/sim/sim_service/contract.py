@@ -32,7 +32,7 @@ class NodeSpec(_Base):
 
 class PoolSpec(_Base):
     key: str
-    kind: Literal["AGV", "TUGGER", "FORKLIFT", "OPERATOR"]
+    kind: Literal["AGV", "AMR", "TUGGER", "FORKLIFT", "OPERATOR"]
     count: int = Field(ge=1)
     service: dict | None = None
 

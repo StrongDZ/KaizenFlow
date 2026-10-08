@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus } from 'lucide-react'
+import { Plus, Database, Cpu, Warehouse, Truck, Factory, Gauge, Radio, PencilLine, Radar, type LucideIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
@@ -10,10 +10,13 @@ import { FeedControl } from '../components/live/FeedControl'
 import { SampleTree } from '../components/live/SampleTree'
 import { SourceDialog } from '../components/live/SourceDialog'
 import { PeekHost, SidePeek, usePeekParam } from '../components/SidePeek'
+import { ItemIdentity } from '../components/NodeIdentity'
 import { DataTable, type Column } from '../components/table/DataTable'
 import { EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, SearchBox, Tag, btn, btnPrimary } from '../components/ui'
-import { ageText, parseSample, rateText, summarizeSources } from '../lib/sourceView'
+import { ageText, parseSample, rateText, sourceKind, summarizeSources, type SourceKind } from '../lib/sourceView'
 import { filterRows } from '../lib/table'
+
+const SOURCE_ICON: Record<SourceKind, LucideIcon> = { machine: Cpu, stock: Warehouse, fleet: Truck, line: Factory, sensor: Gauge, other: Radio }
 
 const COLUMNS: Column<DataSourceRow>[] = [
   {
@@ -28,10 +31,7 @@ const COLUMNS: Column<DataSourceRow>[] = [
   {
     key: 'source', header: 'Nguồn', sort: (r) => r.source,
     cell: (r) => (
-      <span className="block min-w-0">
-        <span className="block truncate font-mono text-[11.5px] text-text">{r.source}</span>
-        <span className="block truncate text-[10.5px] text-muted">{r.desc || 'không có mô tả'}</span>
-      </span>
+      <ItemIdentity icon={SOURCE_ICON[sourceKind(r.source)]} name={r.source} code={r.desc || 'không có mô tả'} color={r.live ? 'var(--color-accent)' : 'var(--color-muted)'} />
     ),
   },
   { key: 'rate', header: 'Tốc độ', cell: (r) => (r.live ? rateText(r.per_min) : '—'), sort: (r) => (r.live ? r.per_min : 0), align: 'right' },
@@ -40,7 +40,7 @@ const COLUMNS: Column<DataSourceRow>[] = [
     key: 'bound', header: 'Đã ghép', sort: (r) => r.bindings.length,
     cell: (r) => (r.bindings.length > 0 ? `${r.bindings.length} tín hiệu` : <span className="text-lock-text">Chưa ghép</span>),
   },
-  { key: 'origin', header: 'Loại', cell: (r) => <Tag>{r.origin === 'manual' ? 'Khai báo tay' : 'Tự ghi nhận'}</Tag>, sort: (r) => r.origin },
+  { key: 'origin', header: 'Loại', cell: (r) => <Tag icon={r.origin === 'manual' ? PencilLine : Radar}>{r.origin === 'manual' ? 'Khai báo tay' : 'Tự ghi nhận'}</Tag>, sort: (r) => r.origin },
 ]
 
 export default function SourcesPage() {
@@ -63,7 +63,7 @@ export default function SourcesPage() {
       peek={chosen ? <SourceDetail key={chosen.source} model={model} row={chosen} names={names} onGone={() => setSelected(null)} onClose={() => setSelected(null)} /> : null}
     >
     <PageBody wide>
-      <PageHeader
+      <PageHeader icon={Database}
         title="Nguồn dữ liệu"
         subtitle={model}
         actions={
@@ -75,8 +75,8 @@ export default function SourcesPage() {
       />
       <FeedControl model={model} />
       <Notice>
-        Nguồn là thiết bị hoặc topic gửi bản tin thô (PLC máy dập, hệ thống kho…). Hệ thống ghi nhớ mọi nguồn đã từng gửi bản tin, kể cả khi thiết bị đã tắt.
-        Muốn đưa dữ liệu của một nguồn vào sơ đồ, sang tab <Link className="underline decoration-dotted" to={`/models/${encodeURIComponent(model)}/connect`}>Kết nối dữ liệu</Link> để chọn trường của nguồn và ghép vào tín hiệu của node hay đường nối.
+        Mỗi thiết bị hay topic từng gửi bản tin là một nguồn, kể cả khi đã tắt. Để đưa dữ liệu vào sơ đồ, ghép nguồn ở{' '}
+        <Link className="font-medium underline decoration-dotted" to={`/models/${encodeURIComponent(model)}/connect`}>Kết nối dữ liệu</Link>.
       </Notice>
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
         <Tag>{sum.total} nguồn</Tag>

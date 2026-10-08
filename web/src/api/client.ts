@@ -128,15 +128,23 @@ export const api = {
     post<SourceTestResult>(`/api/models/${encodeURIComponent(key)}/sources/test`, body),
   agvMap: (key: string) => req<AgvMap>(`/api/models/${encodeURIComponent(key)}/agv-map`),
   saveAgvMap: (key: string, map: AgvMap) => put<void>(`/api/models/${encodeURIComponent(key)}/agv-map`, map),
+  /** Địa chỉ ảnh mặt bằng làm nền; `rev` (từ bản đồ) chỉ để trình duyệt không dùng ảnh cũ. */
+  agvMapImageUrl: (key: string, rev?: number) => `${API_BASE}/api/models/${encodeURIComponent(key)}/agv-map/image${rev ? `?rev=${rev}` : ''}`,
+  uploadAgvMapImage: (key: string, img: Blob) =>
+    req<{ width: number; height: number; rev: number }>(`/api/models/${encodeURIComponent(key)}/agv-map/image`, { method: 'PUT', headers: { 'Content-Type': img.type }, body: img }),
+  deleteAgvMapImage: (key: string) => del(`/api/models/${encodeURIComponent(key)}/agv-map/image`),
+  /** Mỗi mô hình có một feed riêng chạy song song với mô hình khác: mọi lệnh đều nêu rõ mô hình. */
   feed: {
-    status: () => req<FeedStatus>('/api/feed/status'),
+    status: (model: string) => req<FeedStatus>(`/api/feed/status?model=${encodeURIComponent(model)}`),
+    /** Các mô hình đang chạy hoặc tạm dừng. */
+    list: () => req<FeedStatus[]>('/api/feed/feeds'),
     start: (model: string, speed: number, frame?: Frame & { noise_m?: number }) => post<FeedStatus>('/api/feed/start', { model, speed, ...(frame ? { frame } : {}) }),
-    pause: () => post<FeedStatus>('/api/feed/pause'),
-    resume: () => post<FeedStatus>('/api/feed/resume'),
-    speed: (speed: number) => post<FeedStatus>('/api/feed/speed', { speed }),
-    stop: () => post<FeedStatus>('/api/feed/stop'),
+    pause: (model: string) => post<FeedStatus>('/api/feed/pause', { model }),
+    resume: (model: string) => post<FeedStatus>('/api/feed/resume', { model }),
+    speed: (model: string, speed: number) => post<FeedStatus>('/api/feed/speed', { model, speed }),
+    stop: (model: string) => post<FeedStatus>('/api/feed/stop', { model }),
     reset: (model: string) => post<FeedStatus>('/api/feed/reset', { model }),
     addIncident: (body: IncidentInput) => post<Incident>('/api/feed/incidents', body),
-    clearIncident: (id: number) => del(`/api/feed/incidents/${id}`),
+    clearIncident: (model: string, id: number) => del(`/api/feed/incidents/${id}?model=${encodeURIComponent(model)}`),
   },
 }

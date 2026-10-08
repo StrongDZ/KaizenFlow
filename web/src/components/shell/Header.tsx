@@ -1,11 +1,10 @@
 import * as Dropdown from '@radix-ui/react-dropdown-menu'
-import { ChevronDown, Moon, Sun } from 'lucide-react'
+import { ChevronDown, Moon, PanelLeft, PanelLeftClose, Sun } from 'lucide-react'
 import { Fragment } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { useNavCtx } from '../../hooks/useNavCtx'
 import { useTheme } from '../../hooks/useTheme'
 import { versionStatusLabel } from '../../lib/format'
-import { crumbsFor, groupTabs, isTabActive, switchVersionPath, tabsFor, type NavCtx } from '../../lib/nav'
+import { crumbsFor, switchVersionPath, type NavCtx } from '../../lib/nav'
 
 function VersionPicker({ label, ctx, path }: { label: string; ctx: NavCtx; path: string }) {
   const versions = ctx.versions ?? []
@@ -47,54 +46,44 @@ function ThemeToggle() {
   )
 }
 
-export function Header({ actionsRef }: { actionsRef: (el: HTMLDivElement | null) => void }) {
+export function Header({ actionsRef, ctx, panel }: {
+  actionsRef: (el: HTMLDivElement | null) => void
+  ctx: NavCtx
+  /** Có panel điều hướng phụ ở trang này: nút thu gọn / mở rộng nó. */
+  panel?: { open: boolean; toggle: () => void }
+}) {
   const { pathname } = useLocation()
-  const ctx = useNavCtx(pathname)
   const crumbs = crumbsFor(pathname, ctx)
-  const tabs = tabsFor(pathname, ctx)
   return (
-    <header className="grid h-10 flex-none grid-cols-[1fr_auto_1fr] items-center gap-4 border-b border-line px-3 print:hidden">
-      <div className="flex min-w-0 items-center gap-4">
-        <Link to="/models" className="flex flex-none items-center gap-2 text-[13px] font-semibold text-text">
-          <i className="h-3.5 w-3.5 rounded-[3px] bg-text" />
-          KaizenFlow
-        </Link>
-        <nav aria-label="Vị trí hiện tại" className="flex min-w-0 items-center text-xs text-muted">
-          {crumbs.map((c, i) => (
-            <Fragment key={`${i}-${c.label}`}>
-              {i > 0 && <span className="px-1.5 text-faint">/</span>}
-              {c.picker ? (
-                <VersionPicker label={c.label} ctx={ctx} path={pathname} />
-              ) : c.to ? (
-                <Link to={c.to} className="truncate hover:text-text">{c.label}</Link>
-              ) : (
-                <span className={`truncate ${i === crumbs.length - 1 ? 'font-medium text-text' : ''}`}>{c.label}</span>
-              )}
-            </Fragment>
-          ))}
-        </nav>
-      </div>
-      <nav aria-label="Tab của object" className="flex items-center gap-2">
-        {groupTabs(tabs).map((g, gi) => (
-          <div key={g.title ?? gi} role="group" aria-label={g.title} className="flex items-center gap-1.5">
-            {g.title && <span className="hidden text-[10px] text-faint 2xl:inline">{g.title}</span>}
-            <div className="flex gap-0.5 rounded-lg bg-panel p-[3px]">
-              {g.tabs.map((t) => (
-                <Link
-                  key={t.to}
-                  to={t.to}
-                  title={g.title ? `${g.title}: ${t.label}` : undefined}
-                  aria-current={isTabActive(t, pathname) ? 'page' : undefined}
-                  className={`rounded-md px-3 py-1 text-xs font-medium ${isTabActive(t, pathname) ? 'bg-text text-bg' : 'text-muted hover:text-text'}`}
-                >
-                  {t.label}
-                </Link>
-              ))}
-            </div>
-          </div>
+    <header className="flex h-11 flex-none items-center gap-3 border-b border-line px-3 print:hidden">
+      <Link to="/models" className="flex flex-none items-center gap-2 text-[13px] font-semibold text-text">
+        <i className="h-3.5 w-3.5 rounded-[3px] bg-text" />
+        KaizenFlow
+      </Link>
+      {panel && (
+        <button
+          onClick={panel.toggle} aria-pressed={panel.open} aria-label={panel.open ? 'Thu gọn panel điều hướng' : 'Mở rộng panel điều hướng'}
+          title={`${panel.open ? 'Thu gọn' : 'Mở rộng'} panel điều hướng (phím [)`}
+          className={`flex-none rounded-md p-1.5 ${panel.open ? 'text-text' : 'text-muted'} hover:bg-panel hover:text-text`}
+        >
+          {panel.open ? <PanelLeftClose size={16} /> : <PanelLeft size={16} />}
+        </button>
+      )}
+      <nav aria-label="Vị trí hiện tại" className="flex min-w-0 flex-1 items-center text-xs text-muted">
+        {crumbs.map((c, i) => (
+          <Fragment key={`${i}-${c.label}`}>
+            {i > 0 && <span className="px-1.5 text-faint">/</span>}
+            {c.picker ? (
+              <VersionPicker label={c.label} ctx={ctx} path={pathname} />
+            ) : c.to ? (
+              <Link to={c.to} className="truncate hover:text-text">{c.label}</Link>
+            ) : (
+              <span className={`truncate ${i === crumbs.length - 1 ? 'font-medium text-text' : ''}`}>{c.label}</span>
+            )}
+          </Fragment>
         ))}
       </nav>
-      <div className="flex items-center justify-end gap-2">
+      <div className="flex flex-none items-center justify-end gap-2">
         <div ref={actionsRef} className="flex items-center gap-2" />
         <ThemeToggle />
       </div>

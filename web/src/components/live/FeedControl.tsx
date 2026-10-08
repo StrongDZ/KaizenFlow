@@ -14,21 +14,22 @@ import { ErrorBox, Notice, btn, btnDangerOutline, btnOk, input } from '../ui'
  */
 export const DEMO_CONTROLLER_FRAME: Frame & { noise_m: number } = { dx: -6, dy: 70, rot_deg: -90, scale: 0.001, flip_y: false, noise_m: 0.05 }
 
-/** Thanh điều khiển feed (bộ phát dữ liệu giả lập): bật/tạm dừng, tốc độ giờ nhà máy, đặt lại. */
+/** Thanh điều khiển feed (bộ phát dữ liệu giả lập) của MỘT mô hình: bật/tạm dừng, tốc độ giờ nhà máy, đặt lại. Các mô hình khác chạy độc lập. */
 export function FeedControl({ model, offerFrame = false }: { model: string; /** Cho chọn bật hệ toạ độ hãng xe giả lập khi bắt đầu (chỉ trang Bản đồ AGV cần) */ offerFrame?: boolean }) {
   const qc = useQueryClient()
-  const status = useFeedStatus()
+  const status = useFeedStatus(model)
   const [speed, setSpeed] = useState<number>(10)
   const [confirmReset, setConfirmReset] = useState(false)
   const [skewed, setSkewed] = useState(false)
   const refresh = () => {
-    void qc.invalidateQueries({ queryKey: ['feed-status'] })
+    void qc.invalidateQueries({ queryKey: ['feed-status', model] })
+    void qc.invalidateQueries({ queryKey: ['feeds'] })
     void qc.invalidateQueries({ queryKey: ['live', model] })
   }
   const start = useMutation({ mutationFn: () => api.feed.start(model, speed, skewed ? DEMO_CONTROLLER_FRAME : undefined), onSuccess: refresh })
-  const pause = useMutation({ mutationFn: () => api.feed.pause(), onSuccess: refresh })
-  const resume = useMutation({ mutationFn: () => api.feed.resume(), onSuccess: refresh })
-  const setSpeedM = useMutation({ mutationFn: (x: number) => api.feed.speed(x), onSuccess: refresh })
+  const pause = useMutation({ mutationFn: () => api.feed.pause(model), onSuccess: refresh })
+  const resume = useMutation({ mutationFn: () => api.feed.resume(model), onSuccess: refresh })
+  const setSpeedM = useMutation({ mutationFn: (x: number) => api.feed.speed(model, x), onSuccess: refresh })
   const reset = useMutation({ mutationFn: () => api.feed.reset(model), onSuccess: () => { setConfirmReset(false); refresh() } })
 
   if (status.isError) {
@@ -41,7 +42,6 @@ export function FeedControl({ model, offerFrame = false }: { model: string; /** 
   }
   const s = status.data
   if (!s) return null
-  const mine = s.model === model
   const err = start.error ?? pause.error ?? resume.error ?? setSpeedM.error
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-panel px-3 py-2 text-xs">
@@ -51,13 +51,13 @@ export function FeedControl({ model, offerFrame = false }: { model: string; /** 
       </span>
       {s.state !== 'idle' && (
         <span className="text-muted">
-          {mine ? '' : <>mô hình <b className="text-text">{s.model}</b> · </>}giờ nhà máy <b className="tabular-nums text-text">{fmtFactoryTime(s.virtual_now)}</b>
-          {mine && s.frame && <span className="ml-2 rounded border border-line-2 px-1.5 py-0.5 text-[11px] text-text-2">hãng xe giả lập báo toạ độ riêng (mm, trục xoay)</span>}
+          giờ nhà máy <b className="tabular-nums text-text">{fmtFactoryTime(s.virtual_now)}</b>
+          {s.frame && <span className="ml-2 rounded border border-line-2 px-1.5 py-0.5 text-[11px] text-text-2">hãng xe giả lập báo toạ độ riêng (mm, trục xoay)</span>}
           {s.last_error && <span className="ml-2 text-bad-text">đang lỗi khi gửi dữ liệu tới API: {s.last_error}</span>}
         </span>
       )}
       <span className="ml-auto flex flex-wrap items-center gap-2">
-        {(s.state === 'idle' || !mine) && (
+        {s.state === 'idle' && (
           <>
             <select className={input} aria-label="Tốc độ giờ nhà máy" value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
               {SPEEDS.map((x) => <option key={x} value={x}>{speedLabel(x)}</option>)}
@@ -68,11 +68,11 @@ export function FeedControl({ model, offerFrame = false }: { model: string; /** 
               </label>
             )}
             <button className={btnOk} disabled={start.isPending} onClick={() => start.mutate()}>
-              <Play size={12} /> {s.state === 'idle' ? 'Bắt đầu phát dữ liệu giả lập' : `Chuyển sang ${model}`}
+              <Play size={12} /> Bắt đầu phát dữ liệu giả lập
             </button>
           </>
         )}
-        {s.state !== 'idle' && mine && (
+        {s.state !== 'idle' && (
           <>
             <select className={input} aria-label="Tốc độ giờ nhà máy" value={s.speed} onChange={(e) => setSpeedM.mutate(Number(e.target.value))}>
               {[...new Set<number>([...SPEEDS, s.speed])].sort((a, b) => a - b).map((x) => <option key={x} value={x}>{speedLabel(x)}</option>)}
@@ -87,7 +87,7 @@ export function FeedControl({ model, offerFrame = false }: { model: string; /** 
       {err ? <div className="basis-full"><ErrorBox error={err} /></div> : null}
       <ConfirmDialog
         open={confirmReset} title="Đặt lại dữ liệu live?" pending={reset.isPending} error={reset.error} confirmLabel="Đặt lại"
-        description={<>Dừng feed và xoá toàn bộ dữ liệu live đã ghi của mô hình <b>{model}</b> (giá trị, sự kiện). Ghép nối và bản đồ AGV được giữ nguyên.</>}
+        description={<>Dừng feed và xoá toàn bộ dữ liệu live đã ghi của mô hình <b>{model}</b> (giá trị, sự kiện). Ghép nối và bản đồ AGV được giữ nguyên. Các mô hình khác đang chạy không bị ảnh hưởng.</>}
         onConfirm={() => reset.mutate()} onCancel={() => setConfirmReset(false)}
       />
     </div>

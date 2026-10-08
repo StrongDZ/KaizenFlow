@@ -43,6 +43,39 @@ def test_edge_factory_replaces_the_edge_class_and_hooks_run_in_order():
     assert calls.count(("freed", "V1")) >= 5
 
 
+def test_take_vehicle_may_wait_and_approach_runs_before_the_loaded_leg():
+    calls = []
+
+    class Hooked(Transfer):
+        def _take_vehicle(self, pool):
+            calls.append(("take", self.ctx.env.now))
+            yield self.ctx.env.timeout(3.0)  # chưa có xe rảnh: chờ
+            return "V1"
+
+        def _phase(self, veh, phase):
+            calls.append(("phase", veh, phase))
+
+        def _approach(self, veh):
+            calls.append(("approach", veh, self.ctx.env.now))
+            yield self.ctx.env.timeout(5.0)  # xe chạy rỗng tới chỗ lấy hàng
+
+        def _leg(self, veh, kind):
+            calls.append(("leg", veh, kind))
+            yield self.ctx.env.timeout(7.0)
+
+        def _vehicle_freed(self, pool, veh):
+            calls.append(("freed", veh))
+
+    ctx = build(_req(count=1), 0, lambda c, s: (Hooked if s.mode == "POOL" else Transfer)(c, s))
+    for o in ctx.objects():
+        o.start()
+    ctx.env.run(until=300)
+    assert [c[0] for c in calls[:7]] == ["take", "phase", "approach", "leg", "phase", "leg", "freed"]
+    assert calls[2][2] - calls[0][1] == 3.0
+    wait = ctx.rec.tallies[("A>B", "WAIT_POOL")][0]
+    assert wait == 3.0  # thời gian chờ có xe tính vào WAIT_POOL, đoạn tiếp cận (5 s) thì không
+
+
 def test_leg_controls_travel_time():
     class Slow(Transfer):
         def _leg(self, veh, kind):

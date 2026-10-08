@@ -290,6 +290,54 @@ func TestIngestWithoutModelRegistersOnlyForModelsWhoseBindingsMatch(t *testing.T
 	}
 }
 
+// Hai mô hình có thể dùng chung tên nguồn (mô hình sao chép giữ nguyên ghép nối). Feed của mô hình A gửi kèm model=A
+// thì bản tin chỉ được áp cho A: nếu rò sang B, hai mô hình chạy song song sẽ ghi đè trạng thái của nhau.
+func TestIngestForOnlyFeedsTheNamedModel(t *testing.T) {
+	s, _, _ := newSvc(t,
+		bind("a", "M", "count_ok", "plc/m/status", "n"),
+		bind("b", "M", "count_ok", "plc/m/status", "n"))
+	res := s.IngestFor("a", []live.Message{{Source: "plc/m/status", TS: t0, Payload: map[string]any{"n": 5.0}}})
+	if res.Readings != 1 {
+		t.Fatalf("result = %+v", res)
+	}
+	if got := s.Snapshot("a").Subjects["M"].Signals["count_ok"].V; got != 5 {
+		t.Errorf("a = %v, muốn 5", got)
+	}
+	if _, leaked := s.Snapshot("b").Subjects["M"]; leaked {
+		t.Errorf("bản tin của feed A rò sang mô hình B: %+v", s.Snapshot("b").Subjects["M"])
+	}
+}
+
+func TestIngestForTwoModelsRunsIndependentVirtualClocks(t *testing.T) {
+	s, _, _ := newSvc(t,
+		bind("a", "M", "count_ok", "plc/m/status", "n"),
+		bind("b", "M", "count_ok", "plc/m/status", "n"))
+	later := t0.Add(5 * time.Hour)
+	s.IngestFor("a", []live.Message{{Source: "plc/m/status", TS: later, Payload: map[string]any{"n": 50.0}}})
+	s.IngestFor("b", []live.Message{{Source: "plc/m/status", TS: t0, Payload: map[string]any{"n": 3.0}}})
+	if got := s.Snapshot("a").Subjects["M"].Signals["count_ok"].V; got != 50 {
+		t.Errorf("a = %v, muốn 50: giờ ảo chậm hơn của B không được làm A bỏ mẫu", got)
+	}
+	if got := s.Snapshot("b").Subjects["M"].Signals["count_ok"].V; got != 3 {
+		t.Errorf("b = %v, muốn 3", got)
+	}
+	if !s.Snapshot("a").Now.Equal(later) || !s.Snapshot("b").Now.Equal(t0) {
+		t.Errorf("giờ ảo: a=%v b=%v", s.Snapshot("a").Now, s.Snapshot("b").Now)
+	}
+}
+
+func TestIngestWithoutModelStillFeedsEveryModelWithAMatchingBinding(t *testing.T) {
+	s, _, _ := newSvc(t,
+		bind("a", "M", "count_ok", "plc/m/status", "n"),
+		bind("b", "M", "count_ok", "plc/m/status", "n"))
+	s.Ingest([]live.Message{{Source: "plc/m/status", TS: t0, Payload: map[string]any{"n": 7.0}}})
+	for _, m := range []string{"a", "b"} {
+		if got := s.Snapshot(m).Subjects["M"].Signals["count_ok"].V; got != 7 {
+			t.Errorf("%s = %v, muốn 7 (nguồn thật dùng chung)", m, got)
+		}
+	}
+}
+
 func TestSourceWritesAreThrottledAndOnlyCarryTheNewCount(t *testing.T) {
 	s, fs, _ := newSvc(t)
 	wall := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)

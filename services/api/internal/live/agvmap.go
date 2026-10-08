@@ -30,13 +30,36 @@ type MapLane struct {
 	Path []Pt `json:"path,omitempty"`
 }
 
+// MapBG là chỗ đặt ảnh mặt bằng làm nền: góc trên trái của ảnh nằm ở (X, Y) mét, mỗi pixel ảnh là MPerPx mét.
+// Ảnh nằm ở bảng riêng (agv_map_image); Rev đổi mỗi lần tải ảnh mới để trình duyệt không dùng ảnh cũ trong bộ nhớ đệm.
+// Calibrated: người dùng đã hiệu chuẩn tỉ lệ bằng hai điểm đã biết khoảng cách (chưa thì tỉ lệ chỉ là ước đoán).
+// Rot: góc xoay ảnh (độ, chiều kim đồng hồ trên bản đồ) quanh tâm ảnh; (X, Y) vẫn là góc trên trái của ảnh khi chưa xoay.
+type MapBG struct {
+	X          float64 `json:"x"`
+	Y          float64 `json:"y"`
+	MPerPx     float64 `json:"m_per_px"`
+	WPx        int     `json:"w_px"`
+	HPx        int     `json:"h_px"`
+	Rev        int64   `json:"rev,omitempty"`
+	Calibrated bool    `json:"calibrated,omitempty"`
+	Rot        float64 `json:"rot,omitempty"`
+}
+
+// MapKeepout là vùng xe không được vào (máy, kệ, tường...): đa giác khép kín từ 3 đỉnh.
+type MapKeepout struct {
+	ID   string `json:"id"`
+	Poly []Pt   `json:"poly"`
+}
+
 // AgvMap: từ v2, toạ độ tính bằng mét. Bản v1 (không có `v`) tính bằng "đơn vị vẽ" × unit_m; Normalize đổi sang v2.
 type AgvMap struct {
-	Version  int        `json:"v"`
-	UnitM    float64    `json:"unit_m,omitempty"`
-	SpeedMPS float64    `json:"speed_mps"`
-	Points   []MapPoint `json:"points"`
-	Lanes    []MapLane  `json:"lanes"`
+	Version  int          `json:"v"`
+	UnitM    float64      `json:"unit_m,omitempty"`
+	SpeedMPS float64      `json:"speed_mps"`
+	BG       *MapBG       `json:"bg,omitempty"`
+	Keepouts []MapKeepout `json:"keepouts,omitempty"`
+	Points   []MapPoint   `json:"points"`
+	Lanes    []MapLane    `json:"lanes"`
 }
 
 type MapIssue struct{ Key, Message string }
@@ -141,6 +164,18 @@ func (m *AgvMap) Validate(nodeKeys map[string]bool) []MapIssue {
 	if m.SpeedMPS <= 0 {
 		add("map", "tốc độ xe (speed_mps) phải lớn hơn 0")
 	}
+	if b := m.BG; b != nil {
+		switch {
+		case !(b.MPerPx > 0) || math.IsInf(b.MPerPx, 0):
+			add("bg", "tỉ lệ ảnh nền (m_per_px) phải lớn hơn 0")
+		case b.WPx <= 0 || b.HPx <= 0:
+			add("bg", "kích thước ảnh nền (w_px, h_px) phải lớn hơn 0")
+		case math.IsNaN(b.X) || math.IsInf(b.X, 0) || math.IsNaN(b.Y) || math.IsInf(b.Y, 0):
+			add("bg", "vị trí ảnh nền không hợp lệ")
+		case math.IsNaN(b.Rot) || math.IsInf(b.Rot, 0):
+			add("bg", "góc xoay ảnh nền không hợp lệ")
+		}
+	}
 	points := map[string]bool{}
 	for _, p := range m.Points {
 		switch {
@@ -183,7 +218,60 @@ func (m *AgvMap) Validate(nodeKeys map[string]bool) []MapIssue {
 			}
 		}
 	}
+	m.validateKeepouts(add)
 	return out
+}
+
+// validateKeepouts kiểm các vùng cấm (id, đa giác hợp lệ) rồi kiểm không điểm nào nằm trong vùng và không làn nào đi vào vùng.
+// Vùng hỏng thì chỉ báo lỗi của chính nó, không dùng để kiểm điểm và làn.
+func (m *AgvMap) validateKeepouts(add func(key, msg string)) {
+	ids := map[string]bool{}
+	var usable []MapKeepout
+	for _, k := range m.Keepouts {
+		bad := false
+		switch {
+		case k.ID == "":
+			add("keepout", "vùng cấm thiếu id")
+			bad = true
+		case ids[k.ID]:
+			add(k.ID, "id vùng cấm bị trùng")
+			bad = true
+		}
+		ids[k.ID] = true
+		finite := true
+		for _, q := range k.Poly {
+			if math.IsNaN(q.X) || math.IsInf(q.X, 0) || math.IsNaN(q.Y) || math.IsInf(q.Y, 0) {
+				finite = false
+			}
+		}
+		switch {
+		case bad:
+		case len(k.Poly) < 3:
+			add(k.ID, "vùng cấm cần ít nhất 3 đỉnh")
+		case !finite:
+			add(k.ID, "đỉnh của vùng cấm có toạ độ không hợp lệ")
+		case math.Abs(polygonArea(k.Poly)) <= geomEps:
+			add(k.ID, "vùng cấm có diện tích bằng 0 (các đỉnh thẳng hàng)")
+		default:
+			usable = append(usable, k)
+		}
+	}
+	for _, k := range usable {
+		for _, p := range m.Points {
+			if pointInPolygon(Pt{p.X, p.Y}, k.Poly) {
+				add(p.ID, fmt.Sprintf("điểm nằm trong vùng cấm %s", k.ID))
+			}
+		}
+		for _, l := range m.Lanes {
+			poly := m.Polyline(l)
+			for i := 1; i < len(poly); i++ {
+				if segmentEntersPolygon(poly[i-1], poly[i], k.Poly) {
+					add(l.ID, fmt.Sprintf("làn cắt vùng cấm %s", k.ID))
+					break
+				}
+			}
+		}
+	}
 }
 
 // Travel trả thời gian đi ngắn nhất (giây) từ node srcKey tới node dstKey theo bản đồ: từ mọi trạm gắn srcKey tới mọi trạm gắn dstKey,
@@ -238,4 +326,70 @@ func (m *AgvMap) Travel(srcKey, dstKey string) (seconds float64, ok bool) {
 			}
 		}
 	}
+}
+
+// Kết quả của Route: một đường nối do xe chở có chạy được trên bản đồ hay không.
+const (
+	RouteOK        = "ok"
+	RouteNoStation = "no_station" // một đầu của đường nối chưa có trạm trên bản đồ: xe chạy theo thời gian ước tính
+	RouteNoPath    = "no_path"    // có trạm nhưng không có đường đi: xe chờ mãi
+	RouteNoReturn  = "no_return"  // đi được mà không về được: xe kẹt sau chuyến đầu
+)
+
+// Route kiểm bản đồ có cho xe chạy đường nối srcKey → dstKey (đi và về) không. Một node nhiều trạm thì chỉ cần một cặp trạm đi-về được.
+func (m *AgvMap) Route(srcKey, dstKey string) string {
+	var src, dst []string
+	for _, p := range m.Points {
+		if p.Kind != "station" {
+			continue
+		}
+		switch p.NodeKey {
+		case srcKey:
+			src = append(src, p.ID)
+		case dstKey:
+			dst = append(dst, p.ID)
+		}
+	}
+	if len(src) == 0 || len(dst) == 0 {
+		return RouteNoStation
+	}
+	out := map[string][]string{}
+	for _, l := range m.Lanes {
+		out[l.From] = append(out[l.From], l.To)
+	}
+	reach := func(from string) map[string]bool {
+		seen := map[string]bool{from: true}
+		stack := []string{from}
+		for len(stack) > 0 {
+			u := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			for _, v := range out[u] {
+				if !seen[v] {
+					seen[v] = true
+					stack = append(stack, v)
+				}
+			}
+		}
+		return seen
+	}
+	forward, round := false, false
+	for _, a := range src {
+		fromA := reach(a)
+		for _, b := range dst {
+			if !fromA[b] {
+				continue
+			}
+			forward = true
+			if reach(b)[a] {
+				round = true
+			}
+		}
+	}
+	switch {
+	case !forward:
+		return RouteNoPath
+	case !round:
+		return RouteNoReturn
+	}
+	return RouteOK
 }

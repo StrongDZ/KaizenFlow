@@ -11,6 +11,7 @@ import { RecommendationList } from '../components/controlroom/RecommendationList
 import { Ribbon } from '../components/controlroom/Ribbon'
 import { RunGate } from '../components/controlroom/RunGate'
 import { FloatingPanel, PanelSection } from '../components/FloatingPanel'
+import { FitOnResize } from '../components/FitOnResize'
 import { kfEdgeTypes } from '../components/KfEdge'
 import { kfNodeTypes } from '../components/KfNode'
 import { HeaderActions, useShell } from '../components/shell/ShellContext'
@@ -187,10 +188,11 @@ function Room({ run, scenario, graph, types, rows }: {
 
       <ReactFlow
         nodes={nodes} edges={edges} nodeTypes={kfNodeTypes} edgeTypes={kfEdgeTypes} nodesConnectable={false} nodesDraggable={false}
-        colorMode={theme} fitView fitViewOptions={{ padding: { top: '56px', right: '280px', bottom: '96px', left: '24px' } }}
+        colorMode={theme} fitView minZoom={0.2} fitViewOptions={{ padding: { top: '56px', right: '280px', bottom: '96px', left: '24px' } }}
         onPaneClick={() => setOpenPin(null)}
       >
         <Background gap={18} size={1} color="var(--color-line)" />
+        <FitOnResize options={{ padding: { top: '56px', right: '280px', bottom: '96px', left: '24px' } }} />
         <Controls showInteractive={false} position="bottom-left" style={{ marginBottom: 82 }} />
       </ReactFlow>
 

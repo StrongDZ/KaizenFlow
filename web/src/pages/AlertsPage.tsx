@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Bell } from 'lucide-react'
+import { AlertKindTag, alertIcon } from '../components/AlertKind'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import type { InsightRow } from '../api/types'
 import { DataTable, type Column } from '../components/table/DataTable'
-import { EmptyState, ErrorBox, FilterChip, Loading, Notice, PageBody, PageHeader, SearchBox, Tag, btn } from '../components/ui'
+import { EmptyState, ErrorBox, FilterChip, Loading, PageBody, PageHeader, SearchBox, btn } from '../components/ui'
 import { KIND_LABEL, countByKind, filterAlerts, statusLabel } from '../lib/alertsView'
 import { fmtDateTime } from '../lib/format'
 import { describeInsight } from '../lib/insights'
@@ -30,7 +32,7 @@ export default function AlertsPage() {
   const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
 
   const columns: Column<InsightRow>[] = [
-    { key: 'kind', header: 'Loại', cell: (r) => <Tag>{KIND_LABEL[r.kind] ?? r.kind}</Tag>, sort: (r) => r.kind },
+    { key: 'kind', header: 'Loại', cell: (r) => <AlertKindTag kind={r.kind} />, sort: (r) => r.kind },
     {
       key: 'what', header: 'Nội dung',
       cell: (r) => <span className="block max-w-[520px] text-text">{describeInsight(r)}</span>,
@@ -55,24 +57,24 @@ export default function AlertsPage() {
   if (list.isLoading) return <Loading />
   return (
     <PageBody wide>
-      <PageHeader title="Cảnh báo" subtitle={`${open} đang mở`} actions={<SearchBox value={q} onChange={setQ} placeholder="Tìm đối tượng, mô hình" />} />
-      <Notice>
-        Cảnh báo sinh ra sau mỗi lần chạy mô phỏng (sắp Đỏ, nguy cơ hỏng, điểm nghẽn) và từ màn Trực tiếp (thực tế lệch dự báo). Bấm "Đã xem" khi bạn đã biết;
-        cảnh báo không tự mất cho đến khi có kết quả mới thay thế.
-      </Notice>
+      <PageHeader icon={Bell} title="Cảnh báo" subtitle={`${open} đang mở`} actions={<SearchBox value={q} onChange={setQ} placeholder="Tìm đối tượng, mô hình" />} />
       <div className="flex flex-wrap items-center gap-2">
         {KINDS.map((k) => (
-          <FilterChip key={k} active={kind === k} onClick={() => setKind(k)}>{k === 'ALL' ? 'Tất cả' : KIND_LABEL[k]} {byKind[k] ?? 0}</FilterChip>
+          <FilterChip key={k} active={kind === k} onClick={() => setKind(k)}>
+            {k !== 'ALL' && (() => { const Icon = alertIcon(k); return <Icon size={12} className="-ml-0.5 mr-1 inline align-[-2px]" aria-hidden /> })()}
+            {k === 'ALL' ? 'Tất cả' : KIND_LABEL[k]} <span className="tabular-nums opacity-70">{byKind[k] ?? 0}</span>
+          </FilterChip>
         ))}
         <span className="mx-1 h-4 w-px bg-line-2" aria-hidden />
         {STATUSES.map(([s, label]) => <FilterChip key={s} active={status === s} onClick={() => setStatus(s)}>{label}</FilterChip>)}
       </div>
+      <p className="text-[11px] text-muted">Cảnh báo đến từ các lần chạy mô phỏng và màn Trực tiếp. Bấm "Đã xem" khi đã biết; cảnh báo chỉ mất khi có kết quả mới thay thế.</p>
       <ErrorBox error={list.error ?? ack.error} />
       <DataTable
         rows={shown} columns={columns} rowKey={(r) => r.id} initialSort={{ key: 'at', dir: 'desc' }}
         empty={
           <div className="rounded-xl border border-line">
-            <EmptyState title={rows.length === 0 ? 'Chưa có cảnh báo nào' : 'Không có cảnh báo khớp'}>
+            <EmptyState icon={Bell} title={rows.length === 0 ? 'Chưa có cảnh báo nào' : 'Không có cảnh báo khớp'}>
               {rows.length === 0 ? 'Chạy một scenario ở mô hình đã Publish, hoặc bật feed ở màn Trực tiếp, cảnh báo sẽ hiện ở đây.' : 'Đổi bộ lọc loại, trạng thái hoặc từ khoá.'}
             </EmptyState>
           </div>

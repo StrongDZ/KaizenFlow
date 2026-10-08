@@ -69,9 +69,41 @@ def test_agv_positions_and_trips(blueprint):
     trips = [m for m in msgs if m["source"].startswith("agv/trip/")]
     assert trips, "sau 25 phút phải có chuyến hoàn tất"
     t = trips[0]["payload"]
-    assert set(t) == {"dur", "wait", "ideal"} and t["dur"] >= t["ideal"] - 0.11
+    assert set(t) == {"dur", "wait", "ideal", "appr"} and t["dur"] >= t["ideal"] - 0.11
+    assert t["appr"] == 0.0, "xe kiểu cũ luôn nằm sẵn ở chỗ lấy hàng"
     # chuyến chỉ phát một lần
     assert not [m for m in em.messages() if m["source"].startswith("agv/trip/")]
+
+
+def _pos(em, prefix):
+    return [m["payload"] for m in em.messages() if m["source"].startswith(prefix) and m["source"].endswith("/pos")]
+
+
+def test_every_vehicle_reports_speed_destination_and_route(blueprint):
+    w, em = make(blueprint)
+    w.step(1500)
+    pos = _pos(em, "agv/tug-a/")
+    assert pos
+    for p in pos:
+        assert isinstance(p["v"], float) and p["v"] >= 0
+        assert isinstance(p["dst"], str) and isinstance(p["route"], list)
+        assert "batt" not in p, "xe kéo không mô hình hoá pin"
+    assert any(p["v"] > 0 and p["dst"] and p["route"] for p in pos) or any(p["st"] != "MOVING" for p in pos)
+
+
+def test_amr_reports_battery_and_charges_when_the_map_has_a_charger(blueprint):
+    bp = blueprint()
+    bp["run_request"]["pools"][0]["kind"] = "AMR"
+    bp["agv_map"]["points"].append({"id": "CH", "x": 15, "y": 10, "kind": "charger"})
+    bp["agv_map"]["lanes"] += [{"id": "L90", "from": "J1", "to": "CH", "capacity": 2}, {"id": "L91", "from": "CH", "to": "J1", "capacity": 2}]
+    w = World(bp, base=BASE, seed=11)
+    em = Emitter(w)
+    w.step(1500)
+    pos = _pos(em, "agv/tug-a/")
+    assert len(pos) == 2
+    for p in pos:
+        assert 2.0 <= p["batt"] <= 100.0
+        assert p["st"] in {"IDLE", "LOADING", "MOVING", "WAITING", "CHARGING"}
 
 
 def test_no_map_means_no_agv_streams(blueprint):

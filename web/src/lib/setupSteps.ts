@@ -9,7 +9,8 @@ export type SetupInput = {
   sources: number | undefined
   coverage: { source: number; derived: number; signals: number; liveReady: boolean } | undefined
   hasMap: boolean | undefined
-  feed: { state: string; model: string | null } | undefined
+  /** Trạng thái feed của CHÍNH mô hình này (mỗi mô hình có feed riêng, chạy song song với mô hình khác). */
+  feed: { state: string } | undefined
 }
 
 export type SetupStep = { key: string; title: string; detail: string; done: boolean; optional?: boolean; to: string; cta: string }
@@ -49,8 +50,8 @@ export function setupSteps(i: SetupInput): SetupStep[] {
       detail: i.hasMap === undefined ? unknown : i.hasMap ? 'Đã có bản đồ.' : 'Tuỳ chọn: vẽ bản đồ nếu sơ đồ có xe chở hàng (AGV, xe kéo).',
     },
     {
-      key: 'live', title: 'Chạy trực tiếp', done: running && i.feed?.model === i.model, to: `${base}/live`, cta: 'Mở màn Trực tiếp',
-      detail: !i.feed ? unknown : running && i.feed.model === i.model ? 'Feed đang phát cho mô hình này.' : running ? `Feed đang phát mô hình ${i.feed.model}, không phải mô hình này.` : 'Chưa phát dữ liệu. Bấm "Bắt đầu phát dữ liệu giả lập" ở màn Trực tiếp.',
+      key: 'live', title: 'Chạy trực tiếp', done: running, to: `${base}/live`, cta: 'Mở màn Trực tiếp',
+      detail: !i.feed ? unknown : running ? 'Feed đang phát cho mô hình này.' : i.feed.state === 'paused' ? 'Feed của mô hình này đang tạm dừng. Bấm "Tiếp tục" ở màn Trực tiếp.' : 'Chưa phát dữ liệu. Bấm "Bắt đầu phát dữ liệu giả lập" ở màn Trực tiếp.',
     },
   ]
 }

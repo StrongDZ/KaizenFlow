@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { crumbsFor, groupTabs, isTabActive, sectionOf, switchVersionPath, tabsFor } from './nav'
+import { crumbsFor, groupTabs, isCanvasPath, isTabActive, sectionOf, subNavFor, switchVersionPath, tabsFor } from './nav'
 
 describe('sectionOf', () => {
   it('maps paths to rail sections', () => {
@@ -12,9 +12,10 @@ describe('sectionOf', () => {
     expect(sectionOf('/alerts')).toBe('alerts')
     expect(sectionOf('/gauge-twin')).toBe('gauge')
     expect(sectionOf('/gauge-twin/machine_001')).toBe('gauge')
-    expect(sectionOf('/runs')).toBe('runs')
-    expect(sectionOf('/runs/12/report')).toBe('runs')
-    expect(sectionOf('/compare')).toBe('runs')
+    // Lần chạy thuộc về mô hình (không còn mục riêng trên thanh chính)
+    expect(sectionOf('/runs')).toBe('models')
+    expect(sectionOf('/runs/12/report')).toBe('models')
+    expect(sectionOf('/compare')).toBe('models')
     expect(sectionOf('/library/materials/RAW-01')).toBe('library')
   })
 })
@@ -134,5 +135,38 @@ describe('switchVersionPath', () => {
     expect(switchVersionPath('/versions/3/runs', 7)).toBe('/versions/7/runs')
     expect(switchVersionPath('/scenarios/5', 7)).toBe('/versions/7/scenarios')
     expect(switchVersionPath('/models/m/versions', 7)).toBe('/versions/7')
+  })
+})
+
+describe('subNavFor (panel phụ cạnh thanh chính)', () => {
+  it('mô hình: ba nhóm Thiết kế, Mô phỏng, Vận hành thật; mỗi mục có biểu tượng; tiêu đề là tên mô hình', () => {
+    const n = subNavFor('/versions/7', { modelKey: 'm', versionId: 7, version: 2 })!
+    expect(n.title).toBe('m')
+    expect(n.groups.map((g) => g.title)).toEqual(['Thiết kế', 'Mô phỏng', 'Vận hành thật'])
+    expect(n.groups.flatMap((g) => g.tabs).every((t) => !!t.icon)).toBe(true)
+  })
+  it('lần chạy: nhóm của lần chạy lên đầu, các nhóm của mô hình vẫn còn bên dưới', () => {
+    const n = subNavFor('/runs/12/sensors', { modelKey: 'm', versionId: 7 })!
+    expect(n.groups.map((g) => g.title)).toEqual(['Lần chạy #12', 'Thiết kế', 'Mô phỏng', 'Vận hành thật'])
+    expect(n.groups[0].tabs.map((t) => t.label)).toEqual(['Control Room', 'Cảm biến', 'Đề xuất', 'Báo cáo'])
+    // chưa biết mô hình (đang tải) thì chỉ có nhóm lần chạy
+    expect(subNavFor('/runs/12', {})!.groups.map((g) => g.title)).toEqual(['Lần chạy #12'])
+  })
+  it('thư viện có panel phụ riêng', () => {
+    const n = subNavFor('/library/materials/RAW-01', {})!
+    expect(n.title).toBe('Thư viện')
+    expect(n.icon).toBe('library')
+    expect(n.groups[0].tabs.map((t) => t.label)).toEqual(['Loại node', 'Vật tư'])
+    expect(isTabActive(n.groups[0].tabs[1], '/library/materials/RAW-01')).toBe(true)
+  })
+  it('trang danh sách cấp cao không có panel phụ', () => {
+    for (const p of ['/', '/models', '/alerts', '/runs', '/compare']) expect(subNavFor(p, {})).toBeNull()
+  })
+})
+
+describe('isCanvasPath (trang sơ đồ: panel phụ ẩn để sơ đồ rộng nhất)', () => {
+  it('sơ đồ, trực tiếp, bản đồ AGV, Control Room là trang sơ đồ; trang khác thì không', () => {
+    for (const p of ['/versions/7', '/models/m/live', '/models/m/map', '/runs/12']) expect(isCanvasPath(p)).toBe(true)
+    for (const p of ['/versions/7/scenarios', '/models/m/connect', '/models/m/versions', '/runs/12/report', '/library/node-types', '/models']) expect(isCanvasPath(p)).toBe(false)
   })
 })

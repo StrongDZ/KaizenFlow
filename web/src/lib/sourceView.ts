@@ -44,3 +44,16 @@ export function parseSample(text: string): SampleParse {
     return { ok: false, error: 'Bản tin mẫu không phải JSON hợp lệ. Kiểm tra dấu ngoặc, dấu phẩy và dấu nháy kép quanh tên trường.' }
   }
 }
+
+export type SourceKind = 'machine' | 'stock' | 'fleet' | 'line' | 'sensor' | 'other'
+
+/** Loại nguồn đoán theo đoạn đầu của topic (plc/…, wms/…), chỉ để chọn biểu tượng. */
+export function sourceKind(source: string): SourceKind {
+  const head = source.split('/')[0].toLowerCase()
+  if (head === 'plc') return 'machine'
+  if (head === 'wms') return 'stock'
+  if (['fms', 'agv', 'amr', 'fleet'].includes(head)) return 'fleet'
+  if (head === 'mes') return 'line'
+  if (['sensor', 'iot', 'scada'].includes(head)) return 'sensor'
+  return 'other'
+}

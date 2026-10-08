@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { FlaskConical } from 'lucide-react'
 import { useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
@@ -27,7 +28,7 @@ export default function ScenarioNewPage() {
   if (!graph.data || !types.data || !existing.data) return <Loading />
   return (
     <PageBody>
-      <PageHeader title="Tạo scenario" subtitle={`${graph.data.model_key} v${graph.data.version}`} />
+      <PageHeader icon={FlaskConical} title="Tạo scenario" subtitle={`${graph.data.model_key} v${graph.data.version}`} />
       <ScenarioFormView
         graph={graph.data} types={typeMap} initial={{ ...EMPTY_FORM, name: nextName('Kịch bản', existing.data.map((s) => s.name)) }} submitLabel="Tạo scenario"
         pending={create.isPending} error={create.error} cancelTo={`/versions/${vid}/scenarios`}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AgvMap, Vehicle } from '../api/types'
 import {
+  markScale,
   addLane, addPoint, bounds, insertWaypoint, laneLengthM, laneShape, lanePolyline, laneTone, midpointOf, moveWaypoint, movePoint, occupancy, offsetPolyline,
   polylineD, polylineLength, projectOnPolyline, removeLane, removePoint, removeWaypoint, setLaneCapacity,
 } from './mapGeom'
@@ -153,5 +154,20 @@ describe('sửa bản đồ (thuần, không đổi bản gốc)', () => {
     expect(setLaneCapacity(map(), 'L01', 5).lanes[0].capacity).toBe(5)
     expect(setLaneCapacity(map(), 'L01', 0).lanes[0].capacity).toBe(1)
     expect(movePoint(map(), 'C', 7, 8).points[2]).toMatchObject({ x: 7, y: 8 })
+  })
+})
+
+describe('markScale (cỡ chữ và ký hiệu trên bản đồ)', () => {
+  const base: AgvMap = { v: 2, speed_mps: 1, lanes: [], points: [{ id: 'A', x: 0, y: 0, kind: 'junction' }, { id: 'B', x: 80, y: 30, kind: 'junction' }] }
+  const bg = { x: 0, y: 0, m_per_px: 0.1, w_px: 1000, h_px: 600 }
+  it('không đổi khi phóng to, thu nhỏ hay dời ảnh nền', () => {
+    const k = markScale(base)
+    expect(markScale({ ...base, bg })).toBe(k)
+    expect(markScale({ ...base, bg: { ...bg, m_per_px: 0.4 } })).toBe(k)
+    expect(markScale({ ...base, bg: { ...bg, x: 500, y: -300 } })).toBe(k)
+  })
+  it('bản đồ chưa vẽ gì thì lấy theo ảnh nền để chữ không quá nhỏ hay quá to so với ảnh', () => {
+    const empty: AgvMap = { v: 2, speed_mps: 1, lanes: [], points: [] }
+    expect(markScale({ ...empty, bg: { ...bg, m_per_px: 0.4 } })).toBeGreaterThan(markScale({ ...empty, bg }))
   })
 })

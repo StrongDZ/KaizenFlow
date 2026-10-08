@@ -21,7 +21,12 @@ export function useLive(model: string | undefined) {
   return { snapshot, isLoading: base.isLoading, error: base.error }
 }
 
-/** Trạng thái của feed service (qua proxy của Go); hỏi mỗi 2 giây. `error` khác rỗng nghĩa là feed chưa bật. */
-export function useFeedStatus() {
-  return useQuery({ queryKey: ['feed-status'], queryFn: api.feed.status, refetchInterval: 2000, retry: false })
+/** Trạng thái feed của MỘT mô hình (qua proxy của Go); hỏi mỗi 2 giây. Lỗi nghĩa là feed service chưa bật. */
+export function useFeedStatus(model: string) {
+  return useQuery({ queryKey: ['feed-status', model], queryFn: () => api.feed.status(model), refetchInterval: 2000, retry: false })
+}
+
+/** Mọi mô hình đang chạy hoặc tạm dừng cùng lúc (để biết cái nào đang vận hành). */
+export function useFeeds() {
+  return useQuery({ queryKey: ['feeds'], queryFn: api.feed.list, refetchInterval: 4000, retry: false })
 }

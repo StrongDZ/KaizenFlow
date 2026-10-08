@@ -52,7 +52,7 @@ func SignalsFor(archetype string, params map[string]any) []SignalDef {
 		}
 	case "RESOURCE_POOL":
 		out := []SignalDef{{"busy", "Số đang bận", "number"}, {"queue_len", "Số lượt đang chờ", "number"}}
-		if kind, _ := params["kind"].(string); kind == "AGV" || kind == "TUGGER" || kind == "FORKLIFT" {
+		if kind, _ := params["kind"].(string); kind == "AGV" || kind == "AMR" || kind == "TUGGER" || kind == "FORKLIFT" {
 			out = append(out, SignalDef{SignalFleet, "Vị trí từng xe", "fleet"})
 		}
 		return out

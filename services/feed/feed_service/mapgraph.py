@@ -54,11 +54,32 @@ class MapGraph:
             self.lanes[lane.id] = lane
             self.out[a.id].append(lane)
 
+    def stations_of(self, node_key: str) -> list[str]:
+        """Mọi trạm gắn với node (một node có thể có nhiều chỗ đỗ), theo thứ tự trong bản đồ."""
+        return [p.id for p in self.points.values() if p.kind == "station" and p.node_key == node_key]
+
     def station_of(self, node_key: str) -> str | None:
-        for p in self.points.values():
-            if p.node_key == node_key:
-                return p.id
-        return None
+        """Trạm đầu tiên của node (giữ cho nơi chỉ cần một trạm)."""
+        stations = self.stations_of(node_key)
+        return stations[0] if stations else None
+
+    def best_pair(self, src_node: str, dst_node: str) -> tuple[str, str] | None:
+        """Cặp (trạm nguồn, trạm đích) có đường ngắn nhất theo độ dài làn; khớp với `Travel` bên Go (nhiều trạm thì lấy cặp gần nhất).
+        Không cặp nào đi được thì trả cặp đầu tiên (trạm vẫn nằm trên bản đồ: xe sẽ chờ chứ không âm thầm bỏ qua bản đồ).
+        None khi một trong hai node không có trạm."""
+        srcs, dsts = self.stations_of(src_node), self.stations_of(dst_node)
+        if not srcs or not dsts:
+            return None
+        best: tuple[float, str, str] | None = None
+        for a in srcs:
+            for b in dsts:
+                path = self.shortest(a, b, lambda lane: lane.length_m)
+                if path is None:
+                    continue
+                dist = sum(lane.length_m for lane in path)
+                if best is None or dist < best[0]:
+                    best = (dist, a, b)
+        return (best[1], best[2]) if best else (srcs[0], dsts[0])
 
     def xy_of(self, point_id: str) -> tuple[float, float]:
         p = self.points[point_id]

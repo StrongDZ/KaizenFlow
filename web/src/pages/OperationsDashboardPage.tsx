@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Gauge } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Link } from 'react-router-dom'
@@ -152,7 +153,7 @@ export default function OperationsDashboardPage() {
     [models.data, modelKey],
   )
 
-  const feed = useQuery({ queryKey: ['feed', 'status'], queryFn: api.feed.status })
+  const feed = useQuery({ queryKey: ['feed-status', modelKey], queryFn: () => api.feed.status(modelKey), enabled: !!currentModel, retry: false })
   const live = useQuery({ queryKey: ['live', modelKey], queryFn: () => api.live(modelKey), enabled: !!currentModel })
   const active = useQuery({
     queryKey: ['runs', modelKey, 'active'],
@@ -342,7 +343,7 @@ export default function OperationsDashboardPage() {
 
   return (
     <PageBody wide>
-      <PageHeader
+      <PageHeader icon={Gauge}
         title="Dashboard vận hành FMCG"
         subtitle="Theo dõi trạng thái live, recommendation và hiệu quả áp dụng trên cùng một màn hình"
         actions={

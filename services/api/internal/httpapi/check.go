@@ -28,12 +28,13 @@ func (h *handlers) graphReport(ctx context.Context, g *store.Graph, deep bool) (
 		return validate.Report{}, err
 	}
 	var travel func(src, dst string) (float64, bool)
+	var route func(src, dst string) string
 	if raw, err := h.Store.GetAgvMap(ctx, g.ModelKey); err == nil {
 		if m, err := live.ParseMap(raw); err == nil {
-			travel = m.Travel
+			travel, route = m.Travel, m.Route
 		}
 	}
-	rep := h.Validator.Check(validate.CheckInput{Graph: g, Types: types, Materials: mats, MapTravel: travel})
+	rep := h.Validator.Check(validate.CheckInput{Graph: g, Types: types, Materials: mats, MapTravel: travel, MapRoute: route})
 	if !deep || !rep.OK {
 		return rep, nil
 	}

@@ -136,3 +136,94 @@ class Runner:
         except Exception as exc:  # feed không được chết vì API tạm mất
             self.send_errors += 1
             self.last_error = f"{type(exc).__name__}: {exc}"
+
+
+class PoolFull(RuntimeError):
+    """Đã chạy đủ số mô hình tối đa cùng lúc."""
+
+
+class RunnerPool:
+    """Mỗi mô hình một Runner riêng (luồng, giờ ảo, tốc độ, sự cố, sink riêng): các mô hình chạy song song và không biết nhau.
+
+    Runner chỉ nằm trong pool khi đang chạy hoặc tạm dừng; dừng là bỏ hẳn (giải phóng luồng).
+    """
+
+    def __init__(self, make_runner: Callable[[str], Runner], max_runners: int = 8):
+        self._make = make_runner
+        self.max_runners = max_runners
+        self._lock = threading.Lock()
+        self._runners: dict[str, Runner] = {}
+
+    def get(self, model: str) -> Runner | None:
+        with self._lock:
+            return self._runners.get(model)
+
+    def start(self, model: str, blueprint: dict, **kwargs) -> None:
+        with self._lock:
+            runner = self._runners.get(model)
+            created = runner is None
+            if created:
+                if len(self._runners) >= self.max_runners:
+                    raise PoolFull(f"đang chạy {len(self._runners)} mô hình cùng lúc (tối đa {self.max_runners}); hãy dừng bớt một mô hình")
+                runner = self._runners[model] = self._make(model)
+        try:
+            runner.start(blueprint, **kwargs)
+        except Exception:
+            if created:  # mô hình hỏng không được giữ chỗ
+                with self._lock:
+                    if self._runners.get(model) is runner:
+                        del self._runners[model]
+                runner.shutdown()
+            raise
+
+    def pause(self, model: str) -> None:
+        if runner := self.get(model):
+            runner.pause()
+
+    def resume(self, model: str) -> None:
+        if runner := self.get(model):
+            runner.resume()
+
+    def set_speed(self, model: str, speed: float) -> None:
+        if runner := self.get(model):
+            runner.set_speed(speed)
+
+    def stop(self, model: str) -> None:
+        with self._lock:
+            runner = self._runners.pop(model, None)
+        if runner:
+            runner.shutdown()
+
+    def shutdown(self) -> None:
+        with self._lock:
+            runners, self._runners = list(self._runners.values()), {}
+        for r in runners:
+            r.shutdown()
+
+    def status(self, model: str) -> dict:
+        runner = self.get(model)
+        if runner:
+            return runner.status()
+        return {**Runner(lambda msgs: None).status(), "model": model}
+
+    def statuses(self) -> list[dict]:
+        with self._lock:
+            runners = sorted(self._runners.items())
+        return [r.status() for _, r in runners]
+
+    # --- sự cố: thuộc riêng từng mô hình -----------------------------------------------------
+    def add_incident(self, model: str, kind: str, target: str, duration_s: float | None = None, **params) -> dict:
+        runner = self.get(model)
+        if runner is None:
+            raise RuntimeError(f"feed chưa chạy mô hình {model}: hãy bấm Bắt đầu trước")
+        return runner.add_incident(kind, target, duration_s, **params)
+
+    def clear_incident(self, model: str, incident_id: int) -> bool:
+        runner = self.get(model)
+        if runner is None:
+            raise RuntimeError(f"feed chưa chạy mô hình {model}")
+        return runner.clear_incident(incident_id)
+
+    def list_incidents(self, model: str) -> list[dict]:
+        runner = self.get(model)
+        return runner.list_incidents() if runner else []

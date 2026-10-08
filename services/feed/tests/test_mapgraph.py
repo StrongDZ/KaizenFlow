@@ -30,6 +30,31 @@ def test_lane_length_and_station_lookup():
     assert g.speed_mps == 2.0
 
 
+def test_a_node_may_have_several_stations_and_the_closest_pair_wins():
+    data = {
+        **MAP,
+        "points": [*MAP["points"], {"id": "E", "x": 25, "y": 5, "kind": "station", "node_key": "KHO"}],
+        "lanes": [*MAP["lanes"], {"id": "ED", "from": "E", "to": "D", "capacity": 1}, {"id": "DE", "from": "D", "to": "E", "capacity": 1}],
+    }
+    g = MapGraph(data)
+    assert g.stations_of("KHO") == ["A", "E"]
+    assert g.station_of("KHO") == "A"          # tương thích: trạm đầu tiên
+    assert g.best_pair("KHO", "STAMP") == ("E", "D")   # E→D ≈ 7,1 m; A→B→D 20 m
+    assert g.best_pair("STAMP", "KHO") == ("D", "E")   # D→E ≈ 7,1 m; D→A 20 m
+    assert g.best_pair("KHO", "NOPE") is None
+    assert g.stations_of("NOPE") == []
+
+
+def test_stations_exist_but_no_route_still_counts_as_covered():
+    g = MapGraph({**MAP, "lanes": []})
+    assert g.best_pair("KHO", "STAMP") == ("A", "D")   # vẫn nằm trên bản đồ: xe sẽ chờ chứ không âm thầm đi theo thời gian danh nghĩa
+
+
+def test_a_junction_with_a_node_key_is_not_a_station():
+    g = MapGraph({**MAP, "points": [*MAP["points"], {"id": "J", "x": 5, "y": 5, "kind": "junction", "node_key": "KHO"}]})
+    assert g.stations_of("KHO") == ["A"]
+
+
 def test_shortest_path_respects_direction_and_cost():
     g = MapGraph(MAP)
     path = g.shortest("A", "D", lambda lane: lane.length_m)

@@ -1,6 +1,7 @@
-export type Section = 'overview' | 'models' | 'runs' | 'alerts' | 'gauge' | 'library'
+export type Section = 'overview' | 'models' | 'alerts' | 'gauge' | 'library'
 export type Crumb = { label: string; to?: string; picker?: boolean }
-export type Tab = { label: string; to: string; end?: boolean; also?: string[]; group?: string }
+/** `icon`: tên biểu tượng (vẽ ở components/shell/SubNav). */
+export type Tab = { label: string; to: string; end?: boolean; also?: string[]; group?: string; icon?: string }
 export type NavCtx = {
   modelKey?: string
   version?: number
@@ -14,7 +15,8 @@ export function sectionOf(path: string): Section {
   if (path.startsWith('/alerts')) return 'alerts'
   if (path.startsWith('/gauge-twin')) return 'gauge'
   if (path.startsWith('/reports')) return 'overview'
-  if (path.startsWith('/runs') || path.startsWith('/compare')) return 'runs'
+  // Lần chạy luôn thuộc một mô hình: không có mục riêng trên thanh chính.
+  if (path.startsWith('/runs') || path.startsWith('/compare')) return 'models'
   if (path.startsWith('/library')) return 'library'
   if (path.startsWith('/models') || path.startsWith('/versions') || path.startsWith('/scenarios')) return 'models'
   return 'overview'
@@ -27,36 +29,71 @@ export function tabsFor(path: string, ctx: NavCtx): Tab[] {
   if (run) {
     const base = `/runs/${run[1]}`
     return [
-      { label: 'Control Room', to: base, end: true },
-      { label: 'Cảm biến', to: `${base}/sensors` },
-      { label: 'Đề xuất', to: `${base}/recommendations` },
-      { label: 'Báo cáo', to: `${base}/report` },
+      { label: 'Control Room', to: base, end: true, icon: 'monitor' },
+      { label: 'Cảm biến', to: `${base}/sensors`, icon: 'activity' },
+      { label: 'Đề xuất', to: `${base}/recommendations`, icon: 'lightbulb' },
+      { label: 'Báo cáo', to: `${base}/report`, icon: 'file' },
     ]
   }
   if (!inModelWorkspace(path)) return []
+  return modelTabs(ctx)
+}
+
+function modelTabs(ctx: NavCtx): Tab[] {
   // Ba nhóm theo việc người dùng đang làm: dựng mô hình, chạy thử trên mô phỏng, vận hành với dữ liệu thật.
   const design: Tab[] = []
   const simulate: Tab[] = []
   const operate: Tab[] = []
   const vid = ctx.versionId ?? ctx.latestVersionId
   const base = ctx.modelKey ? `/models/${encodeURIComponent(ctx.modelKey)}` : undefined
-  if (vid !== undefined) design.push({ label: 'Sơ đồ', to: `/versions/${vid}`, end: true, group: 'Thiết kế' })
-  if (base) design.push({ label: 'Phiên bản', to: `${base}/versions`, group: 'Thiết kế' })
+  if (vid !== undefined) design.push({ label: 'Sơ đồ', to: `/versions/${vid}`, end: true, group: 'Thiết kế', icon: 'diagram' })
+  if (base) design.push({ label: 'Phiên bản', to: `${base}/versions`, group: 'Thiết kế', icon: 'history' })
   if (vid !== undefined) {
     simulate.push(
-      { label: 'Scenario', to: `/versions/${vid}/scenarios`, also: ['/scenarios/'], group: 'Mô phỏng' },
-      { label: 'Lần chạy', to: `/versions/${vid}/runs`, group: 'Mô phỏng' },
+      { label: 'Scenario', to: `/versions/${vid}/scenarios`, also: ['/scenarios/'], group: 'Mô phỏng', icon: 'flask' },
+      { label: 'Lần chạy', to: `/versions/${vid}/runs`, group: 'Mô phỏng', icon: 'play' },
     )
   }
   if (base) {
     operate.push(
-      { label: 'Trực tiếp', to: `${base}/live`, group: 'Vận hành thật' },
-      { label: 'Nguồn dữ liệu', to: `${base}/sources`, group: 'Vận hành thật' },
-      { label: 'Kết nối dữ liệu', to: `${base}/connect`, group: 'Vận hành thật' },
-      { label: 'Bản đồ AGV', to: `${base}/map`, group: 'Vận hành thật' },
+      { label: 'Trực tiếp', to: `${base}/live`, group: 'Vận hành thật', icon: 'radio' },
+      { label: 'Nguồn dữ liệu', to: `${base}/sources`, group: 'Vận hành thật', icon: 'database' },
+      { label: 'Kết nối dữ liệu', to: `${base}/connect`, group: 'Vận hành thật', icon: 'plug' },
+      { label: 'Bản đồ AGV', to: `${base}/map`, group: 'Vận hành thật', icon: 'map' },
     )
   }
   return [...design, ...simulate, ...operate]
+}
+
+/** `icon`: biểu tượng ở đầu panel (library: thư viện, còn lại là mô hình). */
+export type SubNav = { title: string; subtitle?: string; icon?: 'library'; groups: { title: string | undefined; tabs: Tab[] }[] }
+
+const LIBRARY_TABS: Tab[] = [
+  { label: 'Loại node', to: '/library/node-types', icon: 'shapes' },
+  { label: 'Vật tư', to: '/library/materials', icon: 'package' },
+]
+
+/**
+ * Nội dung panel phụ (đặt cạnh thanh chính): điều hướng bên trong một mô hình, một lần chạy hay thư viện.
+ * Trang lần chạy có nhóm của lần chạy lên đầu và vẫn giữ các nhóm của mô hình để quay lại được. Trang cấp cao (danh sách) trả null.
+ */
+export function subNavFor(path: string, ctx: NavCtx): SubNav | null {
+  if (path.startsWith('/library')) return { title: 'Thư viện', icon: 'library', groups: [{ title: undefined, tabs: LIBRARY_TABS }] }
+  const run = path.match(/^\/runs\/(\d+)/)
+  if (run) {
+    const runGroup = { title: `Lần chạy #${run[1]}`, tabs: tabsFor(path, ctx) }
+    const model = ctx.modelKey ? groupTabs(modelTabs(ctx)) : []
+    return { title: ctx.modelKey ?? `Lần chạy #${run[1]}`, subtitle: ctx.version !== undefined ? `v${ctx.version}` : undefined, groups: [runGroup, ...model] }
+  }
+  const tabs = tabsFor(path, ctx)
+  if (tabs.length === 0) return null
+  const subtitle = ctx.version !== undefined ? `v${ctx.version}` : ctx.versions?.length ? `${ctx.versions.length} phiên bản` : undefined
+  return { title: ctx.modelKey ?? '…', subtitle, groups: groupTabs(tabs) }
+}
+
+/** Trang có sơ đồ hay bản đồ lấp đầy màn hình: panel phụ ẩn đi (mở nổi khi cần) để chỗ cho sơ đồ. */
+export function isCanvasPath(path: string): boolean {
+  return /^\/versions\/\d+\/?$/.test(path) || /^\/models\/[^/]+\/(live|map)\/?$/.test(path) || /^\/runs\/\d+\/?$/.test(path)
 }
 
 /** Tab liền nhau cùng nhóm thì gộp lại (để vẽ chung một khung và một nhãn nhóm). Tab không có nhóm thành một nhóm không tên. */

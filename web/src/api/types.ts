@@ -195,6 +195,8 @@ export type SubjectSnap = { state?: string; state_ts?: string; signals: Record<s
 export type Vehicle = {
   id: string; x: number; y: number; raw_x: number; raw_y: number; heading?: number; state: string; lane: string; s: number; off_map: boolean
   load: number; ts: string; age_ms: number
+  /** Chỉ có khi thiết bị báo (AMR): tốc độ m/s, phần trăm pin, điểm đích và các điểm còn phải qua. */
+  speed?: number; battery?: number; dest?: string; route?: string[]
 }
 export type SourceSnap = { source: string; desc: string; last_ts: string; age_ms: number; count: number; last: unknown; bound: boolean }
 /** Một nguồn dữ liệu đã đăng ký của mô hình (GET /api/models/{key}/sources). */
@@ -220,8 +222,15 @@ export type MapPoint = { id: string; x: number; y: number; kind: 'junction' | 's
 export type Pt = { x: number; y: number }
 /** path: các điểm uốn giữa hai đầu (không gồm hai đầu); bỏ trống là đoạn thẳng. */
 export type MapLane = { id: string; from: string; to: string; capacity: number; path?: Pt[] }
+/**
+ * Ảnh mặt bằng làm nền: góc trên trái ảnh (khi chưa xoay) ở (x, y) mét, mỗi pixel ảnh là m_per_px mét, `rot` là góc xoay (độ, chiều kim
+ * đồng hồ) quanh tâm ảnh. `rev` đổi mỗi lần tải ảnh mới (phá bộ nhớ đệm).
+ */
+export type MapBG = { x: number; y: number; m_per_px: number; w_px: number; h_px: number; rev?: number; calibrated?: boolean; rot?: number }
+/** Vùng xe không được vào: đa giác khép kín từ 3 đỉnh (mét). */
+export type MapKeepout = { id: string; poly: Pt[] }
 /** Bản đồ v2: toạ độ tính bằng mét. */
-export type AgvMap = { v?: number; speed_mps: number; points: MapPoint[]; lanes: MapLane[] }
+export type AgvMap = { v?: number; speed_mps: number; bg?: MapBG; keepouts?: MapKeepout[]; points: MapPoint[]; lanes: MapLane[] }
 
 export type Incident = {
   id: number; kind: 'machine_down' | 'lane_block' | 'stock_drain'; target: string; started: string; until: string; active: boolean
@@ -244,7 +253,7 @@ export type FeedStatus = {
   frame: (Frame & { noise_m: number }) | null
   incidents: Incident[]
 }
-export type IncidentInput = { kind: Incident['kind']; target: string; duration_s?: number; material?: string; fraction?: number }
+export type IncidentInput = { model: string; kind: Incident['kind']; target: string; duration_s?: number; material?: string; fraction?: number }
 
 export type Calibration = {
   edge: string; name: string; material: string; n: number

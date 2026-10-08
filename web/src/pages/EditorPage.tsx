@@ -385,7 +385,7 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
         selectionOnDrag={tool === 'select'} panOnDrag={tool === 'hand' ? true : [1]} selectionMode={SelectionMode.Partial}
         panActivationKeyCode="Space" multiSelectionKeyCode={['Shift', 'Meta', 'Control']}
         deleteKeyCode={readOnly ? null : ['Backspace', 'Delete']} zoomOnDoubleClick={false}
-        fitView fitViewOptions={{ padding: padding() }}
+        fitView minZoom={0.2} fitViewOptions={{ padding: padding() }}
       >
         <Background gap={18} size={1} color="var(--color-line)" />
       </ReactFlow>

@@ -23,6 +23,14 @@ def test_valid_request_passes():
     assert req.warmup == 0.0
 
 
+def test_pool_kinds_include_agv_and_amr():
+    for kind in ("AGV", "AMR", "TUGGER", "FORKLIFT", "OPERATOR"):
+        req = make_request([SRC, BUF, OUT], [], [{"key": "P", "kind": kind, "count": 1}])
+        assert req.pools[0].kind == kind
+    with pytest.raises(ValidationError):
+        make_request([SRC, BUF, OUT], [], [{"key": "P", "kind": "DRONE", "count": 1}])
+
+
 def test_extra_field_rejected():
     with pytest.raises(ValidationError):
         RunRequest.model_validate({"run_id": 1, "sim_start": "2026-10-01T08:00:00+07:00",

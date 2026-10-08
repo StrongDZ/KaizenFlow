@@ -1,30 +1,47 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { Workflow, CircleCheck, PencilLine } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
-import type { ModelSummary } from '../api/types'
+import type { FeedStatus, ModelSummary } from '../api/types'
 import { DeleteAction } from '../components/DeleteAction'
+import { ItemIdentity } from '../components/NodeIdentity'
 import { Field, FormDialog } from '../components/FormDialog'
 import { SearchSelect } from '../components/SearchSelect'
 import { DataTable, type Column } from '../components/table/DataTable'
-import { EmptyState, ErrorBox, Loading, PageBody, PageHeader, SearchBox, btnPrimary, input } from '../components/ui'
+import { EmptyState, ErrorBox, Loading, PageBody, PageHeader, SearchBox, Tag, btnPrimary, input } from '../components/ui'
+import { useFeeds } from '../hooks/useLive'
 import { fmtDateTime, versionStatusLabel } from '../lib/format'
+import { speedLabel } from '../lib/liveFormat'
 import { isValidModelKey } from '../lib/rules'
 import { filterRows } from '../lib/table'
 
 const BASE_COLUMNS: Column<ModelSummary>[] = [
-  { key: 'model', header: 'Mô hình', cell: (m) => <span className="font-medium text-text">{m.model_key}</span>, sort: (m) => m.model_key },
   { key: 'version', header: 'Phiên bản mới nhất', cell: (m) => `v${m.latest_version}`, sort: (m) => m.latest_version },
-  { key: 'status', header: 'Trạng thái', cell: (m) => versionStatusLabel(m.status), sort: (m) => m.status },
+  { key: 'status', header: 'Trạng thái', cell: (m) => <Tag tone={m.status === 'PUBLISHED' ? 'ok' : 'neutral'} icon={m.status === 'PUBLISHED' ? CircleCheck : PencilLine}>{versionStatusLabel(m.status)}</Tag>, sort: (m) => m.status },
   { key: 'scenarios', header: 'Scenario', cell: (m) => m.scenarios, sort: (m) => m.scenarios, align: 'right' },
   { key: 'runs', header: 'Lần chạy', cell: (m) => m.runs, sort: (m) => m.runs, align: 'right' },
   { key: 'last', header: 'Chạy gần nhất', cell: (m) => fmtDateTime(m.last_run_at), sort: (m) => (m.last_run_at ? Date.parse(m.last_run_at) : null) },
 ]
 
+/** Feed của mô hình: mỗi mô hình có feed riêng, nhiều mô hình có thể chạy cùng lúc. */
+function FeedCell({ feed }: { feed: FeedStatus | undefined }) {
+  if (!feed) return <span className="text-faint">Chưa bật</span>
+  const running = feed.state === 'running'
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <i className={`h-2 w-2 rounded-full ${running ? 'animate-pulse bg-ok' : 'bg-warn'}`} />
+      {running ? `Đang phát ${speedLabel(feed.speed).replace(/ \(.*\)$/, '')}` : 'Tạm dừng'}
+    </span>
+  )
+}
+
 export default function ModelsPage() {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const models = useQuery({ queryKey: ['models'], queryFn: api.models })
+  const feeds = useFeeds()
+  const feedOf = useMemo(() => new Map((feeds.data ?? []).map((f) => [f.model ?? '', f])), [feeds.data])
   const [q, setQ] = useState('')
   const [key, setKey] = useState('')
   const [creating, setCreating] = useState(false)
@@ -41,7 +58,16 @@ export default function ModelsPage() {
   if (models.isLoading) return <Loading />
   const rows = filterRows(models.data ?? [], q, (m) => [m.model_key])
   const columns: Column<ModelSummary>[] = [
+    {
+      key: 'model', header: 'Mô hình', sort: (m) => m.model_key,
+      cell: (m) => {
+        const f = feedOf.get(m.model_key)
+        return <ItemIdentity icon={Workflow} name={m.model_key}
+          badge={f?.state === 'running' ? <i className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-panel bg-ok" /> : undefined} />
+      },
+    },
     ...BASE_COLUMNS,
+    { key: 'feed', header: 'Feed', cell: (m) => <FeedCell feed={feedOf.get(m.model_key)} />, sort: (m) => feedOf.get(m.model_key)?.state ?? '' },
     {
       key: 'del',
       header: '',
@@ -59,9 +85,9 @@ export default function ModelsPage() {
   ]
   return (
     <PageBody>
-      <PageHeader
+      <PageHeader icon={Workflow}
         title="Mô hình"
-        subtitle={models.data ? `${models.data.length} mô hình` : undefined}
+        subtitle={models.data ? `${models.data.length} mô hình${feeds.data?.length ? `, ${feeds.data.filter((f) => f.state === 'running').length} đang phát cùng lúc` : ''}` : undefined}
         actions={
           <>
             <SearchBox value={q} onChange={setQ} placeholder="Tìm mô hình" />
@@ -109,7 +135,7 @@ export default function ModelsPage() {
         onRowClick={(m) => navigate(`/versions/${m.latest_version_id}`)}
         initialSort={{ key: 'model', dir: 'asc' }}
         empty={
-          <EmptyState title={q ? 'Không có mô hình khớp' : 'Chưa có mô hình nào'}>
+          <EmptyState icon={Workflow} title={q ? 'Không có mô hình khớp' : 'Chưa có mô hình nào'}>
             {q ? 'Thử từ khoá khác.' : 'Bấm "Tạo mô hình", đặt tên rồi dựng sơ đồ nhà máy ở tab Sơ đồ.'}
           </EmptyState>
         }

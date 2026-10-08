@@ -79,11 +79,15 @@ class Emitter:
                 if pose is None:
                     continue
                 x, y, th = pose
-                payload = {"id": v.id, "x": round(x, 2), "y": round(y, 2), "th": round(th, 1), "st": v.state, "seg": v.lane or "", "load": v.load}
+                # Thêm cho AMR/AGV theo trả lời của BTC: tốc độ, đích, các điểm còn phải qua (tuyến đang thực hiện), phần trăm pin (nếu có).
+                extra = {"v": round(v.speed, 2), "dst": v.dest or "", "route": list(v.route)}
+                if v.battery is not None:
+                    extra["batt"] = round(v.battery, 1)
+                payload = {"id": v.id, "x": round(x, 2), "y": round(y, 2), "th": round(th, 1), "st": v.state, "seg": v.lane or "", "load": v.load, **extra}
                 if frame is not None:
                     # Hãng xe thật báo ở hệ toạ độ riêng và không biết "làn" của mình: bỏ seg để API tự khớp vào làn.
                     rx, ry = frame.to_raw(x, y, self.pos_rng)
-                    payload = {"id": v.id, "x": round(rx, 3), "y": round(ry, 3), "th": round(frame.heading_to_raw(th), 1), "st": v.state, "load": v.load}
+                    payload = {"id": v.id, "x": round(rx, 3), "y": round(ry, 3), "th": round(frame.heading_to_raw(th), 1), "st": v.state, "load": v.load, **extra}
                 out.append({"source": f"agv/{alias_of(pool_key)}/{i + 1:02d}/pos", "ts": ts,
                             "desc": f"{self._name(pool_key)} — xe {i + 1}", "payload": payload})
         return out
@@ -95,5 +99,5 @@ class Emitter:
         edges = {e.key: e for e in self.w.ctx.edges}
         return [{"source": f"agv/trip/{edge_slug(t['edge'])}", "ts": ts,
                  "desc": f"Chuyến xe: {self._edge_desc(edges[t['edge']])}",
-                 "payload": {"dur": round(t["dur"], 1), "wait": round(t["wait"], 1), "ideal": round(t["ideal"], 1)}}
+                 "payload": {"dur": round(t["dur"], 1), "wait": round(t["wait"], 1), "ideal": round(t["ideal"], 1), "appr": round(t["appr"], 1)}}
                 for t in fleet.drain_trips()]

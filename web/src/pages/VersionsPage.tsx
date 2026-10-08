@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { History } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { VersionInfo } from '../api/types'
@@ -43,7 +44,7 @@ export default function VersionsPage() {
   ]
   return (
     <PageBody>
-      <PageHeader title="Phiên bản" subtitle={key} />
+      <PageHeader icon={History} title="Phiên bản" subtitle={key} />
       <SetupChecklist model={key} versions={versions.data ?? []} />
       <ErrorBox error={versions.error ?? clone.error ?? publish.error} />
       <DataTable

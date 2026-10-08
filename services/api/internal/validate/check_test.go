@@ -310,6 +310,35 @@ func TestPoolEdgeTravelUnset(t *testing.T) {
 	absent(t, check(g, libMaterials), "travel_unset")
 }
 
+func TestPoolEdgeNeedsARouteOnTheMap(t *testing.T) {
+	g := testfix.MiniGraph() // S>OUT chạy bằng xe
+	run := func(status string) validate.Report {
+		return validate.New().Check(validate.CheckInput{Graph: g, Types: testfix.Types(), Materials: libMaterials,
+			MapRoute: func(src, dst string) string {
+				if src == "S" && dst == "OUT" {
+					return status
+				}
+				return "ok"
+			}})
+	}
+	absent(t, run("ok"), "map_station_missing")
+	absent(t, run("ok"), "map_unreachable")
+	absent(t, check(g, libMaterials), "map_unreachable") // không có bản đồ thì không có gì để báo
+
+	w := find(t, run("no_station"), "map_station_missing", "S>OUT")
+	if w.Severity != validate.SevWarning || !strings.Contains(w.Message, "trạm") {
+		t.Fatalf("no_station: %+v", w)
+	}
+	w = find(t, run("no_path"), "map_unreachable", "S>OUT")
+	if w.Severity != validate.SevWarning || !strings.Contains(w.Message, "chờ mãi") {
+		t.Fatalf("no_path: %+v", w)
+	}
+	w = find(t, run("no_return"), "map_unreachable", "S>OUT")
+	if !strings.Contains(w.Message, "đường về") {
+		t.Fatalf("no_return: %+v", w)
+	}
+}
+
 func TestIssuesSortedErrorsFirst(t *testing.T) {
 	g := testfix.MiniGraph()
 	g.Nodes = g.Nodes[1:2]

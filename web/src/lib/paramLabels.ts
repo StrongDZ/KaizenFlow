@@ -69,7 +69,7 @@ const ENUMS: Record<string, Record<string, string>> = {
   port: { OK: 'Đạt (OK)', NG: 'Lỗi (NG)' },
   policy: { NONE: 'Không bổ sung', REORDER_POINT: 'Khi tồn xuống điểm đặt hàng lại' },
   'demand[].kind': { TAKT: 'Đều theo takt', FORECAST: 'Theo dự báo' },
-  kind: { AGV: 'AGV', TUGGER: 'Xe kéo (tugger)', FORKLIFT: 'Xe nâng', OPERATOR: 'Người vận hành' },
+  kind: { AGV: 'AGV (băng từ, tuyến cố định)', AMR: 'AMR (tự hành, FMS điều phối)', TUGGER: 'Xe kéo (tugger)', FORKLIFT: 'Xe nâng', OPERATOR: 'Người vận hành' },
 }
 
 /**

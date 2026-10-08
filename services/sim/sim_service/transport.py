@@ -76,10 +76,11 @@ class Transfer:
             t_req = env.now
             with pool.res.request() as vehicle:
                 yield vehicle
-                veh = self._vehicle_got(pool)
+                veh = yield from self._take_vehicle(pool)
                 self._phase(veh, "PICKUP")
                 t_acq = env.now
                 rec.tally(env.now, self.key, "WAIT_POOL", t_acq - t_req)
+                yield from self._approach(veh)
                 if hook is not None and self.spec.hook_at_load:
                     yield from self._hook(hook)
                 yield from self.src.take(m, lot)
@@ -104,6 +105,17 @@ class Transfer:
     def _vehicle_got(self, pool):
         """Xe vừa được cấp cho chuyến này; trả token nhận dạng xe (mặc định None)."""
         return None
+
+    def _take_vehicle(self, pool):
+        """Chọn xe cho chuyến (đã giữ một chỗ trong pool). Có thể chờ nếu chưa có xe thật nào rảnh (đang sạc...); thời gian chờ tính vào WAIT_POOL.
+        Mặc định gọi `_vehicle_got` rồi đi tiếp ngay."""
+        return self._vehicle_got(pool)
+        yield  # noqa: B901  (làm hàm này thành generator để gọi được bằng `yield from`)
+
+    def _approach(self, veh):
+        """Xe chạy rỗng tới chỗ lấy hàng sau khi nhận chuyến (xe tự hành không nằm sẵn ở nguồn). Mặc định không mất thời gian."""
+        return
+        yield  # noqa: B901
 
     def _phase(self, veh, phase: str) -> None:
         """Đổi giai đoạn của chuyến: 'PICKUP' (xe đã nhận, đang móc/lấy hàng), 'UNLOAD' (đã tới đích)."""

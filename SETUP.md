@@ -135,7 +135,8 @@ Mọi biến đều có giá trị mặc định chạy được với Cách B, 
 | `SIM_WORKERS` | sim | `1` (Docker đặt `6`) | Số tiến trình chạy song song các lần lặp Monte Carlo |
 | `KF_API_URL` | feed | `http://localhost:8080` (Docker: `http://api:8080`) | Địa chỉ API để feed đẩy dữ liệu |
 | `FEED_TICK_S` | feed | `0.25` | Nhịp đẩy dữ liệu (giây thực) |
-| `FEED_AUTOSTART_MODEL` | feed | trống | Đặt tên mô hình để feed tự chạy khi khởi động (tiện cho demo) |
+| `FEED_AUTOSTART_MODEL` | feed | trống | Tên mô hình để feed tự chạy khi khởi động (tiện cho demo); nhiều mô hình thì ngăn cách bằng dấu phẩy |
+| `FEED_MAX_MODELS` | feed | `8` | Số mô hình tối đa chạy cùng lúc (mỗi mô hình một luồng giả lập) |
 | `FEED_AUTOSTART_SPEED` | feed | `10` | Tốc độ giờ nhà máy khi tự chạy |
 | `VITE_API_URL` | web | `http://localhost:8080` | Địa chỉ API mà trình duyệt gọi (đặt trong `web/.env`) |
 | `KF_TEST_DB` | test Go | `postgres://postgres:kaizen@localhost:5433/postgres?sslmode=disable` | Postgres dùng cho test Go |

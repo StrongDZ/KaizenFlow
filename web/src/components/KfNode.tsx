@@ -2,7 +2,7 @@ import * as Popover from '@radix-ui/react-popover'
 import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react'
 import { createContext, useContext, useEffect, useRef } from 'react'
 import type { Badge, FlowNode } from '../lib/graph'
-import { NodeIcon } from './nodeIcons'
+import { NodeAvatar } from './NodeIdentity'
 import { pinClass } from './PinDot'
 
 export const ARCHETYPE_LABEL: Record<string, string> = {
@@ -40,11 +40,15 @@ export function KfNode({ id, data, selected }: NodeProps<FlowNode>) {
   const badge = live ? live.get(id) : data.badge
   const tone = data.issueTone === 'error' ? 'border-bad' : data.issueTone === 'warning' ? 'border-warn' : NODE_TONE[badge?.color ?? 'NONE']
   return (
-    <div className={`relative min-w-[132px] rounded-lg border bg-panel px-2.5 py-2 ${tone} ${pool ? 'border-dashed' : ''} ${selected ? 'ring-2 ring-text/60' : ''}`}>
+    <div className={`relative min-w-[140px] rounded-lg border bg-panel px-2 py-1.5 ${tone} ${pool ? 'border-dashed' : ''} ${selected ? 'ring-2 ring-text/60' : ''}`}>
       {!pool && data.archetype !== 'SOURCE' && <Handle type="target" position={inSide} />}
-      <div className="flex items-center gap-1 text-[10px] text-muted"><NodeIcon name={data.icon} archetype={data.archetype} size={11} />{ARCHETYPE_LABEL[data.archetype] ?? data.archetype}</div>
-      <div className="text-xs font-semibold leading-tight text-text">{data.name}</div>
-      <div className="text-[10px] text-faint">{data.key}</div>
+      <div className="flex items-center gap-2" title={ARCHETYPE_LABEL[data.archetype] ?? data.archetype}>
+        <NodeAvatar icon={data.icon} archetype={data.archetype} size={26} />
+        <div className="min-w-0 leading-tight">
+          <div className="text-xs font-semibold text-text">{data.name}</div>
+          <div className="text-[10px] tracking-wide text-faint">{data.key}</div>
+        </div>
+      </div>
       {badge && badge.color !== 'NONE' && (
         <div title={badge.hint} className={`mt-1 text-[11px] font-semibold ${BADGE_TEXT[badge.color]} ${badge.hint ? 'cursor-help' : ''}`}>{badge.text}</div>
       )}

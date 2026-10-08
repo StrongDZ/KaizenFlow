@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Sparkles, Waypoints } from 'lucide-react'
+import { Plus, Sparkles, Waypoints, Plug } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Binding, SubjectSnap, SubjectView } from '../api/types'
 import { ARCHETYPE_LABEL } from '../components/KfNode'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import { NodeAvatar } from '../components/NodeIdentity'
 import { BindingDialog, type BindingDraft } from '../components/live/BindingDialog'
 import { BindingsTable } from '../components/live/BindingsTable'
 import { EdgePlanDialog } from '../components/live/EdgePlanDialog'
@@ -16,6 +17,7 @@ import { SuggestDialog } from '../components/live/SuggestDialog'
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, SearchBox, Tag, btn, btnDangerOutline, btnPrimary } from '../components/ui'
 import { useLive } from '../hooks/useLive'
 import { bindingRows, describeBinding } from '../lib/bindingsTable'
+import { iconOfType } from '../lib/graph'
 import { filterSubjects, groupNodes, indexCoverage, isBound, splitSubjects, statusKey } from '../lib/connectView'
 import { STALE_MS, stateLabel } from '../lib/liveFrame'
 import { leafPaths } from '../lib/livePath'
@@ -42,6 +44,8 @@ export default function ConnectPage() {
   // Độ phủ: từng tín hiệu đã có nguồn, đã tự tính, chưa có hay hỏng; chức năng nào đã đủ tín hiệu.
   const coverage = useQuery({ queryKey: ['live-check', model], queryFn: () => api.liveCheck(model), refetchInterval: 6000, retry: false })
   // Công thức tự suy lượng hàng trên các đường nối chưa có dữ liệu (kể cả rẽ nhánh).
+  const nodeTypes = useQuery({ queryKey: ['node-types'], queryFn: api.nodeTypes })
+  const typeByCode = useMemo(() => new Map((nodeTypes.data ?? []).map((t) => [t.code, t])), [nodeTypes.data])
   const edgePlan = useQuery({ queryKey: ['edge-plan', model], queryFn: () => api.edgePlan(model), refetchInterval: 6000, retry: false })
   const [params, setParams] = useSearchParams()
   const tab: 'node' | 'edge' | 'all' = params.get('tab') === 'edge' ? 'edge' : params.get('tab') === 'all' ? 'all' : 'node'
@@ -101,7 +105,7 @@ export default function ConnectPage() {
 
   if (subjects.isLoading || bindings.isLoading) return <Loading />
   if (subjects.error) {
-    return <PageBody><PageHeader title="Kết nối dữ liệu" subtitle={model} /><ErrorBox error={subjects.error} /></PageBody>
+    return <PageBody><PageHeader icon={Plug} title="Kết nối dữ liệu" subtitle={model} /><ErrorBox error={subjects.error} /></PageBody>
   }
 
   const open = (d: BindingDraft) => setDraft({ d, existing: d.subject && d.signal ? bound.get(`${d.subject}|${d.signal}`) : undefined })
@@ -118,9 +122,12 @@ export default function ConnectPage() {
 
   const renderRow = (s: SubjectView) => (
     <li key={s.subject} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2">
-      <div className="w-52 min-w-0">
-        <div className="truncate text-xs font-medium text-text">{s.name}</div>
-        <div className="truncate text-[10.5px] text-faint">{s.subject}{s.kind === 'edge' && s.material ? ` · ${s.material}${s.mode === 'POOL' ? ' · bằng xe' : ''}` : ''}</div>
+      <div className="flex w-56 min-w-0 items-center gap-2.5">
+        <NodeAvatar archetype={s.kind === 'node' ? s.archetype : undefined} icon={s.kind === 'edge' ? (s.mode === 'POOL' ? 'truck' : 'route') : iconOfType(s.node_type ? typeByCode.get(s.node_type) : undefined)} size={28} />
+        <div className="min-w-0">
+          <div className="truncate text-xs font-medium text-text">{s.name}</div>
+          <div className="truncate text-[10.5px] text-faint">{s.subject}{s.kind === 'edge' && s.material ? ` · ${s.material}${s.mode === 'POOL' ? ' · bằng xe' : ''}` : ''}</div>
+        </div>
       </div>
       <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
         {s.signals.length === 0 && <span className="text-[11px] text-lock-text">Chưa có tín hiệu nào để ghép{s.archetype === 'STORAGE' ? ': kho chưa khai báo vật tư ở tab Sơ đồ.' : '.'}</span>}
@@ -150,7 +157,7 @@ export default function ConnectPage() {
 
   return (
     <PageBody wide>
-      <PageHeader
+      <PageHeader icon={Plug}
         title="Kết nối dữ liệu"
         subtitle={model}
         actions={
@@ -168,8 +175,7 @@ export default function ConnectPage() {
       />
       <FeedControl model={model} />
       <Notice>
-        Thiết bị gửi bản tin thô, tên trường và từ ngữ riêng của từng hãng. Ở đây bạn chỉ ra <b>bản tin nào, trường nào</b> ứng với <b>tín hiệu nào</b> của
-        node hay edge trong sơ đồ. Ghép xong, tab Trực tiếp sẽ chạy theo dữ liệu thật. Bấm một ô tín hiệu để ghép, hoặc dùng gợi ý tự động.
+        Chỉ ra <b>bản tin nào, trường nào</b> ứng với <b>tín hiệu nào</b> của node hay đường nối. Bấm một ô tín hiệu để ghép, hoặc dùng Gợi ý ghép tự động.
       </Notice>
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
         <Tag>Đã có {boundSignals}/{totalSignals} tín hiệu</Tag>
