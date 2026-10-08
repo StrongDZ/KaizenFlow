@@ -34,7 +34,7 @@ export function CanvasToolbar(p: {
 }) {
   const arrangeHint = p.published ? 'Phiên bản đã Publish: tạo bản sửa để sắp xếp' : p.locked ? 'Đang khoá sơ đồ' : ''
   return (
-    <div role="toolbar" aria-label="Công cụ sơ đồ" className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-line bg-panel p-1 shadow-lg">
+    <div role="toolbar" aria-label="Công cụ sơ đồ" className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center w-max gap-0.5 whitespace-nowrap rounded-xl border border-line bg-panel p-1 shadow-lg">
       <button
         type="button" disabled={!p.canEdit} onClick={p.onAdd}
         title={p.canEdit ? 'Mở danh sách loại node. Nhấn Tab hoặc / để tìm nhanh.' : arrangeHint || 'Không sửa được'}
