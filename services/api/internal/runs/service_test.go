@@ -110,10 +110,10 @@ func TestApplyCreatesChildScenarioWithParentSeed(t *testing.T) {
 	base, _ := svc.Start(ctx, sid, time.Now())
 	waitStatus(t, st, base, "DONE")
 	ins, _ := st.ListInsights(ctx, base)
-	if _, err := svc.Apply(ctx, ins[0].ID, 1); !errors.Is(err, runs.ErrNotRecommendation) {
+	if _, err := svc.Apply(ctx, ins[0].ID, 1, nil); !errors.Is(err, runs.ErrNotRecommendation) {
 		t.Fatalf("apply on RED_RISK: %v", err)
 	}
-	child, err := svc.Apply(ctx, ins[1].ID, 1)
+	child, err := svc.Apply(ctx, ins[1].ID, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,6 +126,79 @@ func TestApplyCreatesChildScenarioWithParentSeed(t *testing.T) {
 	sc, _ := st.GetScenario(ctx, run.ScenarioID)
 	if sc.Origin != "RECOMMENDER" || *sc.ParentID != sid || sc.Action["type"] != "FLEET_SIZE" {
 		t.Fatalf("child scenario = %+v", sc)
+	}
+}
+
+func TestApplyUsesSafeOperatorCapacityAdjustment(t *testing.T) {
+	svc, _, st, sid := setup(t, "runs_apply_adjustment", true)
+	base, _ := svc.Start(ctx, sid, time.Now())
+	waitStatus(t, st, base, "DONE")
+	subject := "S"
+	insightID, err := st.InsertInsight(ctx, store.Insight{
+		SimRunID: &base, Kind: "RECOMMENDATION", SubjectKey: &subject,
+		Payload: map[string]any{"candidates": []any{map[string]any{
+			"rank":      1.0,
+			"action":    map[string]any{"type": "INCREASE_PROCESS_CAPACITY", "target": "S", "from_slots": 1.0, "to_slots": 2.0, "delta": 1.0},
+			"overrides": []any{map[string]any{"target": "S", "path": "/slots", "value": 2.0}},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	unsafe := 9
+	if _, err := svc.Apply(ctx, insightID, 1, &runs.ApplyAdjustment{ToSlots: &unsafe}); err == nil {
+		t.Fatal("expected an unsafe slot adjustment to be rejected")
+	}
+
+	desired := 4
+	child, err := svc.Apply(ctx, insightID, 1, &runs.ApplyAdjustment{ToSlots: &desired})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitStatus(t, st, child, "DONE")
+	run, _ := st.GetRun(ctx, child)
+	scenario, _ := st.GetScenario(ctx, run.ScenarioID)
+	if scenario.Action["to_slots"] != float64(4) || scenario.Action["delta"] != float64(3) {
+		t.Fatalf("adjusted action = %+v", scenario.Action)
+	}
+	last := scenario.Overrides[len(scenario.Overrides)-1]
+	if last["target"] != "S" || last["path"] != "/slots" || last["value"] != float64(4) {
+		t.Fatalf("adjusted override = %+v", last)
+	}
+}
+
+func TestApplyRescalesCycleForOperatorRateAdjustment(t *testing.T) {
+	svc, _, st, sid := setup(t, "runs_apply_rate_adjustment", true)
+	base, _ := svc.Start(ctx, sid, time.Now())
+	waitStatus(t, st, base, "DONE")
+	subject := "S"
+	insightID, err := st.InsertInsight(ctx, store.Insight{
+		SimRunID: &base, Kind: "RECOMMENDATION", SubjectKey: &subject,
+		Payload: map[string]any{"candidates": []any{map[string]any{
+			"rank":      1.0,
+			"action":    map[string]any{"type": "REDUCE_MACHINE_RATE", "target": "S", "from_rate": 100.0, "to_rate": 70.0, "delta": -30.0},
+			"overrides": []any{map[string]any{"target": "S", "path": "/cycle", "value": 10.0}},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	desired := 80.0
+	child, err := svc.Apply(ctx, insightID, 1, &runs.ApplyAdjustment{ToRate: &desired})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitStatus(t, st, child, "DONE")
+	run, _ := st.GetRun(ctx, child)
+	scenario, _ := st.GetScenario(ctx, run.ScenarioID)
+	if scenario.Action["to_rate"] != float64(80) || scenario.Action["delta"] != float64(-20) {
+		t.Fatalf("adjusted action = %+v", scenario.Action)
+	}
+	last := scenario.Overrides[len(scenario.Overrides)-1]
+	if last["value"] != float64(8.75) {
+		t.Fatalf("adjusted cycle override = %+v", last)
 	}
 }
 

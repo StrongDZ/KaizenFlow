@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { BandRow, EventRow, GraphNode, NodeType } from '../api/types'
 import { byCode } from './model'
 import { indexBands } from './replay'
-import { failureMarks, hourTicks, minorEvery, nearestIndex, pct, redZones, rulerOf, tFromPct } from './ruler'
+import { failureMarks, hourTicks, maintenanceAt, maintenanceWindows, minorEvery, nearestIndex, pct, redZones, rulerOf, tFromPct } from './ruler'
 
 describe('rulerOf', () => {
   it('uses the median gap as the step', () => {
@@ -99,5 +99,28 @@ describe('failureMarks', () => {
     ])
     expect(marks).toEqual([Date.parse('2026-10-01T03:00:00Z')])
     expect(failureMarks([])).toEqual([])
+  })
+})
+
+describe('maintenanceWindows', () => {
+  const start = '2026-10-01T01:00:00Z'
+
+  it('maps planned stops to absolute half-open windows', () => {
+    const windows = maintenanceWindows([
+      { target: 'STAMP_1', kind: 'planned_stop', at_s: 1800, duration_s: 1200 },
+      { target: 'STAMP_2', failure: 'bearing', at_s: 900 },
+    ], start)
+    expect(windows).toEqual([{
+      target: 'STAMP_1',
+      from: Date.parse('2026-10-01T01:30:00Z'),
+      to: Date.parse('2026-10-01T01:50:00Z'),
+    }])
+    expect(maintenanceAt(windows, 'STAMP_1', Date.parse('2026-10-01T01:30:00Z'))).toEqual(windows[0])
+    expect(maintenanceAt(windows, 'STAMP_1', Date.parse('2026-10-01T01:50:00Z'))).toBeUndefined()
+  })
+
+  it('ignores malformed injections and invalid simulation starts', () => {
+    expect(maintenanceWindows([{ target: 'M', kind: 'planned_stop', at_s: 10, duration_s: 0 }], start)).toEqual([])
+    expect(maintenanceWindows([{ target: 'M', kind: 'planned_stop', at_s: 10, duration_s: 20 }], 'bad')).toEqual([])
   })
 })

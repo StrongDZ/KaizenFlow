@@ -69,13 +69,14 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
     const params = e.data?.params ?? {}
     return {
       ...e, type: 'flow',
-      label: inTransit >= 0.5 ? `${String(e.label)}, ${Math.round(inTransit)} đang chạy` : e.label,
+      label: e.label,
       data: {
         material: e.data?.material ?? '', params,
         dots: dotsFromRate(snap?.rate, peak.current),
         // Tốc độ hạt tăng chậm theo hệ số tốc độ của feed (nhanh hơn nữa là hạt nhoè), và không nhanh hơn 0,8 giây một vòng.
         cycleS: Math.max(0.8, cycleSeconds(travelSeconds(params)) / Math.sqrt(Math.max(1, speed / 4))),
         running,
+        statusText: inTransit >= 0.5 ? `${Math.round(inTransit)} đang đi` : undefined,
       },
     }
   }), [flow.edges, snapshot, speed, running]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -109,7 +110,7 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
           <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-warn" /><b className="tabular-nums text-text">{summary.yellowStorages}</b> kho Vàng</span>
           <span><b className="tabular-nums text-text">{summary.downMachines}</b> máy hỏng</span>
           {summary.stale > 0 && <span className="text-warn"><b className="tabular-nums">{summary.stale}</b> thiết bị mất tín hiệu</span>}
-          <span className="text-faint">Chấm chạy dọc đường nối là hàng đang chảy thật; nhiều chấm là lưu lượng lớn.</span>
+          <span className="text-faint">Mỗi chấm sáng là một phần của luồng hàng thật; nhiều chấm hơn nghĩa là lưu lượng lớn hơn.</span>
         </div>
       </div>
 

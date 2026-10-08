@@ -71,6 +71,26 @@ def test_mtbf_failures_create_down_state():
     assert down == pytest.approx(900, abs=1)
 
 
+def test_planned_stop_freezes_process_input_and_output_until_recovery():
+    req = make_request(
+        [source("SRC", "X", interarrival=1), proc(cycle=10, in_buffer=100, out_buffer=100), sink()],
+        [edge("SRC", "M", "X"), edge("M", "OUT", "Y")],
+        horizon_s=120, sample_s=10,
+        injections=[{"target": "M", "kind": "planned_stop", "at_s": 30, "duration_s": 40}])
+    res = run_replication(req)
+    count_in = dict(res.series[("M", "count_in")])
+    count_ok = dict(res.series[("M", "count_ok")])
+    fulfilled = dict(res.series[("OUT", "fulfilled")])
+
+    # Từ phút bảo trì bắt đầu đến ngay trước lúc recovery, PROCESS không nhận BOM,
+    # không hoàn tất sản phẩm và downstream không lấy hàng khỏi output buffer.
+    assert count_in[30] == count_in[60]
+    assert count_ok[30] == count_ok[60]
+    assert fulfilled[30] == fulfilled[60]
+    assert count_in[80] > count_in[60]
+    assert count_ok[80] > count_ok[60]
+
+
 def test_blocked_when_output_full_and_run_still_ends():
     req = make_request(
         [source("SRC", "X", interarrival=1), proc(cycle=1, out_buffer=2),

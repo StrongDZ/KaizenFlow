@@ -72,6 +72,24 @@ class Process(FlowNode):
         cap = float(self._out_cap) if self._out_cap is not None else 10 * qty
         self.out_boxes[m] = simpy.Container(self.env, capacity=cap)
 
+    def available(self, m) -> float:
+        """Máy đang dừng không bàn giao thêm hàng ra khỏi output buffer."""
+        return super().available(m) if self.health.is_up else 0.0
+
+    def wants(self, m, lot) -> bool:
+        """Đóng cổng nhận hàng trong suốt failure/planned stop."""
+        return self.health.is_up and super().wants(m, lot)
+
+    def take(self, m, q):
+        while not self.health.is_up:
+            yield self.health.wait_up()
+        yield from super().take(m, q)
+
+    def give(self, m, q):
+        while not self.health.is_up:
+            yield self.health.wait_up()
+        yield from super().give(m, q)
+
     def start(self):
         self.health.start()
         for i in range(self.slots):
@@ -100,8 +118,14 @@ class Process(FlowNode):
         env = self.env
         while True:
             self._set(i, "STARVED")
+            if not self.health.is_up:
+                yield self.health.wait_up()
             for m, q in self.inputs:
                 yield self.in_boxes[m].get(q)
+            # Nếu DOWN xảy ra trong lúc slot đang chờ BOM, giữ BOM trong slot nhưng
+            # chỉ ghi nhận nhận hàng/bắt đầu gia công sau khi máy phục hồi.
+            if not self.health.is_up:
+                yield self.health.wait_up()
             self._count("count_in")
             remaining = self.cycle()
             while remaining > 1e-9:
@@ -111,6 +135,10 @@ class Process(FlowNode):
                 t0 = env.now
                 yield env.timeout(remaining) | self.health.wait_down()
                 remaining -= env.now - t0
+            # DOWN có thể xảy ra đúng timestamp timeout chu kỳ hoàn tất. Không ghi
+            # sản lượng và không mở output cho tới khi maintenance/failure kết thúc.
+            if not self.health.is_up:
+                yield self.health.wait_up()
             ng = self.ng_rate > 0 and self.ng_rng.random() < self.ng_rate
             port = "NG" if ng else "OK"
             self._count("count_ng" if ng else "count_ok")

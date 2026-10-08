@@ -74,7 +74,8 @@ export const api = {
   bands: (id: number, q: { subject?: string; metric?: string } = {}) => req<BandRow[]>(`/api/runs/${id}/bands${qs(q)}`),
   events: (id: number, q: { subject?: string; type?: string } = {}) => req<EventRow[]>(`/api/runs/${id}/events${qs(q)}`),
   signals: (id: number, q: { subject?: string; name?: string } = {}) => req<SignalRow[]>(`/api/runs/${id}/signals${qs(q)}`),
-  applyInsight: (id: number, rank: number) => post<{ run_id: number }>(`/api/insights/${id}/apply`, { rank }),
+  applyInsight: (id: number, rank: number, adjustment?: { to_slots?: number; to_rate?: number }) =>
+    post<{ run_id: number }>(`/api/insights/${id}/apply`, { rank, ...(adjustment ? { adjustment } : {}) }),
   allRuns: (q: { status?: string; model?: string; origin?: string; version?: number; limit?: number; offset?: number } = {}) =>
     req<RunRow[]>(`/api/runs${qs({
       status: q.status, model: q.model, origin: q.origin, version: q.version?.toString(), limit: q.limit?.toString(), offset: q.offset?.toString(),
