@@ -16,7 +16,6 @@ import { api } from '../api/client'
 import type { Run, Scenario } from '../api/types'
 import { BandChart, axisLine, axisTick, tooltipProps } from '../components/Charts'
 import { ScenarioTimeline } from '../components/scenario/ScenarioTimeline'
-import { DecisionJourney } from '../components/scenario/DecisionJourney'
 import { DataTable, type Column } from '../components/table/DataTable'
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, Tag, btn, btnPrimary } from '../components/ui'
 import { candidatesOf, describeAction, describeInsight, evidenceRows, kpiBand, kpiP50, tradeOffRows, type Action, type Candidate } from '../lib/insights'
@@ -235,7 +234,7 @@ function AppliedResultReport({ current, scenario, parentScenario, baseline, pare
     <div className="report-section-lead break-inside-avoid space-y-3">
       <h2 className="font-semibold">4. Kết quả sau khi áp dụng đề xuất</h2>
       <div className="rounded border border-accent/35 bg-panel-2 p-3">
-        <div className="text-xs font-semibold uppercase tracking-wide text-muted">Action đã áp dụng</div>
+        <div className="text-xs text-muted">Hành động đã áp dụng</div>
         <div className="mt-1 text-sm font-semibold text-text">{action ? describeAction(action) : 'Scenario không lưu action chi tiết'}</div>
         <div className="mt-1 text-xs text-muted">Action được áp dụng vào scenario con; mô hình đã publish không bị thay đổi.</div>
       </div>
@@ -287,7 +286,7 @@ function AppliedResultReport({ current, scenario, parentScenario, baseline, pare
               <div className="mt-0.5 text-xs text-text-2">{verdict.detail}</div>
             </div>
           )}
-          <Link className={`${btn} print:hidden`} to={`/compare?a=${baseline.id}&b=${current.id}`}>
+          <Link className={`${btn} print:hidden`} to={`/runs/${current.id}/compare`}>
             <GitCompare size={14} /> Mở so sánh chi tiết
           </Link>
         </>
@@ -574,7 +573,7 @@ function RunReportPage() {
       <div className="mx-auto max-w-4xl space-y-5 p-8 print:p-0">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Báo cáo mô phỏng &amp; dự báo logistics</h1>
+            <h1 className="text-xl font-semibold">Báo cáo mô phỏng và dự báo logistics</h1>
             <div className="text-sm text-muted">
               {graph.data.model_key} v{graph.data.version} · {scenario.data.name} · Run #{r.id} · bắt đầu {new Date(r.sim_start).toLocaleString('vi-VN')}
             </div>
@@ -583,18 +582,13 @@ function RunReportPage() {
           <button className={`${btnPrimary} print:hidden`} onClick={() => window.print()}>In / Lưu PDF</button>
         </div>
 
-        <DecisionJourney
-          active="report"
-          links={{ observe: `/runs/${r.id}`, decide: `/runs/${r.id}/recommendations`, validate: baseline ? `/compare?a=${baseline.id}&b=${r.id}` : undefined }}
-        />
-
         <section className={`break-inside-avoid rounded-xl border p-4 ${executive.tone === 'good' ? 'border-ok/50 bg-ok/5' : executive.tone === 'warn' ? 'border-warn/50 bg-warn/5' : 'border-line bg-panel'}`}>
           <div className="flex items-start gap-3">
             <span className={`flex h-10 w-10 flex-none items-center justify-center rounded-xl ${executive.tone === 'good' ? 'bg-ok/15 text-ok' : executive.tone === 'warn' ? 'bg-warn/15 text-warn' : 'bg-panel-2 text-muted'}`}>
               {executive.tone === 'good' ? <CheckCircle2 size={21} /> : <TriangleAlert size={21} />}
             </span>
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted">Tóm tắt điều hành</div>
+              <div className="text-[11px] text-muted">Tóm tắt điều hành</div>
               <h2 className="mt-0.5 text-base font-semibold text-text">{executive.title}</h2>
               <p className="mt-1 text-xs leading-5 text-text-2">{executive.detail}</p>
               <div className="mt-2 rounded-lg border border-line bg-panel/70 px-3 py-2 text-xs"><span className="text-muted">Hành động:</span> <b className="text-text">{executive.action}</b></div>

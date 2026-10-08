@@ -5,8 +5,7 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import { useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
 import { axisLine, axisTick, fmtTime, tooltipProps } from '../components/Charts'
-import { DecisionJourney } from '../components/scenario/DecisionJourney'
-import { Card, Loading, Notice, btn } from '../components/ui'
+import { Card, Loading, Notice, btn, input } from '../components/ui'
 import { describeAction, kpiP50, type Action } from '../lib/insights'
 import { byCode, thresholdsFor } from '../lib/model'
 import { clip, indexBands, NO_USE_COVERAGE, series } from '../lib/replay'
@@ -44,9 +43,10 @@ function durationHoursFor(points: Array<{ t: number; p50: number }>, predicate: 
   return out
 }
 
-export default function ComparePage() {
+/** `ids`: lần chạy cần so (đầu tiên là gốc); vắng mặt thì đọc từ địa chỉ (?a=&b= hoặc ?ids=). */
+export default function ComparePage({ ids: given }: { ids?: number[] } = {}) {
   const [params] = useSearchParams()
-  const ids = runIdsFromParams(params)
+  const ids = given ?? runIdsFromParams(params)
   const runs = useQueries({ queries: ids.map((id) => ({ queryKey: ['run', id], queryFn: () => api.run(id) })) })
   const bands = useQueries({ queries: ids.map((id) => ({ queryKey: ['bands', id, 'coverage_h'], queryFn: () => api.bands(id, { metric: 'coverage_h' }) })) })
   const scenarios = useQueries({ queries: runs.map((r) => ({ queryKey: ['scenario', r.data?.scenario_id], queryFn: () => api.scenario(r.data!.scenario_id), enabled: !!r.data })) })
@@ -125,19 +125,17 @@ export default function ComparePage() {
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
           <h1 className="text-lg font-semibold">Kiểm chứng trước và sau</h1>
-          <p className="text-xs text-muted">Run #{baseline.id} làm gốc, {runRows.slice(1).map((r) => `#${r.id}`).join(', ')} là phương án thử</p>
+          <p className="text-xs text-muted">Lần chạy #{baseline.id} là gốc, {runRows.slice(1).map((r) => `#${r.id}`).join(', ')} là phương án thử</p>
         </div>
         <button type="button" className={btn} onClick={exportImage}><Download size={13} /> Tải ảnh tóm tắt</button>
       </div>
-      <DecisionJourney active="validate" links={{ observe: `/runs/${candidate.id}`, decide: `/runs/${baseline.id}/recommendations`, report: `/runs/${candidate.id}/report` }} />
       <section className={`overflow-hidden rounded-xl border ${verdictGood ? 'border-ok/55 bg-ok/5' : 'border-warn/55 bg-warn/5'}`}>
         <div className="flex flex-wrap items-start gap-3 p-4">
           <span className={`flex h-10 w-10 flex-none items-center justify-center rounded-xl ${verdictGood ? 'bg-ok/15 text-ok' : 'bg-warn/15 text-warn'}`}>
             {verdictGood ? <CheckCircle2 size={21} /> : <TriangleAlert size={21} />}
           </span>
           <div className="min-w-0 flex-1">
-            <div className="text-[10px] font-bold uppercase tracking-wide text-muted">Kết luận kiểm chứng</div>
-            <h2 className="mt-0.5 text-sm font-semibold text-text">{verdictGood ? 'Phương án cải thiện KPI chính mà không tạo đánh đổi đo được' : worsened > 0 ? 'Phương án có đánh đổi — cần kỹ sư xác nhận trước khi áp dụng thật' : 'Chưa đủ bằng chứng để kết luận phương án tốt hơn'}</h2>
+            <h2 className="text-sm font-semibold text-text">{verdictGood ? 'Phương án cải thiện KPI chính mà không tạo đánh đổi đo được' : worsened > 0 ? 'Phương án có đánh đổi — cần kỹ sư xác nhận trước khi áp dụng thật' : 'Chưa đủ bằng chứng để kết luận phương án tốt hơn'}</h2>
             <p className="mt-1 text-[11px] text-text-2">{action ? describeAction(action) : candidateScenario.name} · {improved} KPI tốt hơn, {worsened} KPI xấu hơn.</p>
           </div>
         </div>
@@ -155,32 +153,29 @@ export default function ComparePage() {
         <Notice>Các run dùng cùng seed {effectiveSeeds[0]}, phiên bản mô hình, mốc bắt đầu, horizon, số lần lặp và trạng thái khởi đầu; chênh lệch phù hợp để quy cho thay đổi phương án.</Notice>
       )}
       <Card title="Chỉ số (trung vị)">
-        <div className="mb-3 rounded-lg border border-line bg-panel-2 px-3 py-2 text-xs text-text-2">
-          Ngoài KPI mô phỏng gốc, bảng này có thêm `Giờ thiếu hàng` và `Giờ tồn dư`. Đây là tổng thời lượng cộng trên toàn bộ các kho storage, suy ra từ `coverage_h`: dưới ngưỡng đỏ là thiếu hàng, trên ngưỡng `yellow_high` là tồn dư.
-        </div>
-        <table className="w-full text-sm">
-          <thead className="text-left text-xs text-muted">
+        <table className="w-full table-fixed text-xs">
+          <thead className="text-left text-[11px] text-muted">
             <tr>
-              <th>Chỉ số</th>
-              <th className="text-right">Gốc #{baseline.id}</th>
-              {runRows.slice(1).map((run, i) => <th key={run.id} className="text-right">Run #{run.id} / {scenarioRows[i + 1]?.name ?? '—'}</th>)}
+              <th className="pb-1.5 font-normal">Chỉ số</th>
+              <th className="w-36 pb-1.5 text-right font-normal">Gốc #{baseline.id}</th>
+              {runRows.slice(1).map((run, i) => <th key={run.id} className="w-56 truncate pb-1.5 text-right font-normal" title={scenarioRows[i + 1]?.name}>#{run.id} {scenarioRows[i + 1]?.name ?? ''}</th>)}
             </tr>
           </thead>
           <tbody>
             {KPIS.map(([k, label, higherBetter]) => {
               const base = kpiP50(baseline.kpis, k) ?? 0
               return (
-                <tr key={k} className="border-t">
-                  <td className="py-1">{label}</td>
-                  <td className="text-right">{base.toFixed(1)}</td>
+                <tr key={k} className="border-t border-line">
+                  <td className="py-1.5 text-text-2">{label}</td>
+                  <td className="text-right tabular-nums text-text-2">{base.toFixed(1)}</td>
                   {runRows.slice(1).map((run) => {
                     const val = kpiP50(run.kpis, k) ?? 0
                     const d = val - base
                     const good = higherBetter ? d > 0 : d < 0
                     return (
-                      <td key={`${k}-${run.id}`} className={`text-right font-medium ${d === 0 ? '' : good ? 'text-ok' : 'text-bad-text'}`}>
-                        <div>{val.toFixed(1)}</div>
-                        <div className="text-[11px]">{d >= 0 ? '+' : ''}{d.toFixed(1)}</div>
+                      <td key={`${k}-${run.id}`} className="py-1.5 text-right tabular-nums">
+                        <b className="font-semibold text-text">{val.toFixed(1)}</b>
+                        <span className={`ml-2 inline-block w-12 ${d === 0 ? 'text-muted' : good ? 'text-ok' : 'text-bad-text'}`}>{d >= 0 ? '+' : ''}{d.toFixed(1)}</span>
                       </td>
                     )
                   })}
@@ -193,16 +188,16 @@ export default function ComparePage() {
             ].map((row) => {
               const base = row.values[0] ?? 0
               return (
-                <tr key={row.key} className="border-t">
-                  <td className="py-1">{row.label}</td>
-                  <td className="text-right">{base.toFixed(1)}</td>
+                <tr key={row.key} className="border-t border-line">
+                  <td className="py-1.5 text-text-2">{row.label}</td>
+                  <td className="text-right tabular-nums text-text-2">{base.toFixed(1)}</td>
                   {row.values.slice(1).map((val, i) => {
                     const d = val - base
                     const good = row.higherBetter ? d > 0 : d < 0
                     return (
-                      <td key={`${row.key}-${runRows[i + 1].id}`} className={`text-right font-medium ${d === 0 ? '' : good ? 'text-ok' : 'text-bad-text'}`}>
-                        <div>{val.toFixed(1)}</div>
-                        <div className="text-[11px]">{d >= 0 ? '+' : ''}{d.toFixed(1)}</div>
+                      <td key={`${row.key}-${runRows[i + 1].id}`} className="py-1.5 text-right tabular-nums">
+                        <b className="font-semibold text-text">{val.toFixed(1)}</b>
+                        <span className={`ml-2 inline-block w-12 ${Math.abs(d) < 0.05 ? 'text-muted' : good ? 'text-ok' : 'text-bad-text'}`}>{d >= 0 ? '+' : ''}{d.toFixed(1)}</span>
                       </td>
                     )
                   })}
@@ -211,9 +206,10 @@ export default function ComparePage() {
             })}
           </tbody>
         </table>
+        <p className="mt-2 text-[11px] text-muted">Giờ thiếu hàng và giờ tồn dư cộng trên mọi kho: thời gian dưới ngưỡng Đỏ là thiếu hàng, trên ngưỡng Vàng cao là tồn dư.</p>
       </Card>
       <Card title="Số giờ tồn kho còn đủ dùng (p50)" actions={
-        <select className="rounded border border-line-2 px-2 py-0.5 text-sm" value={subject} onChange={(e) => setFocus(e.target.value)}>
+        <select className={input} aria-label="Chọn kho" value={subject} onChange={(e) => setFocus(e.target.value)}>
           {subjects.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>}>
         <ResponsiveContainer width="100%" height={260}>

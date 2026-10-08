@@ -99,6 +99,12 @@
   }
 }
 
+/* Tailwind v4 để viền mặc định là currentColor: `border` không kèm màu thành viền trắng chói trên nền tối. Mặc định là màu đường kẻ;
+   utility màu viền (border-line-2, border-bad…) vẫn đè được vì nằm ở lớp sau. */
+@layer base {
+  *, ::after, ::before, ::backdrop, ::file-selector-button { border-color: var(--color-line, currentColor); }
+}
+
 :root { color-scheme: dark; }
 [data-theme='light'] { color-scheme: light; }
 

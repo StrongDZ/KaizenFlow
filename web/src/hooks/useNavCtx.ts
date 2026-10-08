@@ -28,5 +28,6 @@ export function useNavCtx(path: string): NavCtx {
     latestVersionId: latest?.id,
     versions: versions.data,
     scenarioName: scenario.data?.name || (scenario.data ? `Scenario #${scenario.data.id}` : undefined),
+    scenarioId: scenario.data?.id,
   }
 }

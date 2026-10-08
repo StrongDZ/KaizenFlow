@@ -2,69 +2,15 @@ import * as Popover from '@radix-ui/react-popover'
 import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react'
 import { Wrench } from 'lucide-react'
 import { createContext, useContext, useEffect, useRef } from 'react'
+import type { NodeType } from '../api/types'
 import type { Badge, FlowNode } from '../lib/graph'
-import { NodeIcon } from './nodeIcons'
+import type { Tone } from '../lib/nodeFacts'
+import { designRows, effectiveParams } from '../lib/nodeSummary'
+import { NodeAvatar } from './NodeIdentity'
 import { pinClass } from './PinDot'
 
 export const ARCHETYPE_LABEL: Record<string, string> = {
   SOURCE: 'Nguồn', STORAGE: 'Kho / buffer', PROCESS: 'Trạm xử lý', SINK: 'Đích', RESOURCE_POOL: 'Đội xe / người',
-}
-
-const BADGE_TEXT: Record<string, string> = {
-  GREEN: 'text-ok', YELLOW: 'text-warn', RED: 'text-bad-text', INFO: 'text-muted',
-}
-
-const NODE_TONE: Record<string, string> = {
-  RED: 'border-bad bg-bad-bg', YELLOW: 'border-warn/60', GREEN: 'border-line-2', INFO: 'border-line-2', NONE: 'border-line-2',
-}
-
-const ARCHETYPE_ACCENT: Record<string, string> = {
-  SOURCE: '#64748b', STORAGE: '#a16207', PROCESS: '#5aa2ff', SINK: '#16a34a', RESOURCE_POOL: '#7c3aed',
-}
-
-function DeviceFace({ archetype, icon, accent, tone, selected }: {
-  archetype: string; icon?: string; accent: string; tone: string; selected: boolean
-}) {
-  const common = `relative flex items-center justify-center border-2 bg-panel-2 shadow-lg ${tone} ${selected ? 'ring-2 ring-text/60 ring-offset-2 ring-offset-bg' : ''}`
-  if (archetype === 'RESOURCE_POOL') {
-    return (
-      <div className={`${common} h-[58px] w-[58px] rounded-full border-dashed`}>
-        <div className="absolute inset-1 rounded-full border opacity-30" style={{ borderColor: accent }} />
-        <NodeIcon name={icon} archetype={archetype} size={25} className="relative" />
-        <i className="absolute bottom-1.5 h-1.5 w-1.5 rounded-full" style={{ backgroundColor: accent }} />
-      </div>
-    )
-  }
-  if (archetype === 'STORAGE') {
-    return (
-      <div className={`${common} h-[58px] w-[76px] rounded-md`}>
-        <div className="absolute inset-x-2 bottom-2 top-2 flex flex-col justify-between opacity-35" aria-hidden>
-          {[0, 1, 2].map((n) => <i key={n} className="h-px w-full" style={{ backgroundColor: accent }} />)}
-        </div>
-        <div className="absolute bottom-1.5 left-1.5 top-1.5 w-px opacity-50" style={{ backgroundColor: accent }} />
-        <div className="absolute bottom-1.5 right-1.5 top-1.5 w-px opacity-50" style={{ backgroundColor: accent }} />
-        <NodeIcon name={icon} archetype={archetype} size={25} className="relative drop-shadow" />
-      </div>
-    )
-  }
-  if (archetype === 'SOURCE' || archetype === 'SINK') {
-    return (
-      <div className={`${common} h-[56px] w-[72px] rounded-b-md rounded-t-[22px]`}>
-        <div className="absolute inset-x-2 bottom-1.5 h-1 rounded-full opacity-35" style={{ backgroundColor: accent }} />
-        <NodeIcon name={icon} archetype={archetype} size={25} className="relative" />
-      </div>
-    )
-  }
-  return (
-    <div className={`${common} h-[58px] w-[76px] rounded-lg`}>
-      {[['left-1.5', 'top-1.5'], ['right-1.5', 'top-1.5'], ['left-1.5', 'bottom-1.5'], ['right-1.5', 'bottom-1.5']].map(([x, y]) => (
-        <i key={`${x}-${y}`} className={`absolute ${x} ${y} h-1.5 w-1.5 rounded-full bg-line-2`} />
-      ))}
-      <div className="absolute inset-x-2 bottom-1.5 h-1 rounded-full opacity-55" style={{ backgroundColor: accent }} />
-      <NodeIcon name={icon} archetype={archetype} size={27} className="relative" />
-      <i className="absolute right-2 top-2 h-2 w-2 rounded-full border border-panel" style={{ backgroundColor: accent }} />
-    </div>
-  )
 }
 
 /**
@@ -73,8 +19,32 @@ function DeviceFace({ archetype, icon, accent, tone, selected }: {
  */
 export const LiveBadgeContext = createContext<Map<string, Badge | undefined> | null>(null)
 
+/**
+ * `design`: thân thẻ là thông số thiết lập (cần `types` để gộp mặc định của loại node).
+ * `run`: thân thẻ là số đo (data.rows, nhãn trạng thái); không có số đo thì chỉ còn phần đầu.
+ */
+export const KfNodeContext = createContext<{ mode: 'design' | 'run'; types: Record<string, NodeType> }>({ mode: 'design', types: {} })
+export const RUN_NODES = { mode: 'run' as const, types: {} }
+
+/** Chấm trạng thái ở góc phải phần đầu: đọc được cả khi thu nhỏ sơ đồ, lúc chữ trong thân đã quá bé. */
+const DOT: Partial<Record<Badge['color'], string>> = { GREEN: 'bg-ok', YELLOW: 'bg-warn', RED: 'bg-bad' }
+const STATUS_TEXT: Record<Badge['color'], string> = { GREEN: 'text-text-2', YELLOW: 'text-warn', RED: 'text-bad-text font-semibold', INFO: 'text-text-2', NONE: 'text-muted' }
+const ROW_TONE: Record<Tone, string> = { ok: 'text-ok', warn: 'text-warn', bad: 'text-bad-text', muted: 'text-muted' }
+
+function borderOf(badge: Badge | undefined, issueTone: 'error' | 'warning' | undefined): string {
+  if (badge?.kind === 'MAINTENANCE') return 'border-warn'
+  if (issueTone === 'error' || badge?.color === 'RED') return 'border-bad/80'
+  if (issueTone === 'warning' || badge?.color === 'YELLOW') return 'border-warn/60'
+  return 'border-line-2'
+}
+
+/**
+ * Thẻ node trên sơ đồ: phần đầu là danh tính (biểu tượng theo vai trò, tên, mã), thân là vài dòng trọng yếu.
+ * Màu của biểu tượng nói node LÀ GÌ; màu viền và chấm nói node ĐANG THẾ NÀO. Đội xe / người không nối dây nên viền nét đứt.
+ */
 export function KfNode({ id, data, selected }: NodeProps<FlowNode>) {
   const live = useContext(LiveBadgeContext)
+  const { mode, types } = useContext(KfNodeContext)
   const dir = data.dir ?? 'LR'
   const updateInternals = useUpdateNodeInternals()
   // React Flow đo vị trí cổng một lần; đổi hướng thì phải đo lại (lúc mount thì không, để khỏi làm rối fitView ban đầu).
@@ -89,34 +59,48 @@ export function KfNode({ id, data, selected }: NodeProps<FlowNode>) {
   const pool = data.archetype === 'RESOURCE_POOL'
   const badge = live ? live.get(id) : data.badge
   const maintenance = badge?.kind === 'MAINTENANCE'
-  const accent = data.accent ?? ARCHETYPE_ACCENT[data.archetype] ?? 'var(--color-muted)'
-  const tone = maintenance
-    ? 'border-warn text-warn ring-2 ring-warn/25'
-    : data.issueTone === 'error' ? 'border-bad' : data.issueTone === 'warning' ? 'border-warn' : NODE_TONE[badge?.color ?? 'NONE']
+  const status = badge && badge.color !== 'NONE' ? badge : undefined
+  const rows = data.rows ?? (mode === 'design' ? designRows(data.archetype, effectiveParams(data.params, types[data.nodeType])) : [])
+  const dot = status && DOT[status.color]
+  const body = status || rows.length > 0 || data.issue
   return (
-    <div className="relative flex min-w-[108px] flex-col items-center overflow-visible text-center" style={{ color: accent }}>
-      {maintenance && (
-        <div className="mb-1.5 flex items-center justify-center gap-1 rounded-full border border-warn/60 bg-lock-bg px-2 py-0.5 text-[8.5px] font-bold uppercase tracking-wide text-warn shadow-sm">
-          <Wrench size={11} /> Đang bảo trì
+    <div
+      className={`relative w-[164px] rounded-lg border bg-panel text-left shadow-sm ${pool ? 'border-dashed' : ''} ${borderOf(badge, data.issueTone)} ${
+        selected ? 'ring-2 ring-accent/70 ring-offset-1 ring-offset-bg' : ''
+      }`}
+    >
+      {!pool && data.archetype !== 'SOURCE' && <Handle type="target" position={inSide} />}
+      <div className="flex items-center gap-2 px-2 py-1.5">
+        <NodeAvatar icon={data.icon} archetype={data.archetype} size={22} />
+        <span className="min-w-0 flex-1 leading-tight">
+          <span className="block truncate text-[11.5px] font-semibold text-text" title={data.name}>{data.name}</span>
+          {data.key !== data.name && <span className="block truncate text-[9.5px] text-faint">{data.key}</span>}
+        </span>
+        {maintenance
+          ? <span title="Đang bảo trì" className="flex-none text-warn"><Wrench size={12} aria-label="Đang bảo trì" /></span>
+          : dot && <i className={`h-2 w-2 flex-none rounded-full ${dot}`} aria-hidden />}
+      </div>
+      {body && (
+        <div className="space-y-px border-t border-line px-2 pb-1.5 pt-1 text-[10px] leading-[15px]">
+          {status && (
+            <div title={status.hint} className={`truncate ${maintenance ? 'font-medium text-warn' : STATUS_TEXT[status.color]} ${status.hint ? 'cursor-help' : ''}`}>
+              {status.text}
+            </div>
+          )}
+          {rows.map((r) => (
+            <div key={r.label} className="flex items-baseline justify-between gap-2">
+              <span className="flex-none text-muted">{r.label}</span>
+              <span className={`truncate text-right tabular-nums ${r.tone ? ROW_TONE[r.tone] : 'text-text-2'}`} title={r.value}>{r.value}</span>
+            </div>
+          ))}
+          {data.issue && (
+            <div title={data.issueTitle} className={`truncate font-medium ${data.issueTone === 'warning' ? 'text-warn' : 'text-bad-text'}`}>{data.issue}</div>
+          )}
         </div>
       )}
-      <div className="relative">
-        {!pool && data.archetype !== 'SOURCE' && <Handle type="target" position={inSide} />}
-        <DeviceFace archetype={data.archetype} icon={data.icon} accent={accent} tone={tone} selected={selected} />
-        {!pool && data.archetype !== 'SINK' && <Handle type="source" position={outSide} />}
-      </div>
-      <div className="mt-1.5 max-w-[118px] rounded-md bg-bg/80 px-1.5 py-1 shadow-sm">
-        <div className="truncate text-[11px] font-bold leading-none text-text">{data.key}</div>
-        <div className="mt-0.5 truncate text-[8.5px] text-muted">{data.name}</div>
-      </div>
-      {badge && badge.color !== 'NONE' && (
-        <div title={badge.hint} className={`mt-1 max-w-[132px] rounded-full border border-line bg-panel px-2 py-0.5 text-[8.5px] font-semibold ${BADGE_TEXT[badge.color]} ${badge.hint ? 'cursor-help' : ''}`}>{badge.text}</div>
-      )}
-      {data.issue && (
-        <div title={data.issueTitle} className={`mt-1 max-w-[132px] text-[9px] font-medium ${data.issueTone === 'warning' ? 'text-lock-text' : 'text-bad-text'}`}>{data.issue}</div>
-      )}
+      {!pool && data.archetype !== 'SINK' && <Handle type="source" position={outSide} />}
       {data.pins && data.pins.length > 0 && (
-        <div className="absolute -right-1 -top-2 flex gap-1">
+        <div className="absolute -right-1.5 -top-2 flex gap-1">
           {data.pins.map((p) => (
             <Popover.Root key={p.n} open={data.pinState?.open === p.n} onOpenChange={(o) => data.pinState?.setOpen(o ? p.n : null)}>
               <Popover.Trigger asChild>

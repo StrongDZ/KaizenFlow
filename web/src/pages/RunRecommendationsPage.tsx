@@ -1,12 +1,11 @@
 import { useMutation } from '@tanstack/react-query'
-import { ArrowLeft, ArrowRight, CheckCircle2, Clock3, FlaskConical, Scale, Search, ShieldCheck, SlidersHorizontal, Sparkles } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Clock3, FlaskConical, ShieldCheck, SlidersHorizontal } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Insight } from '../api/types'
 import { RunGate } from '../components/controlroom/RunGate'
-import { DecisionJourney } from '../components/scenario/DecisionJourney'
-import { EmptyState, ErrorBox, Notice, PageBody, PageHeader, btn, btnPrimary, input } from '../components/ui'
+import { EmptyState, ErrorBox, Notice, PageBody, btnPrimary, input } from '../components/ui'
 import {
   candidatesOf, describeAction, describeInsight, evidenceRows, expectedImpactRows, tradeOffRows,
   type Candidate,
@@ -38,7 +37,7 @@ function KpiComparison({ candidate }: { candidate: Candidate }) {
   if (rows.length === 0) return null
   return (
     <div className="overflow-hidden rounded-lg border border-line-2">
-      <div className="grid grid-cols-[1fr_90px_20px_90px] bg-panel-2 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
+      <div className="grid grid-cols-[1fr_90px_20px_90px] bg-panel-2 px-3 py-1.5 text-[11px] text-muted">
         <span>KPI</span><span className="text-right">Hiện tại</span><span /><span className="text-right">Sau áp dụng</span>
       </div>
       {rows.map(([key, label]) => (
@@ -178,10 +177,10 @@ function Body({ runId, insights, replications }: { runId: number; insights: Insi
 
   if (!selected) {
     return (
-      <PageBody>
-        <PageHeader title="Đề xuất" actions={<Link className={btn} to={`/runs/${runId}`}><ArrowLeft size={13} /> Control Room</Link>} />
-        <EmptyState title="Chưa có đề xuất khả thi">Engine chưa tìm được action tạo cải thiện có ý nghĩa sau mô phỏng.</EmptyState>
-      </PageBody>
+      <EmptyState title="Chưa có đề xuất cho lần chạy này">
+        Engine đã thử các thay đổi khả thi (thêm vị trí ở trạm nghẽn, hạ nhịp máy có nguy cơ hỏng…) nhưng không thay đổi nào cải thiện KPI rõ rệt qua {replications} lần lặp.
+        Xem diễn biến ở <Link className="text-accent underline" to={`/runs/${runId}`}>Control Room</Link>, hoặc tạo scenario có tình huống bất lợi hơn để engine có việc để đề xuất.
+      </EmptyState>
     )
   }
 
@@ -192,39 +191,14 @@ function Body({ runId, insights, replications }: { runId: number; insights: Insi
 
   return (
     <PageBody wide>
-      <PageHeader
-        title="Đề xuất hành động"
-        subtitle={`${recommendations.length} phương án đã được engine kiểm tra cho lần chạy #${runId}`}
-        actions={<Link className={btn} to={`/runs/${runId}`}><ArrowLeft size={13} /> Control Room</Link>}
-      />
-      <DecisionJourney
-        active="decide"
-        links={{ observe: `/runs/${runId}`, report: `/runs/${runId}/report` }}
-      />
-      <Notice>
-        Control Room chỉ hiện thông báo ngắn. Đây là nơi operator xem nguyên nhân, bằng chứng, KPI và chỉnh tham số trước khi tạo một scenario con để chạy thử.
-      </Notice>
-
-      <section aria-label="Cách engine tạo đề xuất" className="grid overflow-hidden rounded-xl border border-line bg-panel sm:grid-cols-4">
-        {[
-          { icon: Search, label: '1. Phát hiện', detail: 'Rủi ro / bottleneck' },
-          { icon: Sparkles, label: '2. Sinh action', detail: 'Các phương án khả thi' },
-          { icon: FlaskConical, label: '3. Mô phỏng', detail: `${replications} lần lặp` },
-          { icon: Scale, label: '4. Xếp hạng', detail: 'KPI và đánh đổi' },
-        ].map((step, index) => {
-          const Icon = step.icon
-          return (
-            <div key={step.label} className={`relative flex items-center gap-2.5 px-4 py-3 ${index > 0 ? 'border-t border-line sm:border-l sm:border-t-0' : ''}`}>
-              <span className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-accent/10 text-accent"><Icon size={15} /></span>
-              <div><div className="text-[11px] font-semibold text-text">{step.label}</div><div className="text-[10px] text-muted">{step.detail}</div></div>
-            </div>
-          )
-        })}
-      </section>
+      <p className="text-xs text-muted">
+        {recommendations.length} phương án engine đã chạy thử qua {replications} lần lặp, xếp theo hiệu quả tổng thể. Chọn một phương án để xem lý do, bằng chứng và tác động,
+        chỉnh tham số nếu cần, rồi chạy lại để kiểm chứng.
+      </p>
 
       <div className="grid gap-4 lg:grid-cols-[330px_minmax(0,1fr)]">
         <section className="self-start rounded-xl border border-line bg-panel p-2">
-          <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted">Danh sách đề xuất</div>
+          <h2 className="px-2 py-1.5 text-[11px] text-muted">Phương án</h2>
           <div className="space-y-1.5">
             {recommendations.map((item) => {
               const active = item.key === selected.key
@@ -234,8 +208,8 @@ function Body({ runId, insights, replications }: { runId: number; insights: Insi
                   className={`w-full rounded-lg border p-3 text-left transition ${active ? 'border-accent bg-panel-2 ring-1 ring-accent/20' : 'border-transparent hover:border-line-2 hover:bg-panel-2'}`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wide text-muted">Phương án #{item.candidate.rank}</span>
-                    {item.candidate.rank === 1 && <span className="rounded-full bg-ok-solid px-2 py-0.5 text-[9px] font-bold text-on-ok">Tốt nhất</span>}
+                    <span className="text-[11px] text-muted">Hạng {item.candidate.rank}</span>
+                    {item.candidate.rank === 1 && <span className="rounded-[5px] border border-ok/40 px-1.5 text-[10.5px] text-ok">Tốt nhất</span>}
                   </div>
                   <div className="mt-1 text-xs font-semibold leading-5 text-text">{describeAction(item.candidate.action)}</div>
                   <div className="mt-1 line-clamp-2 text-[10.5px] leading-4 text-muted">{describeInsight(item.insight)}</div>
@@ -254,7 +228,7 @@ function Body({ runId, insights, replications }: { runId: number; insights: Insi
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-sm font-semibold text-text">{describeAction(selected.candidate.action)}</h2>
-                  {best && <span className="rounded-full border border-ok/40 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-ok">Hiệu quả tổng thể cao nhất</span>}
+                  {best && <span className="rounded-[5px] border border-ok/40 px-1.5 text-[10.5px] text-ok">Hiệu quả tổng thể cao nhất</span>}
                 </div>
                 <p className="mt-1 text-[11px] text-muted">Xếp hạng #{selected.candidate.rank}{typeof selected.candidate.score_v2 === 'number' ? ` · điểm ${selected.candidate.score_v2.toFixed(3)}` : ''}</p>
                 <div className="mt-2 flex flex-wrap gap-1.5">

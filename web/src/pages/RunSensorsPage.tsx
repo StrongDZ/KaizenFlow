@@ -7,9 +7,7 @@ export default function RunSensorsPage() {
   return (
     <RunGate runId={runId}>
       {({ run, scenario, graph, types }) => (
-        <div className="mx-auto max-w-5xl p-6">
-          <SensorPanel runId={run.id} graph={graph} types={types} injections={scenario.injections} height={360} />
-        </div>
+        <SensorPanel runId={run.id} graph={graph} types={types} injections={scenario.injections} replications={scenario.replications} />
       )}
     </RunGate>
   )

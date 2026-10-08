@@ -9,7 +9,7 @@ import type { BeforeAfterHours, BenchmarkRating, ChainSummaryRow, ChainVerdict, 
 import { FloatingPanel, PanelSection } from '../components/FloatingPanel'
 import { FitOnResize } from '../components/FitOnResize'
 import { kfEdgeTypes } from '../components/KfEdge'
-import { LiveBadgeContext, kfNodeTypes } from '../components/KfNode'
+import { KfNodeContext, LiveBadgeContext, RUN_NODES, kfNodeTypes } from '../components/KfNode'
 import { MachinePopover } from '../components/MachinePopover'
 import { WarehousePopover, type WarehouseSkuRow } from '../components/WarehousePopover'
 import { DriftAlerts } from '../components/live/DriftAlerts'
@@ -745,6 +745,7 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
   return (
     <div ref={wrap} className="relative h-full min-h-[480px]">
       <LiveBadgeContext.Provider value={badgeMap}>
+      <KfNodeContext.Provider value={RUN_NODES}>
       <ReactFlow
         nodes={nodes} edges={edges} nodeTypes={kfNodeTypes} edgeTypes={kfEdgeTypes} nodesConnectable={false} nodesDraggable={false}
         colorMode={theme} fitView minZoom={0.2} fitViewOptions={{ padding: { top: '120px', right: panelOpen ? '280px' : '24px', bottom: '300px', left: '24px' } }}
@@ -755,6 +756,7 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
         <FitOnResize options={{ padding: { top: '120px', right: panelOpen ? '280px' : '24px', bottom: '300px', left: '24px' } }} />
         <Controls showInteractive={false} position="bottom-left" />
       </ReactFlow>
+      </KfNodeContext.Provider>
 
       {popover && popoverFlowNode && popover.kind === 'WAREHOUSE' && (
         <WarehousePopover

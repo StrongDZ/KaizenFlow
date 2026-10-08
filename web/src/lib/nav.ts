@@ -1,7 +1,7 @@
 export type Section = 'overview' | 'models' | 'alerts' | 'gauge' | 'library'
 export type Crumb = { label: string; to?: string; picker?: boolean }
 /** `icon`: tên biểu tượng (vẽ ở components/shell/SubNav). */
-export type Tab = { label: string; to: string; end?: boolean; also?: string[]; group?: string; icon?: string }
+export type Tab = { label: string; to: string; end?: boolean; also?: string[]; not?: string[]; group?: string; icon?: string }
 export type NavCtx = {
   modelKey?: string
   version?: number
@@ -9,6 +9,7 @@ export type NavCtx = {
   latestVersionId?: number
   versions?: { id: number; version: number; status: string }[]
   scenarioName?: string
+  scenarioId?: number
 }
 
 export function sectionOf(path: string): Section {
@@ -25,18 +26,22 @@ export function sectionOf(path: string): Section {
 const inModelWorkspace = (path: string) => /^\/(versions|scenarios)\//.test(path) || /^\/models\/[^/]+\/(versions|live|sources|connect|map)/.test(path)
 
 export function tabsFor(path: string, ctx: NavCtx): Tab[] {
-  const run = path.match(/^\/runs\/(\d+)/)
-  if (run) {
-    const base = `/runs/${run[1]}`
-    return [
-      { label: 'Control Room', to: base, end: true, icon: 'monitor' },
-      { label: 'Cảm biến', to: `${base}/sensors`, icon: 'activity' },
-      { label: 'Đề xuất', to: `${base}/recommendations`, icon: 'lightbulb' },
-      { label: 'Báo cáo', to: `${base}/report`, icon: 'file' },
-    ]
-  }
-  if (!inModelWorkspace(path)) return []
+  // Lần chạy thuộc mục "Lần chạy" của mô hình: panel phụ vẫn là điều hướng mô hình; tab của chính lần chạy nằm ở đầu trang (runTabs).
+  if (!inModelWorkspace(path) && !/^\/runs\/\d+/.test(path)) return []
   return modelTabs(ctx)
+}
+
+/** Tab trong một lần chạy, theo thứ tự người dùng đi: xem diễn biến, xem cảm biến, xem đề xuất, so với lần chạy gốc (nếu có), báo cáo. */
+export function runTabs(runId: number, opts: { recommendations?: number; compare?: boolean } = {}): (Tab & { count?: number })[] {
+  const base = `/runs/${runId}`
+  const tabs: (Tab & { count?: number })[] = [
+    { label: 'Control Room', to: base, end: true },
+    { label: 'Cảm biến', to: `${base}/sensors` },
+    { label: 'Đề xuất', to: `${base}/recommendations`, count: opts.recommendations || undefined },
+  ]
+  if (opts.compare) tabs.push({ label: 'So với lần chạy gốc', to: `${base}/compare` })
+  tabs.push({ label: 'Báo cáo', to: `${base}/report` })
+  return tabs
 }
 
 function modelTabs(ctx: NavCtx): Tab[] {
@@ -51,7 +56,7 @@ function modelTabs(ctx: NavCtx): Tab[] {
   if (vid !== undefined) {
     simulate.push(
       { label: 'Scenario', to: `/versions/${vid}/scenarios`, also: ['/scenarios/'], group: 'Mô phỏng', icon: 'flask' },
-      { label: 'Lần chạy', to: `/versions/${vid}/runs`, group: 'Mô phỏng', icon: 'play' },
+      { label: 'Lần chạy', to: `/versions/${vid}/runs`, also: ['/runs/'], group: 'Mô phỏng', icon: 'play' },
     )
   }
   if (base) {
@@ -65,8 +70,13 @@ function modelTabs(ctx: NavCtx): Tab[] {
   return [...design, ...simulate, ...operate]
 }
 
-/** `icon`: biểu tượng ở đầu panel (library: thư viện, còn lại là mô hình). */
-export type SubNav = { title: string; subtitle?: string; icon?: 'library'; groups: { title: string | undefined; tabs: Tab[] }[] }
+/** `icon`: biểu tượng ở đầu panel (library: thư viện, gauge: đồng hồ, còn lại là mô hình). */
+export type SubNav = { title: string; subtitle?: string; icon?: 'library' | 'gauge'; groups: { title: string | undefined; tabs: Tab[] }[] }
+
+const GAUGE_TABS: Tab[] = [
+  { label: 'Trạm', to: '/gauge-twin', not: ['/gauge-twin/cameras'], icon: 'gauge' },
+  { label: 'Camera', to: '/gauge-twin/cameras', icon: 'camera' },
+]
 
 const LIBRARY_TABS: Tab[] = [
   { label: 'Loại node', to: '/library/node-types', icon: 'shapes' },
@@ -74,17 +84,12 @@ const LIBRARY_TABS: Tab[] = [
 ]
 
 /**
- * Nội dung panel phụ (đặt cạnh thanh chính): điều hướng bên trong một mô hình, một lần chạy hay thư viện.
- * Trang lần chạy có nhóm của lần chạy lên đầu và vẫn giữ các nhóm của mô hình để quay lại được. Trang cấp cao (danh sách) trả null.
+ * Nội dung panel phụ (đặt cạnh thanh chính): điều hướng bên trong một mô hình, thư viện hay khu đồng hồ.
+ * Trang lần chạy dùng đúng điều hướng của mô hình (mục Lần chạy sáng); tab của lần chạy nằm ở đầu trang. Trang cấp cao (danh sách) trả null.
  */
 export function subNavFor(path: string, ctx: NavCtx): SubNav | null {
   if (path.startsWith('/library')) return { title: 'Thư viện', icon: 'library', groups: [{ title: undefined, tabs: LIBRARY_TABS }] }
-  const run = path.match(/^\/runs\/(\d+)/)
-  if (run) {
-    const runGroup = { title: `Lần chạy #${run[1]}`, tabs: tabsFor(path, ctx) }
-    const model = ctx.modelKey ? groupTabs(modelTabs(ctx)) : []
-    return { title: ctx.modelKey ?? `Lần chạy #${run[1]}`, subtitle: ctx.version !== undefined ? `v${ctx.version}` : undefined, groups: [runGroup, ...model] }
-  }
+  if (path.startsWith('/gauge-twin')) return { title: 'Đồng hồ', subtitle: 'Đọc đồng hồ bằng camera', icon: 'gauge', groups: [{ title: undefined, tabs: GAUGE_TABS }] }
   const tabs = tabsFor(path, ctx)
   if (tabs.length === 0) return null
   const subtitle = ctx.version !== undefined ? `v${ctx.version}` : ctx.versions?.length ? `${ctx.versions.length} phiên bản` : undefined
@@ -108,6 +113,7 @@ export function groupTabs(tabs: Tab[]): { title: string | undefined; tabs: Tab[]
 }
 
 export function isTabActive(tab: Tab, path: string): boolean {
+  if (tab.not?.some((p) => path.startsWith(p))) return false
   if (tab.also?.some((p) => path.startsWith(p))) return true
   if (path === tab.to) return true
   return !tab.end && path.startsWith(tab.to + '/')
@@ -155,8 +161,8 @@ export function crumbsFor(path: string, ctx: NavCtx): Crumb[] {
   if (run) {
     const out: Crumb[] = []
     if (model) out.push({ label: model, to: modelTo })
-    if (ver) out.push({ label: ver })
-    if (ctx.scenarioName) out.push({ label: ctx.scenarioName })
+    if (ver) out.push({ label: ver, to: ctx.versionId !== undefined ? `/versions/${ctx.versionId}` : undefined })
+    if (ctx.scenarioName) out.push({ label: ctx.scenarioName, to: ctx.scenarioId !== undefined ? `/scenarios/${ctx.scenarioId}` : undefined })
     out.push({ label: `Lần chạy #${run[1]}` })
     return out
   }

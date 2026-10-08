@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { crumbsFor, groupTabs, isCanvasPath, isTabActive, sectionOf, subNavFor, switchVersionPath, tabsFor } from './nav'
+import { crumbsFor, groupTabs, isCanvasPath, isTabActive, runTabs, sectionOf, subNavFor, switchVersionPath, tabsFor } from './nav'
 
 describe('sectionOf', () => {
   it('maps paths to rail sections', () => {
@@ -34,8 +34,6 @@ describe('tabsFor', () => {
     const tabs = tabsFor('/versions/7', { modelKey: 'm', versionId: 7 })
     expect(tabs.map((t) => t.group)).toEqual(['Thiết kế', 'Thiết kế', 'Mô phỏng', 'Mô phỏng', 'Vận hành thật', 'Vận hành thật', 'Vận hành thật', 'Vận hành thật'])
     expect(groupTabs(tabs).map((g) => [g.title, g.tabs.length])).toEqual([['Thiết kế', 2], ['Mô phỏng', 2], ['Vận hành thật', 4]])
-    // tab của lần chạy không có nhóm: một nhóm không tên
-    expect(groupTabs(tabsFor('/runs/12', {})).map((g) => g.title)).toEqual([undefined])
   })
 
   it('opens the latest version from the versions page', () => {
@@ -55,10 +53,8 @@ describe('tabsFor', () => {
     expect(isTabActive(tabsFor('/models/m/connect', { modelKey: 'm' }).find((t) => t.label === 'Kết nối dữ liệu')!, '/models/m/connect')).toBe(true)
   })
 
-  it('gives the run workspace tabs and none elsewhere', () => {
-    expect(tabsFor('/runs/12/report', {}).map((t) => t.to)).toEqual([
-      '/runs/12', '/runs/12/sensors', '/runs/12/recommendations', '/runs/12/report',
-    ])
+  it('gives the model tabs on run pages and none elsewhere', () => {
+    expect(tabsFor('/runs/12/report', { modelKey: 'm', versionId: 7 }).map((t) => t.label)).toContain('Lần chạy')
     expect(tabsFor('/models', {})).toEqual([])
     expect(tabsFor('/library/node-types', {})).toEqual([])
   })
@@ -145,12 +141,26 @@ describe('subNavFor (panel phụ cạnh thanh chính)', () => {
     expect(n.groups.map((g) => g.title)).toEqual(['Thiết kế', 'Mô phỏng', 'Vận hành thật'])
     expect(n.groups.flatMap((g) => g.tabs).every((t) => !!t.icon)).toBe(true)
   })
-  it('lần chạy: nhóm của lần chạy lên đầu, các nhóm của mô hình vẫn còn bên dưới', () => {
+  it('lần chạy: panel phụ là điều hướng của mô hình, mục Lần chạy sáng; tab của lần chạy không nằm ở đây', () => {
     const n = subNavFor('/runs/12/sensors', { modelKey: 'm', versionId: 7 })!
-    expect(n.groups.map((g) => g.title)).toEqual(['Lần chạy #12', 'Thiết kế', 'Mô phỏng', 'Vận hành thật'])
-    expect(n.groups[0].tabs.map((t) => t.label)).toEqual(['Control Room', 'Cảm biến', 'Đề xuất', 'Báo cáo'])
-    // chưa biết mô hình (đang tải) thì chỉ có nhóm lần chạy
-    expect(subNavFor('/runs/12', {})!.groups.map((g) => g.title)).toEqual(['Lần chạy #12'])
+    expect(n.groups.map((g) => g.title)).toEqual(['Thiết kế', 'Mô phỏng', 'Vận hành thật'])
+    const active = n.groups.flatMap((g) => g.tabs).filter((t) => isTabActive(t, '/runs/12/sensors')).map((t) => t.label)
+    expect(active).toEqual(['Lần chạy'])
+  })
+  it('tab của một lần chạy: so với gốc chỉ có khi có lần chạy gốc, đề xuất mang số lượng', () => {
+    expect(runTabs(12).map((t) => t.label)).toEqual(['Control Room', 'Cảm biến', 'Đề xuất', 'Báo cáo'])
+    const tabs = runTabs(12, { recommendations: 3, compare: true })
+    expect(tabs.map((t) => t.to)).toEqual(['/runs/12', '/runs/12/sensors', '/runs/12/recommendations', '/runs/12/compare', '/runs/12/report'])
+    expect(tabs[2].count).toBe(3)
+    expect(isTabActive(tabs[0], '/runs/12')).toBe(true)
+    expect(isTabActive(tabs[0], '/runs/12/report')).toBe(false)
+  })
+  it('khu đồng hồ: Trạm sáng ở mọi trang trạm, Camera sáng ở trang camera', () => {
+    const tabs = subNavFor('/gauge-twin', {})!.groups[0].tabs
+    const on = (p: string) => tabs.filter((t) => isTabActive(t, p)).map((t) => t.label)
+    expect(on('/gauge-twin')).toEqual(['Trạm'])
+    expect(on('/gauge-twin/machine_001/history')).toEqual(['Trạm'])
+    expect(on('/gauge-twin/cameras/cam-1')).toEqual(['Camera'])
   })
   it('thư viện có panel phụ riêng', () => {
     const n = subNavFor('/library/materials/RAW-01', {})!

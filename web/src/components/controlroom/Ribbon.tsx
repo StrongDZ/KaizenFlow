@@ -38,7 +38,7 @@ export function Ribbon({ kpis, at, time, deltaRed }: { kpis: Json | null; at: At
   return (
     <Tooltip.Provider delayDuration={150}>
       <div className="absolute inset-x-0 top-0 z-10 flex h-[30px] items-center gap-4 overflow-hidden border-b border-line bg-panel-2 px-3.5 text-[11.5px] text-muted">
-        <span className="text-faint">Cả lần chạy</span>
+        <span className="whitespace-nowrap text-faint">Cả lần chạy</span>
         <Kpi label="Sản lượng" help="Số thành phẩm đã giao đi trong cả lần chạy." kpis={kpis} k="throughput" />
         <Kpi label="Phút Đỏ" help="Tổng số phút các kho ở mức Đỏ (sắp hết hàng), cộng mọi kho." kpis={kpis} k="red_minutes" bad />
         <Kpi label="Nợ đơn" help="Số đơn khách đã đặt mà chưa có hàng giao khi hết lần chạy." kpis={kpis} k="backorder_end" />
@@ -48,7 +48,7 @@ export function Ribbon({ kpis, at, time, deltaRed }: { kpis: Json | null; at: At
           </span>
         )}
         <span className="h-3.5 w-px bg-line-2" />
-        <span className="text-faint">{time === undefined ? 'Theo thước' : `Lúc ${fmtTime(time)}`}</span>
+        <span className="whitespace-nowrap text-faint">{time === undefined ? 'Theo thước' : `Lúc ${fmtTime(time)}`}</span>
         <span className="flex items-center gap-1.5 whitespace-nowrap">
           <i className="h-2 w-2 rounded-full bg-bad" /><b className="tabular-nums text-text">{time === undefined ? '—' : at.red}</b> kho Đỏ
         </span>

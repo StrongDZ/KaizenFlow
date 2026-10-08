@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom'
 import { useLiveRuns } from './api/live'
+import RunLayout from './components/controlroom/RunLayout'
 import { Shell } from './components/shell/Shell'
 import { EmptyState, PageBody } from './components/ui'
 import { shouldRetry } from './lib/retry'
@@ -28,6 +29,7 @@ import NodeTypesPage from './pages/NodeTypesPage'
 import OperationsDashboardPage from './pages/OperationsDashboardPage'
 import OverviewPage from './pages/OverviewPage'
 import ReportPage from './pages/ReportPage'
+import RunComparePage from './pages/RunComparePage'
 import RunRecommendationsPage from './pages/RunRecommendationsPage'
 import RunSensorsPage from './pages/RunSensorsPage'
 import RunsPage from './pages/RunsPage'
@@ -83,10 +85,13 @@ export default function App() {
             <Route path="/scenarios/:id/edit" element={<ScenarioEditPage />} />
             <Route path="/runs" element={<RunsPage scope="all" />} />
             <Route path="/versions/:id/runs" element={<RunsPage scope="version" />} />
-            <Route path="/runs/:id" element={<ControlRoomPage />} />
-            <Route path="/runs/:id/sensors" element={<RunSensorsPage />} />
-            <Route path="/runs/:id/recommendations" element={<RunRecommendationsPage />} />
-            <Route path="/runs/:id/report" element={<ReportPage />} />
+            <Route path="/runs/:id" element={<RunLayout />}>
+              <Route index element={<ControlRoomPage />} />
+              <Route path="sensors" element={<RunSensorsPage />} />
+              <Route path="recommendations" element={<RunRecommendationsPage />} />
+              <Route path="compare" element={<RunComparePage />} />
+              <Route path="report" element={<ReportPage />} />
+            </Route>
             <Route path="/reports/benchmarks" element={<ReportPage mode="benchmarks" />} />
             <Route path="/reports/operations" element={<OperationsDashboardPage />} />
             <Route path="/reports/warehouse" element={<WarehouseControlPage />} />
