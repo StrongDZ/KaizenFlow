@@ -17,8 +17,8 @@ function readCompact(): Record<Kind, boolean> {
 }
 
 export function Shell() {
-  const { pathname } = useLocation()
-  const ctx = useNavCtx(pathname)
+  const { pathname, search } = useLocation()
+  const ctx = useNavCtx(pathname, search)
   const sub = subNavFor(pathname, ctx)
   const kind: Kind = isCanvasPath(pathname) ? 'canvas' : 'page'
   const [focus, setFocus] = useState(false)

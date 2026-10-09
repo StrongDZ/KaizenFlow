@@ -86,8 +86,8 @@ export default function RunsPage({ scope }: { scope: 'all' | 'version' }) {
   return (
     <PageBody wide>
       <PageHeader icon={Play}
-        title="Lần chạy"
-        subtitle={runs.data ? `${runs.data.length} lần chạy` : undefined}
+        title={scope === 'all' ? 'Mọi lần chạy' : 'Lần chạy'}
+        subtitle={runs.data ? `${runs.data.length} lần chạy${scope === 'all' ? ' của mọi mô hình' : ''}` : undefined}
         actions={compare ? <Link className={btnPrimary} to={compare}>So sánh 2 lần chạy</Link> : <button className={btn} disabled>So sánh 2 lần chạy</button>}
       />
       <div className="flex gap-2">

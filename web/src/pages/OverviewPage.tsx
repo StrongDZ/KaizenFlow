@@ -535,7 +535,7 @@ export default function OverviewPage() {
         {live.length > 0 ? (
           <>
             <div className={`${LIVE_GRID} border-b border-line px-3 py-1.5 text-[11px] text-muted`}>
-              <span>Feed</span><span>Mô hình</span><span>Cần chú ý</span><span className="text-right">Giờ nhà máy</span><span /><span />
+              <span>Feed</span><span>Mô hình</span><span>Cần chú ý</span><span className="text-right">Giờ nhà máy</span><span />
             </div>
             {live.map((f) => <LiveModelRow key={f.model} feed={f} types={typeMap} />)}
           </>

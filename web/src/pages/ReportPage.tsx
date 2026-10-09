@@ -396,12 +396,6 @@ function BenchmarkPage() {
       <PageHeader icon={FileText}
         title="Benchmark FMCG"
         subtitle="Nhúng benchmark Grupo Bimbo/Store-Item từ project M vào KaizenFlow"
-        actions={
-          <>
-            <Link className={btn} to="/models">Xem mô hình</Link>
-            <Link className={btnPrimary} to="/models">Mở workspace</Link>
-          </>
-        }
       />
       <Notice>
         Tầng 1 chỉ nhúng benchmark đã kiểm chứng vào giao diện doanh nghiệp hiện tại. Chưa thay core engine KaizenFlow; phần forecast/optimizer của project M đang được dùng như bằng chứng benchmark và làm cơ sở seed mô hình FMCG demo.

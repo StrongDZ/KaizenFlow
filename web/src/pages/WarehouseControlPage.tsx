@@ -1,17 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Graph, GraphNode, LiveSnapshot, ModelSummary, NodeType, SubjectSnap } from '../api/types'
 import { FeedControl } from '../components/live/FeedControl'
-import { Card, EmptyState, ErrorBox, Loading, PageBody, PageHeader, btn, btnPrimary, input } from '../components/ui'
+import { Card, EmptyState, ErrorBox, Loading, PageBody, PageHeader, btnPrimary, input } from '../components/ui'
 import { useModelGraph } from '../hooks/useModelGraph'
 import { fmtDateTime, fmtDelta } from '../lib/format'
 import { nodeBadge, summarize } from '../lib/liveFrame'
 import { thresholdsFor } from '../lib/model'
 import { NO_USE_COVERAGE, colorFor } from '../lib/replay'
 
-const DEFAULT_MODEL = 'bimbo-fmcg'
 const STALE_MS = 15000
 const NO_TYPES: Record<string, NodeType> = {}
 
@@ -159,14 +158,9 @@ function buildRows(graph: Graph, types: Record<string, NodeType>, snapshot: Live
 export default function WarehouseControlPage() {
   const models = useQuery({ queryKey: ['models'], queryFn: api.models, staleTime: 60_000 })
   const items = models.data ?? []
-  const defaultKey = items.find((m: ModelSummary) => m.model_key === DEFAULT_MODEL)?.model_key
-    ?? items.find((m: ModelSummary) => m.status === 'PUBLISHED')?.model_key
-    ?? items[0]?.model_key
-  // Mô hình nằm trên địa chỉ (?model=): mở từ dòng của một mô hình thì luôn đúng mô hình đó, đổi ở ô chọn thì địa chỉ đổi theo.
-  const [params, setParams] = useSearchParams()
-  const wanted = params.get('model') ?? ''
-  const currentModel = (items.some((m: ModelSummary) => m.model_key === wanted) ? wanted : '') || defaultKey || ''
-  const setModelKey = (k: string) => setParams({ model: k }, { replace: true })
+  // Trang thuộc một mô hình (/models/:key/stock): đổi mô hình ở danh sách Mô hình, không có ô chọn ở đây.
+  const key = decodeURIComponent(useParams().key ?? '')
+  const currentModel = items.some((m: ModelSummary) => m.model_key === key) ? key : ''
   const g = useModelGraph(currentModel)
   const live = useQuery({ queryKey: ['live', currentModel], queryFn: () => api.live(currentModel), enabled: !!currentModel, refetchInterval: 3000 })
   const modelsError = models.error as Error | null
@@ -181,7 +175,7 @@ export default function WarehouseControlPage() {
   const rows = useMemo(() => (graph ? buildRows(graph, types, snapshot, live.dataUpdatedAt) : []), [graph, types, snapshot, live.dataUpdatedAt])
 
   if (models.isLoading) return <Loading />
-  if (items.length === 0) return <EmptyState title="Chưa có mô hình nào">Tạo mô hình ở trang Mô hình hoặc chạy scripts/seed_demo.py để có mẫu.</EmptyState>
+  if (!currentModel) return <PageBody><EmptyState title="Không có mô hình này">Mô hình {key} không còn. Chọn mô hình khác ở <Link to="/models" className="text-accent underline">Mô hình</Link>.</EmptyState></PageBody>
   if (g.status === 'loading') return <Loading />
   if (g.status === 'none') return <EmptyState title="Mô hình chưa có phiên bản Publish">Mô hình này chưa có phiên bản nào được Publish. Publish một phiên bản rồi quay lại.</EmptyState>
   if (!graph) return <Loading />
@@ -196,19 +190,7 @@ export default function WarehouseControlPage() {
 
   return (
     <PageBody wide>
-      <PageHeader
-        title="Điều khiển kho"
-        subtitle={currentModel}
-        actions={
-          <div className="flex items-center gap-2">
-            <select className={input} value={currentModel} onChange={(e) => setModelKey(e.target.value)} aria-label="Chọn mô hình">
-              {items.map((m: ModelSummary) => <option key={m.model_key} value={m.model_key}>{m.model_key} (v{m.latest_version})</option>)}
-            </select>
-            <Link className={btn} to={`/models/${encodeURIComponent(currentModel)}/live`}>Sơ đồ trực tiếp</Link>
-            <Link className={btnPrimary} to={`/reports/operations?model=${encodeURIComponent(currentModel)}`}>Dashboard vận hành</Link>
-          </div>
-        }
-      />
+      <PageHeader title="Điều khiển kho" subtitle="Tồn kho trực tiếp của từng kho; nhập hàng tay ở cuối trang khi cần" />
       <ErrorBox error={err} />
       <FeedControl model={currentModel} />
       <div className="mt-4 grid grid-cols-4 gap-4">

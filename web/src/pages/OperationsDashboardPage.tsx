@@ -2,16 +2,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Gauge } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
-import type { Insight, ModelSummary, RunRow, Scenario } from '../api/types'
+import type { Insight, RunRow, Scenario } from '../api/types'
 import { axisLine, axisTick, tooltipProps } from '../components/Charts'
 import BenchmarkPanel from '../components/dashboard/BenchmarkPanel'
-import { Card, ErrorBox, Loading, Notice, PageBody, PageHeader, StatusChip, Tag, btn, btnPrimary, input } from '../components/ui'
+import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, StatusChip, Tag, btn, btnPrimary } from '../components/ui'
 import { fmtDateTime, fmtDelta, fmtDuration } from '../lib/format'
 import { candidatesOf, describeAction, kpiP50 } from '../lib/insights'
 
-const DEFAULT_MODEL = 'bimbo-fmcg'
 const STALE_MS = 2 * 60 * 1000
 
 type Candidate = {
@@ -136,20 +135,15 @@ function Explainer({ title, children }: { title: string; children: string }) {
 export default function OperationsDashboardPage() {
   const qc = useQueryClient()
   const models = useQuery({ queryKey: ['models'], queryFn: api.models })
-  // Mô hình nằm trên địa chỉ (?model=); địa chỉ không nêu hoặc nêu mô hình không còn thì mới lấy mặc định.
-  const [params, setParams] = useSearchParams()
-  const wanted = params.get('model') ?? DEFAULT_MODEL
-  const modelKey = !models.data || models.data.some((m) => m.model_key === wanted)
-    ? wanted
-    : models.data.find((m) => m.model_key === DEFAULT_MODEL)?.model_key ?? models.data[0]?.model_key ?? wanted
-  const setModelKey = (k: string) => setParams({ model: k }, { replace: true })
+  // Trang thuộc một mô hình (/models/:key/operations): đổi mô hình ở danh sách Mô hình, không có ô chọn ở đây.
+  const modelKey = decodeURIComponent(useParams().key ?? '')
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([])
   const [selectedCompareRuns, setSelectedCompareRuns] = useState<number[]>([])
   const [lastBatchRunIds, setLastBatchRunIds] = useState<number[]>([])
   const [batchApplyIssue, setBatchApplyIssue] = useState<Error | null>(null)
 
   const currentModel = useMemo(
-    () => models.data?.find((m) => m.model_key === modelKey) ?? models.data?.find((m) => m.model_key === DEFAULT_MODEL) ?? models.data?.[0] ?? null,
+    () => models.data?.find((m) => m.model_key === modelKey) ?? null,
     [models.data, modelKey],
   )
 
@@ -339,23 +333,16 @@ export default function OperationsDashboardPage() {
   }
 
   const err = models.error ?? active.error ?? nowcasts.error ?? recentRuns.error ?? recommenderRuns.error ?? latestNowcastScenario.error ?? latestNowcastRun.error ?? appliedRun.error
-  if (models.isLoading || active.isLoading || nowcasts.isLoading || recentRuns.isLoading || recommenderRuns.isLoading) return <Loading />
+  if (models.isLoading) return <Loading />
+  if (!currentModel) return <PageBody><EmptyState title="Không có mô hình này">Mô hình {modelKey} không còn. Chọn mô hình khác ở <Link to="/models" className="text-accent underline">Mô hình</Link>.</EmptyState></PageBody>
+  if (active.isLoading || nowcasts.isLoading || recentRuns.isLoading || recommenderRuns.isLoading) return <Loading />
 
   return (
     <PageBody wide>
       <PageHeader icon={Gauge}
         title="Dashboard vận hành FMCG"
         subtitle="Theo dõi trạng thái live, recommendation và hiệu quả áp dụng trên cùng một màn hình"
-        actions={
-          <>
-            <select className={input} aria-label="Chọn mô hình" value={modelKey} onChange={(e) => setModelKey(e.target.value)}>
-              {(models.data ?? []).map((m: ModelSummary) => <option key={m.model_key} value={m.model_key}>{m.model_key}</option>)}
-            </select>
-            <Link className={btn} to="/reports/benchmarks">Benchmark FMCG</Link>
-            {latestNowcast && <Link className={btn} to={`/runs/${latestNowcast.id}`}>Mở NOWCAST mới nhất</Link>}
-            {currentModel && <Link className={btnPrimary} to={`/models/${encodeURIComponent(currentModel.model_key)}/live`}>Mở Live Twin</Link>}
-          </>
-        }
+        actions={latestNowcast && <Link className={btn} to={`/runs/${latestNowcast.id}`}>Mở NOWCAST mới nhất</Link>}
       />
       <Notice>
         Trang này trả lời 3 câu hỏi cho demo: hệ thống hiện đang nhận live data ra sao, đang khuyến nghị bù hàng gì, và lần áp dụng recommendation gần nhất có giúp giảm rủi ro hay tăng throughput hay không.

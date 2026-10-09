@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Link, Navigate, Route, Routes, useParams, useSearchParams } from 'react-router-dom'
 import { useLiveRuns } from './api/live'
 import RunLayout from './components/controlroom/RunLayout'
 import StationLayout from './components/gauge/StationLayout'
@@ -54,6 +54,14 @@ function NotFound() {
   )
 }
 
+/** Địa chỉ báo cáo cũ (/reports/…?model=…) dẫn về trang tương ứng trong mô hình; không nêu mô hình thì về danh sách Mô hình. */
+const LEGACY_REPORT: Record<string, string> = { operations: 'operations', warehouse: 'stock', 'warehouse-dashboard': 'warehouse-report' }
+function LegacyReport() {
+  const page = LEGACY_REPORT[useParams().page ?? '']
+  const model = useSearchParams()[0].get('model')
+  return <Navigate to={page && model ? `/models/${encodeURIComponent(model)}/${page}` : '/models'} replace />
+}
+
 function Live() {
   useLiveRuns()
   return null
@@ -67,6 +75,7 @@ export default function App() {
         <Routes>
           <Route element={<Shell />}>
             <Route path="/" element={<OverviewPage />} />
+            <Route path="/benchmarks" element={<ReportPage mode="benchmarks" />} />
             <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/gauge-twin" element={<GaugeOverviewPage />} />
             <Route path="/gauge-twin/cameras" element={<GaugeCamerasPage />} />
@@ -81,6 +90,9 @@ export default function App() {
             <Route path="/models/:key/connect" element={<ConnectPage />} />
             <Route path="/models/:key/live" element={<LivePage />} />
             <Route path="/models/:key/map" element={<AgvMapPage />} />
+            <Route path="/models/:key/stock" element={<WarehouseControlPage />} />
+            <Route path="/models/:key/operations" element={<OperationsDashboardPage />} />
+            <Route path="/models/:key/warehouse-report" element={<WarehouseDashboardPage />} />
             <Route path="/versions/:id" element={<EditorPage />} />
             <Route path="/versions/:id/scenarios" element={<ScenariosPage />} />
             <Route path="/versions/:id/scenarios/new" element={<ScenarioNewPage />} />
@@ -95,10 +107,8 @@ export default function App() {
               <Route path="compare" element={<RunComparePage />} />
               <Route path="report" element={<ReportPage />} />
             </Route>
-            <Route path="/reports/benchmarks" element={<ReportPage mode="benchmarks" />} />
-            <Route path="/reports/operations" element={<OperationsDashboardPage />} />
-            <Route path="/reports/warehouse" element={<WarehouseControlPage />} />
-            <Route path="/reports/warehouse-dashboard" element={<WarehouseDashboardPage />} />
+            <Route path="/reports/benchmarks" element={<Navigate to="/benchmarks" replace />} />
+            <Route path="/reports/:page" element={<LegacyReport />} />
             <Route path="/compare" element={<ComparePage />} />
             <Route path="/library" element={<LibraryLayout />}>
               <Route index element={<Navigate to="node-types" replace />} />
