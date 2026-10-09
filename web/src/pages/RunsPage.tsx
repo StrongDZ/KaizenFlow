@@ -21,16 +21,15 @@ const FILTERS = [
 
 
 const RUN_COLOR: Record<string, string> = { DONE: 'var(--color-ok)', FAILED: 'var(--color-bad)', RUNNING: 'var(--color-accent)', QUEUED: 'var(--color-muted)' }
-export default function RunsPage({ scope }: { scope: 'all' | 'version' }) {
-  const params = useParams()
-  const versionId = scope === 'version' ? Number(params.id) : undefined
+export default function RunsPage() {
+  const versionId = Number(useParams().id)
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['key']>('all')
   const [sel, setSel] = useState<number[]>([])
   const status = FILTERS.find((f) => f.key === filter)?.status
   const runs = useQuery({
-    queryKey: ['runs', 'all', versionId ?? 'all', filter],
+    queryKey: ['runs', 'all', versionId, filter],
     queryFn: () => api.allRuns({ status, version: versionId, limit: 200 }),
   })
   if (runs.isLoading) return <Loading />
@@ -86,8 +85,8 @@ export default function RunsPage({ scope }: { scope: 'all' | 'version' }) {
   return (
     <PageBody wide>
       <PageHeader icon={Play}
-        title={scope === 'all' ? 'Mọi lần chạy' : 'Lần chạy'}
-        subtitle={runs.data ? `${runs.data.length} lần chạy${scope === 'all' ? ' của mọi mô hình' : ''}` : undefined}
+        title="Lần chạy"
+        subtitle={runs.data ? `${runs.data.length} lần chạy` : undefined}
         actions={compare ? <Link className={btnPrimary} to={compare}>So sánh 2 lần chạy</Link> : <button className={btn} disabled>So sánh 2 lần chạy</button>}
       />
       <div className="flex gap-2">

@@ -16,7 +16,7 @@ export function sectionOf(path: string): Section {
   if (path.startsWith('/alerts')) return 'alerts'
   if (path.startsWith('/gauge-twin')) return 'gauge'
   if (isOverviewPath(path)) return 'overview'
-  // Một lần chạy (và so sánh lần chạy) thuộc mô hình của nó; danh sách mọi lần chạy thì ở Tổng quan.
+  // Lần chạy (và so sánh lần chạy) luôn thuộc một mô hình: không có mục riêng trên thanh chính.
   if (path.startsWith('/runs/') || path.startsWith('/compare')) return 'models'
   if (path.startsWith('/library')) return 'library'
   if (path.startsWith('/models') || path.startsWith('/versions') || path.startsWith('/scenarios')) return 'models'
@@ -34,7 +34,6 @@ const MODEL_PAGE_RE = new RegExp(`^/models/[^/]+/(${Object.keys(MODEL_PAGES).joi
 const OVERVIEW_TABS: Tab[] = [
   { label: 'Hiệu năng nhà máy', to: '/', end: true, icon: 'activity' },
   { label: 'Benchmark FMCG', to: '/benchmarks', icon: 'trophy' },
-  { label: 'Mọi lần chạy', to: '/runs', end: true, icon: 'play' },
 ]
 const isOverviewPath = (path: string) => OVERVIEW_TABS.some((t) => isTabActive(t, path))
 
@@ -152,7 +151,6 @@ export function crumbsFor(path: string, ctx: NavCtx): Crumb[] {
 
   if (path === '/') return [{ label: 'Tổng quan' }]
   if (path === '/benchmarks') return [{ label: 'Tổng quan', to: '/' }, { label: 'Benchmark FMCG' }]
-  if (path === '/runs') return [{ label: 'Tổng quan', to: '/' }, { label: 'Mọi lần chạy' }]
   if (path === '/alerts') return [{ label: 'Cảnh báo' }]
   const camera = path.match(/^\/gauge-twin\/cameras(?:\/([^/]+))?/)
   if (camera) {

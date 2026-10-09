@@ -12,8 +12,7 @@ describe('sectionOf', () => {
     expect(sectionOf('/alerts')).toBe('alerts')
     expect(sectionOf('/gauge-twin')).toBe('gauge')
     expect(sectionOf('/gauge-twin/machine_001')).toBe('gauge')
-    // Một lần chạy thuộc về mô hình; danh sách mọi lần chạy và Benchmark là trang cấp nhà máy (Tổng quan)
-    expect(sectionOf('/runs')).toBe('overview')
+    // Lần chạy thuộc về mô hình; Benchmark là trang cấp nhà máy (Tổng quan)
     expect(sectionOf('/benchmarks')).toBe('overview')
     expect(sectionOf('/runs/12/report')).toBe('models')
     expect(sectionOf('/compare')).toBe('models')
@@ -66,7 +65,6 @@ describe('tabsFor', () => {
     expect(tabsFor('/runs/12/report', { modelKey: 'm', versionId: 7 }).map((t) => t.label)).toContain('Lần chạy')
     const compare = tabsFor('/compare', { modelKey: 'm', versionId: 7 })
     expect(compare.filter((t) => isTabActive(t, '/compare')).map((t) => t.label)).toEqual(['Lần chạy'])
-    expect(tabsFor('/runs', {})).toEqual([])
     expect(tabsFor('/models', {})).toEqual([])
     expect(tabsFor('/library/node-types', {})).toEqual([])
   })
@@ -106,7 +104,6 @@ describe('crumbsFor', () => {
     expect(crumbsFor('/alerts', {}).map((c) => c.label)).toEqual(['Cảnh báo'])
     expect(crumbsFor('/models', {}).map((c) => c.label)).toEqual(['Mô hình'])
     expect(crumbsFor('/benchmarks', {}).map((c) => c.label)).toEqual(['Tổng quan', 'Benchmark FMCG'])
-    expect(crumbsFor('/runs', {}).map((c) => c.label)).toEqual(['Tổng quan', 'Mọi lần chạy'])
   })
 
   it('đặt trang so sánh vào mô hình của lần chạy', () => {
@@ -198,13 +195,13 @@ describe('subNavFor (panel phụ cạnh thanh chính)', () => {
     expect(n.groups[0].tabs.map((t) => t.label)).toEqual(['Loại node', 'Vật tư'])
     expect(isTabActive(n.groups[0].tabs[1], '/library/materials/RAW-01')).toBe(true)
   })
-  it('Tổng quan có panel phụ: hiệu năng nhà máy, Benchmark FMCG, mọi lần chạy; mỗi trang sáng đúng một mục', () => {
-    for (const p of ['/', '/benchmarks', '/runs']) {
+  it('Tổng quan có panel phụ: hiệu năng nhà máy, Benchmark FMCG; mỗi trang sáng đúng một mục', () => {
+    for (const p of ['/', '/benchmarks']) {
       const n = subNavFor(p, {})!
       expect(n.title).toBe('Tổng quan')
       expect(n.icon).toBe('overview')
       const tabs = n.groups[0].tabs
-      expect(tabs.map((t) => t.to)).toEqual(['/', '/benchmarks', '/runs'])
+      expect(tabs.map((t) => t.to)).toEqual(['/', '/benchmarks'])
       expect(tabs.filter((t) => isTabActive(t, p)).map((t) => t.to)).toEqual([p])
     }
   })

@@ -98,8 +98,9 @@ export default function App() {
             <Route path="/versions/:id/scenarios/new" element={<ScenarioNewPage />} />
             <Route path="/scenarios/:id" element={<ScenarioDetailPage />} />
             <Route path="/scenarios/:id/edit" element={<ScenarioEditPage />} />
-            <Route path="/runs" element={<RunsPage scope="all" />} />
-            <Route path="/versions/:id/runs" element={<RunsPage scope="version" />} />
+            {/* Lần chạy chỉ xem trong một mô hình (mục Lần chạy); địa chỉ danh sách chung cũ về Mô hình. */}
+            <Route path="/runs" element={<Navigate to="/models" replace />} />
+            <Route path="/versions/:id/runs" element={<RunsPage />} />
             <Route path="/runs/:id" element={<RunLayout />}>
               <Route index element={<ControlRoomPage />} />
               <Route path="sensors" element={<RunSensorsPage />} />
