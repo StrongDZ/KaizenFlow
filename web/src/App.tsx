@@ -1,6 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Link, Navigate, Route, Routes, useParams, useSearchParams } from 'react-router-dom'
 import { useLiveRuns } from './api/live'
+import RunLayout from './components/controlroom/RunLayout'
+import StationLayout from './components/gauge/StationLayout'
 import { Shell } from './components/shell/Shell'
 import { EmptyState, PageBody } from './components/ui'
 import { shouldRetry } from './lib/retry'
@@ -28,6 +30,7 @@ import NodeTypesPage from './pages/NodeTypesPage'
 import OperationsDashboardPage from './pages/OperationsDashboardPage'
 import OverviewPage from './pages/OverviewPage'
 import ReportPage from './pages/ReportPage'
+import RunComparePage from './pages/RunComparePage'
 import RunRecommendationsPage from './pages/RunRecommendationsPage'
 import RunSensorsPage from './pages/RunSensorsPage'
 import RunsPage from './pages/RunsPage'
@@ -51,6 +54,14 @@ function NotFound() {
   )
 }
 
+/** Địa chỉ báo cáo cũ (/reports/…?model=…) dẫn về trang tương ứng trong mô hình; không nêu mô hình thì về danh sách Mô hình. */
+const LEGACY_REPORT: Record<string, string> = { operations: 'operations', warehouse: 'stock', 'warehouse-dashboard': 'warehouse-report' }
+function LegacyReport() {
+  const page = LEGACY_REPORT[useParams().page ?? '']
+  const model = useSearchParams()[0].get('model')
+  return <Navigate to={page && model ? `/models/${encodeURIComponent(model)}/${page}` : '/models'} replace />
+}
+
 function Live() {
   useLiveRuns()
   return null
@@ -64,33 +75,41 @@ export default function App() {
         <Routes>
           <Route element={<Shell />}>
             <Route path="/" element={<OverviewPage />} />
+            <Route path="/benchmarks" element={<ReportPage mode="benchmarks" />} />
             <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/gauge-twin" element={<GaugeOverviewPage />} />
             <Route path="/gauge-twin/cameras" element={<GaugeCamerasPage />} />
             <Route path="/gauge-twin/cameras/:camera" element={<GaugeCameraPage />} />
-            <Route path="/gauge-twin/:machine" element={<GaugeStationPage />} />
-            <Route path="/gauge-twin/:machine/history" element={<GaugeHistoryPage />} />
+            <Route path="/gauge-twin/:machine" element={<StationLayout />}>
+              <Route index element={<GaugeStationPage />} />
+              <Route path="history" element={<GaugeHistoryPage />} />
+            </Route>
             <Route path="/models" element={<ModelsPage />} />
             <Route path="/models/:key/versions" element={<VersionsPage />} />
             <Route path="/models/:key/sources" element={<SourcesPage />} />
             <Route path="/models/:key/connect" element={<ConnectPage />} />
             <Route path="/models/:key/live" element={<LivePage />} />
             <Route path="/models/:key/map" element={<AgvMapPage />} />
+            <Route path="/models/:key/stock" element={<WarehouseControlPage />} />
+            <Route path="/models/:key/operations" element={<OperationsDashboardPage />} />
+            <Route path="/models/:key/warehouse-report" element={<WarehouseDashboardPage />} />
             <Route path="/versions/:id" element={<EditorPage />} />
             <Route path="/versions/:id/scenarios" element={<ScenariosPage />} />
             <Route path="/versions/:id/scenarios/new" element={<ScenarioNewPage />} />
             <Route path="/scenarios/:id" element={<ScenarioDetailPage />} />
             <Route path="/scenarios/:id/edit" element={<ScenarioEditPage />} />
-            <Route path="/runs" element={<RunsPage scope="all" />} />
-            <Route path="/versions/:id/runs" element={<RunsPage scope="version" />} />
-            <Route path="/runs/:id" element={<ControlRoomPage />} />
-            <Route path="/runs/:id/sensors" element={<RunSensorsPage />} />
-            <Route path="/runs/:id/recommendations" element={<RunRecommendationsPage />} />
-            <Route path="/runs/:id/report" element={<ReportPage />} />
-            <Route path="/reports/benchmarks" element={<ReportPage mode="benchmarks" />} />
-            <Route path="/reports/operations" element={<OperationsDashboardPage />} />
-            <Route path="/reports/warehouse" element={<WarehouseControlPage />} />
-            <Route path="/reports/warehouse-dashboard" element={<WarehouseDashboardPage />} />
+            {/* Lần chạy chỉ xem trong một mô hình (mục Lần chạy); địa chỉ danh sách chung cũ về Mô hình. */}
+            <Route path="/runs" element={<Navigate to="/models" replace />} />
+            <Route path="/versions/:id/runs" element={<RunsPage />} />
+            <Route path="/runs/:id" element={<RunLayout />}>
+              <Route index element={<ControlRoomPage />} />
+              <Route path="sensors" element={<RunSensorsPage />} />
+              <Route path="recommendations" element={<RunRecommendationsPage />} />
+              <Route path="compare" element={<RunComparePage />} />
+              <Route path="report" element={<ReportPage />} />
+            </Route>
+            <Route path="/reports/benchmarks" element={<Navigate to="/benchmarks" replace />} />
+            <Route path="/reports/:page" element={<LegacyReport />} />
             <Route path="/compare" element={<ComparePage />} />
             <Route path="/library" element={<LibraryLayout />}>
               <Route index element={<Navigate to="node-types" replace />} />

@@ -2,6 +2,7 @@ import { MarkerType, type Edge, type EdgeChange, type Node, type NodeChange } fr
 import type { ReactNode } from 'react'
 import type { Graph, GraphEdge, GraphNode, Json, NodeType } from '../api/types'
 import { inferDir, type Dir } from './layout'
+import type { NodeRow } from './nodeSummary'
 import type { PinTone } from './pins'
 
 export type Color = 'GREEN' | 'YELLOW' | 'RED' | 'NONE'
@@ -20,13 +21,15 @@ export type FlowData = {
   issueTone?: 'error' | 'warning'
   issueTitle?: string
   badge?: Badge
+  /** Số đo hiện trong thân thẻ node khi xem lần chạy; vắng mặt thì thẻ tự tóm tắt thông số thiết lập. */
+  rows?: NodeRow[]
   pins?: PinView[]
   pinState?: { open: number | null; setOpen: (n: number | null) => void }
   /** Hướng sơ đồ: quyết định cổng nối nằm hai bên (LR) hay trên/dưới (TB). */
   dir?: Dir
   /** Tên biểu tượng lucide của loại node (ui.icon), để thẻ node và danh sách loại có cùng hình. */
   icon?: string
-  /** Màu nhận diện loại node từ ui.color; chỉ dùng làm accent, không thay màu trạng thái. */
+  /** Màu ui.color của loại node. Thẻ node trên sơ đồ không dùng nó (đỏ/xanh lá dễ đọc nhầm thành trạng thái); màu nhận diện lấy theo vai trò. */
   accent?: string
 }
 /** dots/cycleS/running chỉ có ở Control Room (hạt chạy trên edge); không bao giờ được lưu vào sơ đồ. */

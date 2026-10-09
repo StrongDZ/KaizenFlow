@@ -1,35 +1,29 @@
 import { useQuery } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { gaugeApi } from '../api/gauge'
-import { ApiDownBanner, GaugeArea } from '../components/gauge/GaugeArea'
-import { DEVICE_PHOTOS } from '../components/gauge/devicePhotos'
-import { StationCard } from '../components/gauge/StationCard'
+import { gaugeConfigApi } from '../api/gaugeConfig'
+import { ApiDownBanner, GaugeArea, GaugeSetupSteps } from '../components/gauge/GaugeArea'
+import { STATION_GRID, StationRow } from '../components/gauge/StationRow'
+import { FilterChip, Loading, input } from '../components/ui'
 import {
   countKinds, defaultLine, filterStations, kindLabel, linesOf, needsAttention, sortStations, stationKind, type StationKind,
 } from '../lib/gaugeView'
 
 const FILTERS: StationKind[] = ['alarm', 'poor', 'stale', 'lost', 'ok']
 
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      aria-pressed={active}
-      className={`min-h-11 rounded-full border px-4 text-sm ${active ? 'border-accent font-bold text-text' : 'border-line-2 text-text-2 hover:border-muted'}`}
-    >
-      {children}
-    </button>
-  )
-}
-
-/** Tầng ngoài: cả dây chuyền trên một trang, trạm cần người xem đứng đầu. */
+/** Danh sách trạm của một dây chuyền: trạm cần người xem đứng đầu, mỗi dòng nói nên kiểm tra gì. */
 export default function GaugeOverviewPage() {
   const q = useQuery({ queryKey: ['gauge', 'stations'], queryFn: gaugeApi.stations, refetchInterval: 2000 })
   const all = useMemo(() => q.data ?? [], [q.data])
   // null: chưa chọn, dùng dây chuyền đang có nhiều trạm gửi dữ liệu nhất.
   const [picked, setPicked] = useState<string | null>(null)
   const [kind, setKind] = useState<StationKind | 'all'>('all')
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 5000)
+    return () => clearInterval(t)
+  }, [])
 
   const lines = useMemo(() => linesOf(all), [all])
   const line = picked ?? defaultLine(all)
@@ -37,79 +31,76 @@ export default function GaugeOverviewPage() {
   const counts = useMemo(() => countKinds(inLine), [inLine])
   const shown = useMemo(() => sortStations(filterStations(inLine, '', kind)), [inLine, kind])
   // Trạm chưa từng gửi dữ liệu không phải việc của người trực ca: gom xuống cuối, mở ra khi cần.
-  const cards = shown.filter((s) => stationKind(s) !== 'idle')
+  const rows = shown.filter((s) => stationKind(s) !== 'idle')
   const idle = kind === 'all' ? shown.filter((s) => stationKind(s) === 'idle') : []
   const attention = inLine.filter((s) => needsAttention(stationKind(s))).length
   const reporting = inLine.length - counts.idle
+  // Chưa có trạm nào báo về: cho biết đang ở bước nào của ba bước thiết lập.
+  const cameras = useQuery({ queryKey: ['gauge-config', 'cameras'], queryFn: gaugeConfigApi.cameras, enabled: q.isSuccess && reporting === 0, retry: false })
+  const setupDone = all.length > 0 ? 2 : (cameras.data?.length ?? 0) > 0 ? 1 : 0
 
-  if (q.isPending) return <GaugeArea><p className="text-muted">Đang tải danh sách trạm…</p></GaugeArea>
-  if (!q.data) return <GaugeArea><ApiDownBanner error={q.error} /></GaugeArea>
+  if (q.isPending) return <Loading />
+  if (!q.data) {
+    return (
+      <GaugeArea>
+        <h1 className="text-lg font-semibold text-text">Trạm đọc đồng hồ</h1>
+        <ApiDownBanner error={q.error} />
+      </GaugeArea>
+    )
+  }
 
   return (
     <GaugeArea>
       {q.isError && <ApiDownBanner error={q.error} />}
-
-      <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
-        <div>
-          <label className="flex items-center gap-2 font-mono text-xs text-muted">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <h1 className="text-lg font-semibold text-text">
+          {reporting === 0 ? 'Chưa trạm nào gửi số đọc' : attention === 0 ? `${reporting} trạm đều bình thường` : `${attention} trạm cần xem`}
+        </h1>
+        {reporting > 0 && <span className="text-xs text-muted">trên {reporting} trạm đang gửi số đọc</span>}
+        {lines.length > 1 && (
+          <label className="ml-auto flex items-center gap-2 text-xs text-muted">
             Dây chuyền
-            <select
-              value={line}
-              onChange={(e) => setPicked(e.target.value)}
-              className="min-h-11 rounded-lg border border-line-2 bg-panel px-3 text-sm text-text"
-            >
+            <select value={line} onChange={(e) => setPicked(e.target.value)} className={input}>
               <option value="">Tất cả</option>
               {lines.map((l) => <option key={l} value={l}>{l}</option>)}
             </select>
           </label>
-          <h1 className="mt-2 text-4xl font-bold leading-tight tracking-tight">
-            {reporting === 0 ? 'Chưa trạm nào gửi dữ liệu' : attention === 0 ? `${reporting} trạm đều bình thường` : `${attention} trạm cần bạn xem`}
-          </h1>
-        </div>
-        <div className="ml-auto flex flex-wrap gap-2">
-          <Chip active={kind === 'all'} onClick={() => setKind('all')}>Tất cả · {reporting}</Chip>
-          {FILTERS.map((k) => (
-            <Chip key={k} active={kind === k} onClick={() => setKind(k)}>{kindLabel(k)} · {counts[k]}</Chip>
-          ))}
-        </div>
-      </div>
+        )}
+      </header>
 
-      {cards.length > 0 ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-4">
-          {cards.map((s) => <StationCard key={s.machine_id} station={s} />)}
-        </div>
+      {reporting === 0 ? (
+        <GaugeSetupSteps done={setupDone} />
       ) : (
-        <p className="rounded-xl bg-panel px-5 py-8 text-center text-muted">
-          {kind === 'all' ? 'Dây chuyền này chưa có trạm nào gửi dữ liệu.' : `Không có trạm nào ở trạng thái “${kindLabel(kind)}”.`}
-        </p>
+        <>
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Lọc theo trạng thái">
+            <FilterChip active={kind === 'all'} onClick={() => setKind('all')}>Tất cả {reporting}</FilterChip>
+            {FILTERS.filter((k) => counts[k] > 0 || kind === k).map((k) => (
+              <FilterChip key={k} active={kind === k} onClick={() => setKind(k)}>{kindLabel(k)} {counts[k]}</FilterChip>
+            ))}
+          </div>
+          <section className="overflow-hidden rounded-lg border border-line bg-panel-2">
+            <div className={`${STATION_GRID} border-b border-line px-3 py-1.5 text-[11px] text-muted`}>
+              <span>Trạng thái</span><span>Trạm</span><span>Số đọc mới nhất</span><span className="text-right">Cập nhật</span><span />
+            </div>
+            {rows.length > 0
+              ? rows.map((s) => <StationRow key={s.machine_id} station={s} now={now} />)
+              : <p className="px-3 py-6 text-center text-xs text-muted">Không có trạm nào ở trạng thái “{kind === 'all' ? '' : kindLabel(kind)}”.</p>}
+          </section>
+        </>
       )}
 
       {idle.length > 0 && (
-        <details className="rounded-xl bg-panel px-5 py-3">
-          <summary className="flex min-h-11 cursor-pointer items-center text-sm text-text-2">
-            {idle.length} trạm đã có config nhưng chưa gửi dữ liệu
-          </summary>
-          <ul className="flex flex-wrap gap-x-5 gap-y-2 pb-2 pt-1 font-mono text-xs">
+        <details className="rounded-lg border border-line px-3 py-2 text-xs">
+          <summary className="cursor-pointer text-text-2">{idle.length} trạm đã có config nhưng edge chưa gửi số đọc nào</summary>
+          <ul className="flex flex-wrap gap-x-4 gap-y-1.5 pb-1 pt-2">
             {idle.map((s) => (
               <li key={s.machine_id}>
-                <Link to={`/gauge-twin/${encodeURIComponent(s.machine_id)}`} className="text-muted underline decoration-dotted hover:text-text">
-                  {s.machine_id}
-                </Link>
+                <Link to={`/gauge-twin/${encodeURIComponent(s.machine_id)}`} className="text-muted underline decoration-dotted hover:text-text">{s.machine_id}</Link>
               </li>
             ))}
           </ul>
         </details>
       )}
-
-      <p className="text-xs text-faint">
-        Ảnh trên thẻ là vùng đọc của từng đồng hồ, cắt từ một khung hình camera lấy khi mở trang. Camera không trả lời thì thẻ hiện ảnh minh hoạ loại thiết bị, nguồn Wikimedia Commons:{' '}
-        {DEVICE_PHOTOS.map((p, i) => (
-          <span key={p.src}>
-            {i > 0 && ' · '}
-            <a href={p.page} target="_blank" rel="noreferrer" className="underline decoration-dotted hover:text-muted">{p.kind}</a> ({p.author}, {p.license})
-          </span>
-        ))}
-      </p>
     </GaugeArea>
   )
 }

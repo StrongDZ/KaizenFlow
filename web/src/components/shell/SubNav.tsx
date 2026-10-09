@@ -1,24 +1,26 @@
 import {
-  Activity, Database, Library, FileText, FlaskConical, History, Lightbulb, Map as MapIcon, Monitor, Package, PanelLeftClose, PanelLeftOpen, Play, Plug, Radio, Shapes, Workflow,
-  type LucideIcon,
+  Activity, Boxes, Camera, Database, Gauge, Library, FileText, FlaskConical, History, LayoutGrid, Lightbulb, Map as MapIcon, Monitor, Package, PanelLeftClose, PanelLeftOpen,
+  Play, Plug, Radio, Shapes, Trophy, Warehouse, Workflow, type LucideIcon,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { isTabActive, type SubNav as SubNavData } from '../../lib/nav'
 
 const ICONS: Record<string, LucideIcon> = {
   diagram: Workflow, history: History, flask: FlaskConical, play: Play, radio: Radio, database: Database, plug: Plug, map: MapIcon,
-  monitor: Monitor, activity: Activity, lightbulb: Lightbulb, file: FileText, shapes: Shapes, package: Package,
+  monitor: Monitor, activity: Activity, lightbulb: Lightbulb, file: FileText, shapes: Shapes, package: Package, gauge: Gauge, camera: Camera,
+  trophy: Trophy, boxes: Boxes, warehouse: Warehouse,
 }
+const HEAD_ICONS = { overview: LayoutGrid, library: Library, gauge: Gauge } as const
 
 /**
- * Panel phụ cạnh thanh chính: điều hướng trong một mô hình (hoặc lần chạy, thư viện). Mặc định mở rộng; `compact` là dải biểu tượng hẹp
+ * Panel phụ cạnh thanh chính: điều hướng trong một mục (Tổng quan, một mô hình, đồng hồ, thư viện). Mặc định mở rộng; `compact` là dải biểu tượng hẹp
  * (vẫn bấm chuyển trang được, rê chuột thấy tên) để chừa chỗ cho sơ đồ. `onToggle` đổi giữa hai dạng.
  */
 export function SubNav({ nav, path, compact, onToggle }: { nav: SubNavData; path: string; compact: boolean; onToggle: () => void }) {
-  const HeadIcon = nav.icon === 'library' ? Library : Workflow
+  const HeadIcon = nav.icon ? HEAD_ICONS[nav.icon] : Workflow
   if (compact) {
     return (
-      <nav aria-label="Điều hướng trong mô hình" className="flex w-[52px] flex-none flex-col items-center border-r border-line bg-panel-2 print:hidden">
+      <nav aria-label={`Điều hướng trong ${nav.title}`} className="flex w-[52px] flex-none flex-col items-center border-r border-line bg-panel-2 print:hidden">
         <button onClick={onToggle} aria-label="Mở rộng panel điều hướng" title={`${nav.title}: mở rộng (phím [)`}
           className="mt-2.5 flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-raised hover:text-text">
           <PanelLeftOpen size={16} />
@@ -46,7 +48,7 @@ export function SubNav({ nav, path, compact, onToggle }: { nav: SubNavData; path
     )
   }
   return (
-    <nav aria-label="Điều hướng trong mô hình" className="flex w-[216px] flex-none flex-col border-r border-line bg-panel-2 print:hidden">
+    <nav aria-label={`Điều hướng trong ${nav.title}`} className="flex w-[216px] flex-none flex-col border-r border-line bg-panel-2 print:hidden">
       <div className="flex items-center gap-2.5 px-3 pb-2 pt-3">
         <span className="flex h-8 w-8 flex-none items-center justify-center rounded-lg bg-accent/15 text-accent" aria-hidden><HeadIcon size={16} /></span>
         <span className="min-w-0 flex-1 leading-tight">

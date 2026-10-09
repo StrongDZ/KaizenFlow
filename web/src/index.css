@@ -34,6 +34,19 @@
   --color-role-process: #6fa3ff;
   --color-role-sink: #8fb0c9;
   --color-role-pool: #e08fd1;
+  /* Bí danh cho các trang dùng tên ok-text / warn-text / info / err (Tổng quan, Trực tiếp, popover kho và máy):
+     cùng bảng màu trạng thái, chữ trạng thái đậm hơn nền để đọc được ở cả hai giao diện. */
+  --color-ok-text: #4fd18c;
+  --color-warn-text: #f5b83d;
+  --color-err: #f0564a;
+  --color-err-text: #ff7a6e;
+  --color-err-bg: #2a1a1e;
+  --color-info: #5aa2ff;
+  --color-info-text: #8cbcff;
+  --color-info-bg: #15243a;
+  --color-ok-bg: #12261c;
+  --color-warn-bg: #2a2412;
+  --color-muted-bg: #1c2633;
 }
 
 [data-theme='light'] {
@@ -65,6 +78,17 @@
   --color-role-process: #2a64d0;
   --color-role-sink: #4b6a83;
   --color-role-pool: #a8408f;
+  --color-ok-text: #167a45;
+  --color-warn-text: #8a6100;
+  --color-err: #d33a2c;
+  --color-err-text: #bf2e20;
+  --color-err-bg: #fbe9e7;
+  --color-info: #1d5fd1;
+  --color-info-text: #1a4fae;
+  --color-info-bg: #e8f0fd;
+  --color-ok-bg: #e6f4ec;
+  --color-warn-bg: #fdf4dc;
+  --color-muted-bg: #eef1f5;
 }
 
 /* Bản in luôn ra giấy trắng, kể cả khi đang ở trang tối. */
@@ -95,8 +119,25 @@
     --color-role-process: #2a64d0;
     --color-role-sink: #4b6a83;
     --color-role-pool: #a8408f;
+    --color-ok-text: #167a45;
+    --color-warn-text: #8a6100;
+    --color-err: #d33a2c;
+    --color-err-text: #bf2e20;
+    --color-err-bg: #fbe9e7;
+    --color-info: #1d5fd1;
+    --color-info-text: #1a4fae;
+    --color-info-bg: #e8f0fd;
+    --color-ok-bg: #e6f4ec;
+    --color-warn-bg: #fdf4dc;
+    --color-muted-bg: #eef1f5;
     color-scheme: light;
   }
+}
+
+/* Tailwind v4 để viền mặc định là currentColor: `border` không kèm màu thành viền trắng chói trên nền tối. Mặc định là màu đường kẻ;
+   utility màu viền (border-line-2, border-bad…) vẫn đè được vì nằm ở lớp sau. */
+@layer base {
+  *, ::after, ::before, ::backdrop, ::file-selector-button { border-color: var(--color-line, currentColor); }
 }
 
 :root { color-scheme: dark; }
@@ -141,14 +182,13 @@ input::placeholder, textarea::placeholder { color: var(--color-faint); }
 }
 .react-flow__nodesselection-rect { background: transparent; border: 1px dashed var(--color-muted); border-radius: 8px; }
 
-/* Hàng trên conveyor: vệt đứt cho biết hướng; hạt có viền và bóng để vẫn thấy rõ trên cả hai theme. */
+/* Hàng trên conveyor: vệt đứt cho biết hướng; hạt có viền màu nền để tách khỏi đường nối trên cả hai theme, không phát sáng. */
 .kf-conveyor-motion {
   fill: none; pointer-events: none; stroke-linecap: round; stroke-dasharray: 2 12;
   animation-name: kf-conveyor; animation-timing-function: linear; animation-iteration-count: infinite;
 }
 .kf-flow-particle {
-  fill: currentColor; stroke: var(--color-bg); stroke-width: 1.5px; pointer-events: none;
-  filter: drop-shadow(0 0 2.5px currentColor); offset-rotate: 0deg;
+  fill: currentColor; stroke: var(--color-bg); stroke-width: 1.25px; pointer-events: none; offset-rotate: 0deg;
   animation-name: kf-flow-particle; animation-timing-function: linear; animation-iteration-count: infinite;
 }
 @keyframes kf-conveyor { from { stroke-dashoffset: 14; } to { stroke-dashoffset: 0; } }

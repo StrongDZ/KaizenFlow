@@ -1,10 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import {
-  ArrowUpRight, Plus, PlayCircle, Workflow, Network, LineChart, Library,
-  Search as SearchIcon, Sparkles, Clock, Boxes, Warehouse,
-  CircleDot, TrendingUp, TrendingDown,
+  Boxes, Warehouse, TrendingUp, TrendingDown, Sparkles,
   Factory, Truck, Wallet, type LucideIcon, AlertTriangle,
 } from 'lucide-react'
 import { Area, AreaChart, ResponsiveContainer } from 'recharts'
@@ -13,11 +11,11 @@ import type {
   ModelSummary, PerformanceKpis, PerfMachineRow, PerfFleetRow,
   PerfStorageRow, PerfFinanceRow, PerfSeriesPoint,
 } from '../api/types'
-import { EmptyState, ErrorBox, Loading, PageBody, btnPrimary, input } from '../components/ui'
+import { EmptyState, ErrorBox, Loading, PageBody } from '../components/ui'
 import { fmtDateTime, fmtDelta } from '../lib/format'
-import { isValidModelKey } from '../lib/rules'
-import { FormDialog, Field } from '../components/FormDialog'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { LIVE_GRID, LiveModelRow } from '../components/live/LiveModelRow'
+import { useFeeds } from '../hooks/useLive'
+import { byCode } from '../lib/model'
 
 /* ═══════════════════════════════════════════════════════════════════════════
    HELPERS — Seeded PRNG (mulberry32) để mock dữ liệu DETERMINISTIC theo model
@@ -353,7 +351,7 @@ function DeltaChip({ metricKey, value, showIcon = true, fallbackGood = true }:
   )
 }
 
-const CARD_BASE = 'rounded-2xl border border-line bg-panel transition hover:border-text/20'
+const CARD_BASE = 'rounded-xl border border-line bg-panel'
 
 function HeroKpiCard({
   icon: Icon, title, value, metricKey, delta, hint, series, tone,
@@ -361,16 +359,12 @@ function HeroKpiCard({
   icon: LucideIcon; title: string; value: React.ReactNode; metricKey: string;
   delta: number; hint?: string; series: PerfSeriesPoint[]; tone?: 'accent' | 'good' | 'warn' | 'err';
 }) {
-  const toneCls =
-    tone === 'accent' ? 'from-accent-soft-2 via-accent-soft/60 to-panel border-accent-line/60'
-    : tone === 'good'   ? 'from-ok-bg/70 via-ok-bg/30 to-panel border-ok/30'
-    : tone === 'warn'   ? 'from-warn-bg/70 via-warn-bg/30 to-panel border-warn/30'
-    : tone === 'err'    ? 'from-err-bg/70 via-err-bg/30 to-panel border-err/30'
-    : 'from-panel-2 via-panel to-panel border-line'
+  // Thẻ không tô nền theo tốt/xấu: chiều tăng giảm đã nằm ở chip chênh lệch và màu đường xu hướng.
+  const toneCls = tone === 'err' ? 'border-err/40' : 'border-line'
   const sparkTone =
     tone === 'good' ? 'good' : tone === 'err' ? 'bad' : 'neutral'
   return (
-    <div className={`${CARD_BASE} relative overflow-hidden bg-gradient-to-br ${toneCls} p-4`}>
+    <div className={`${CARD_BASE} relative overflow-hidden ${toneCls} p-4`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1.5">
           <div className="flex items-center gap-1.5 text-[11px] font-medium text-muted">
@@ -439,85 +433,20 @@ const chipBase = 'rounded-md border px-1.5 py-0.5 text-[10px] font-medium capita
 /* ═══════════════════════════════════════════════════════════════════════════
    PAGE — Dashboard tổng thể hiệu năng
    ═══════════════════════════════════════════════════════════════════════════ */
-const SEARCH_KEYS = (m: ModelSummary) => [m.model_key, `v${m.latest_version}`, m.status]
-function filterRows<M extends object>(rows: M[], q: string, keys: (m: M) => (string | number | null | undefined)[]): M[] {
-  const t = q.trim().toLowerCase()
-  if (!t) return rows
-  return rows.filter((r) => keys(r).some((k) => (k ?? '').toString().toLowerCase().includes(t)))
-}
-
-type QuickAction = { to: string; label: string; icon: LucideIcon; hint?: string; primary?: boolean; tone?: 'edit' | 'live' | 'scenario' | 'connect' | 'runs' | 'lib' }
-const TONE_BADGE: Record<Exclude<QuickAction['tone'], undefined>, string> = {
-  edit:     'bg-accent-soft-2/70 text-accent-text border border-accent-line/60',
-  live:     'bg-ok-bg text-ok-text border border-ok/30',
-  scenario: 'bg-warn-bg text-warn-text border border-warn/30',
-  connect:  'bg-info-bg text-info-text border border-info/30',
-  runs:     'bg-panel-2 text-text border border-line-2',
-  lib:      'bg-panel-2 text-text-2 border border-line-2',
-}
-const ACTION_PILL =
-  'group inline-flex items-center gap-2 rounded-xl border border-line-2 bg-panel px-3 py-2 text-xs font-medium text-text-2 hover:border-text/30 hover:bg-panel-2 hover:text-text transition'
-const PRIMARY_ACTION =
-  'group inline-flex items-center gap-2 rounded-xl bg-text px-4 py-2 text-xs font-semibold text-bg hover:opacity-90 transition'
-
-function QuickNav({ to, label, icon: Icon, hint, primary, tone = 'edit' }: QuickAction) {
-  return (
-    <Link to={to} className={primary ? PRIMARY_ACTION : ACTION_PILL} aria-label={`${label}${hint ? ' — ' + hint : ''}`}>
-      <Icon size={13} strokeWidth={1.8} />
-      <span className="flex flex-col items-start leading-tight">
-        <span className="inline-flex items-center gap-1.5">
-          {label}
-          {tone && !primary && (
-            <span className={`hidden sm:inline-flex items-center rounded-md px-1.5 py-px text-[9.5px] ${TONE_BADGE[tone]}`}>{tone}</span>
-          )}
-        </span>
-        {hint && <span className="text-[10.5px] text-muted font-normal group-hover:text-text-2 transition">{hint}</span>}
-      </span>
-      <ArrowUpRight size={11} className="ml-auto opacity-40 group-hover:opacity-80 group-hover:-translate-y-px group-hover:translate-x-px transition" />
-    </Link>
-  )
-}
-
 export default function OverviewPage() {
   /* ═══ Rules of Hooks ═══
      TẤT CẢ useX() phải gọi TRƯỚC mọi early return / isLoading check.
      Không bao giờ di chuyển khối này xuống dưới conditional return. */
-  const navigate = useNavigate()
-  const qc = useQueryClient()
-  const [q, setQ] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [newKey, setNewKey] = useState('')
   const models = useQuery({ queryKey: ['models'], queryFn: api.models })
   const perf   = usePerformanceKpis(models.data ?? [], 5)
-  const create = useMutation({
-    mutationFn: () => api.createModel(newKey.trim()),
-    onSuccess: (r) => {
-      void qc.invalidateQueries({ queryKey: ['models'] })
-      setCreating(false); setNewKey('')
-      navigate(`/versions/${r.version_id}`)
-    },
-  })
-
-  const recent = useMemo(
-    () => [...(models.data ?? [])].sort((a, b) => (Date.parse(b.last_run_at ?? '') || 0) - (Date.parse(a.last_run_at ?? '') || 0)),
-    [models.data],
+  // Mô hình đang vận hành thật: feed đang phát hoặc tạm dừng. Mỗi mô hình có feed riêng, nhiều mô hình chạy song song.
+  const feeds = useFeeds()
+  const types = useQuery({ queryKey: ['node-types'], queryFn: api.nodeTypes })
+  const typeMap = useMemo(() => byCode(types.data ?? []), [types.data])
+  const live = useMemo(
+    () => (feeds.data ?? []).filter((f) => f.model && f.state !== 'idle').sort((a, b) => Number(b.state === 'running') - Number(a.state === 'running') || (a.model ?? '').localeCompare(b.model ?? '')),
+    [feeds.data],
   )
-  const filtered = filterRows(recent, q, SEARCH_KEYS)
-
-  const defaultModel = recent[0]
-  const defaultVid   = defaultModel?.latest_version_id
-  const defaultKey   = defaultModel?.model_key
-
-  const quickActions: QuickAction[] = useMemo(() => ([
-    { to: defaultVid ? `/versions/${defaultVid}`                 : '/models',    label: 'Mở Sơ đồ',  icon: Workflow,   hint: defaultModel ? `${defaultModel.model_key} v${defaultModel.latest_version}` : 'Chọn model trên trang Mô hình', tone: 'edit', primary: true },
-    { to: defaultKey ? `/models/${encodeURIComponent(defaultKey)}/live`       : '/models',    label: 'Trực tiếp', icon: PlayCircle, hint: 'Bấm phát feed realtime, click kho xem tồn popup', tone: 'live' },
-    { to: defaultKey ? '/reports/warehouse-dashboard'                      : '/reports/warehouse-dashboard', label: 'Kho tổng thể', icon: Warehouse,  hint: 'Dashboard KPIs, order sắp tới, cảnh báo, lịch sử 14 ngày', tone: 'runs' },
-    { to: defaultKey ? '/reports/warehouse'                              : '/reports/warehouse', label: 'Điều khiển tồn kho', icon: Boxes, hint: 'Điều chỉnh tay, ép replenish, xem kênh SKU chi tiết', tone: 'lib' },
-    { to: defaultVid ? `/versions/${defaultVid}/scenarios`      : '/scenarios', label: 'Kịch bản',  icon: LineChart,  hint: 'Tạo scenario, set tham số, chạy hàng loạt',           tone: 'scenario' },
-    { to: defaultKey ? `/models/${encodeURIComponent(defaultKey)}/connect`    : '/models',    label: 'Kết nối DL',icon: Network,    hint: 'Ghép tín hiệu IoT, AGV, MES, ERP vào từng node/edge', tone: 'connect' },
-    { to: '/runs',                                         label: 'Lần chạy', icon: CircleDot,  hint: 'Xem trạng thái, so sánh, replay control room',         tone: 'runs' },
-    { to: '/library/node-types',                           label: 'Thư viện', icon: Library,    hint: 'Node types, vật tư định nghĩa chuẩn hoá data contract', tone: 'lib' },
-  ] as QuickAction[]), [defaultModel, defaultVid, defaultKey])
 
   // ————— isLoading check ĐẶT Ở CUỐI khối hooks (không sớm hơn) —————
   const isLoading = models.isLoading || perf.isLoading
@@ -545,69 +474,76 @@ export default function OverviewPage() {
       {/* ════════════════════════════════════════════════════════════════════
           HERO BANNER — Gradient blur + Tóm tắt điều hành (Executive Summary)
           ════════════════════════════════════════════════════════════════════ */}
-      <section className="relative overflow-hidden rounded-3xl border border-line bg-gradient-to-br from-panel via-panel to-panel-2 px-5 py-5 sm:px-7 sm:py-6">
-        <div aria-hidden className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-accent-2/20 blur-3xl" />
+      <section className="relative overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-panel via-panel to-panel-2 px-5 py-4 sm:px-6 sm:py-5">
+        <div aria-hidden className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-accent/15 blur-3xl" />
         <div aria-hidden className="pointer-events-none absolute -bottom-28 -left-12 h-60 w-60 rounded-full bg-ok/10 blur-3xl" />
         <div aria-hidden className="pointer-events-none absolute right-1/3 top-1/2 h-40 w-40 rounded-full bg-warn/10 blur-3xl" />
 
-        <div className="relative flex flex-wrap items-start justify-between gap-6">
-          <div className="flex max-w-2xl flex-col gap-3">
-            <div className="inline-flex w-fit items-center gap-1.5 rounded-full border border-accent-line/50 bg-accent-soft-2/60 px-2.5 py-1 text-[10.5px] font-medium text-accent-text">
-              <Sparkles size={11} strokeWidth={2} />
-              Tổng quan hiệu năng — Executive Dashboard
+        <div className="relative flex flex-wrap items-center justify-between gap-6">
+          <div className="flex max-w-2xl flex-col gap-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-line-2 bg-panel/60 px-2.5 py-0.5 text-[10.5px] font-medium text-text-2">
+                <Sparkles size={11} strokeWidth={2} className="text-accent" />
+                Tổng quan hiệu năng
+              </span>
+              <span className="rounded-full border border-warn/40 bg-warn/10 px-2 py-0.5 text-[10.5px] text-warn-text" title="Các chỉ số máy, xe, kho và tài chính trên trang này đang sinh từ dữ liệu mẫu, chưa nối API thật">Số liệu minh hoạ</span>
             </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-text sm:text-[27px] leading-tight">
-              Hiệu năng vận hành nhà máy — Cập nhật <span className="text-accent-text">{fmtDateTime(kpis.as_of)}</span>
+            <h1 className="text-xl font-semibold leading-snug tracking-tight text-text">
+              Hiệu năng vận hành nhà máy <span className="font-normal text-muted">—</span> <span className="text-accent">cập nhật {fmtDateTime(kpis.as_of)}</span>
             </h1>
-            <p className="max-w-xl text-sm text-muted leading-relaxed">
-              Tổng hợp chỉ số cốt lõi trên 4 trụ cột: <b className="text-text-2">Máy móc · Xe vận chuyển · Kho lưu trữ · Kinh tế</b>.
-              Mỗi thẻ bên dưới đều link đến nơi xử lý chi tiết; mọi số liệu đều đồng bộ thời gian thực với live engine.
+            <p className="max-w-xl text-[12.5px] leading-relaxed text-muted">
+              Chỉ số cốt lõi trên bốn trụ cột: <b className="font-medium text-text-2">máy móc, xe vận chuyển, kho lưu trữ và tài chính</b>.
+              Mỗi thẻ bên dưới dẫn tới nơi xem chi tiết và xử lý.
             </p>
-            <div className="flex flex-wrap items-center gap-2 pt-0.5">
-              <button
-                className={PRIMARY_ACTION}
-                onClick={() => { setNewKey(''); setCreating(true) }}
-                aria-label="Tạo một mô hình nhà máy mới"
-              >
-                <Plus size={13} strokeWidth={1.9} /> Tạo mô hình mới
-                <ArrowUpRight size={11} className="opacity-70" />
-              </button>
-              {quickActions.filter((a) => !a.primary).slice(0, 3).map((a) => <QuickNav key={a.label + a.to} {...a} />)}
-            </div>
           </div>
 
-          {/* Mini recent + quick stats compact bên phải hero */}
-          <div className="flex w-full max-w-md flex-col gap-3 sm:w-auto">
-            <div className="grid grid-cols-2 gap-2.5">
-              <div className="rounded-2xl border border-line bg-panel px-3 py-2.5 flex flex-col gap-0.5">
-                <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><Boxes size={11} /> Mô hình</div>
-                <div className="text-base font-semibold tabular-nums leading-tight text-text">{models.data?.length ?? 0}</div>
-                <div className="text-[10px] text-muted">{recent.filter((m) => m.last_run_at).length} đã chạy mô phỏng</div>
-              </div>
-              <div className="rounded-2xl border border-line bg-panel px-3 py-2.5 flex flex-col gap-0.5">
-                <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><Warehouse size={11} /> Kho & Máy</div>
-                <div className="text-base font-semibold tabular-nums leading-tight text-text">
-                  {fmtNumber(kpis.storage.length + kpis.machines.length)}
-                </div>
-                <div className="text-[10px] text-muted">{kpis.fleet.length} phương tiện vận hành</div>
-              </div>
-              <div className="rounded-2xl border border-line bg-panel px-3 py-2.5 flex flex-col gap-0.5">
-                <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><AlertTriangle size={11} /> Kho nguy cơ Đỏ</div>
-                <div className="text-base font-semibold tabular-nums leading-tight text-err-text">
-                  {kpis.storage.filter((s) => s.band_color === 'RED').length}
-                </div>
-                <div className="text-[10px] text-muted">{kpis.storage.filter((s) => s.band_color === 'YELLOW').length} đang cảnh báo Vàng</div>
-              </div>
-              <div className="rounded-2xl border border-line bg-panel px-3 py-2.5 flex flex-col gap-0.5">
-                <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><Factory size={11} /> Máy đang chạy</div>
-                <div className="text-base font-semibold tabular-nums leading-tight text-ok-text">
-                  {kpis.machines.filter((m) => m.state === 'RUNNING').length}
-                </div>
-                <div className="text-[10px] text-muted">{kpis.machines.filter((m) => m.state === 'DOWN').length} máy đang lỗi</div>
-              </div>
+          {/* Số liệu nhanh bên phải */}
+          <div className="grid w-full max-w-md grid-cols-2 gap-2 sm:w-auto">
+            <div className="flex flex-col gap-0.5 rounded-xl border border-line bg-panel/80 px-3 py-2">
+              <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><Boxes size={11} /> Mô hình</div>
+              <div className="text-base font-semibold tabular-nums leading-tight text-text">{models.data?.length ?? 0}</div>
+              <div className="text-[10px] text-muted">{live.length} đang chạy trực tiếp</div>
+            </div>
+            <div className="flex flex-col gap-0.5 rounded-xl border border-line bg-panel/80 px-3 py-2">
+              <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><Warehouse size={11} /> Kho & Máy</div>
+              <div className="text-base font-semibold tabular-nums leading-tight text-text">{fmtNumber(kpis.storage.length + kpis.machines.length)}</div>
+              <div className="text-[10px] text-muted">{kpis.fleet.length} phương tiện vận hành</div>
+            </div>
+            <div className="flex flex-col gap-0.5 rounded-xl border border-line bg-panel/80 px-3 py-2">
+              <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><AlertTriangle size={11} /> Kho nguy cơ Đỏ</div>
+              <div className="text-base font-semibold tabular-nums leading-tight text-err-text">{kpis.storage.filter((s) => s.band_color === 'RED').length}</div>
+              <div className="text-[10px] text-muted">{kpis.storage.filter((s) => s.band_color === 'YELLOW').length} đang cảnh báo Vàng</div>
+            </div>
+            <div className="flex flex-col gap-0.5 rounded-xl border border-line bg-panel/80 px-3 py-2">
+              <div className="flex items-center gap-1.5 text-[10.5px] text-muted"><Factory size={11} /> Máy đang chạy</div>
+              <div className="text-base font-semibold tabular-nums leading-tight text-ok-text">{kpis.machines.filter((m) => m.state === 'RUNNING').length}</div>
+              <div className="text-[10px] text-muted">{kpis.machines.filter((m) => m.state === 'DOWN').length} máy đang lỗi</div>
             </div>
           </div>
         </div>
+      </section>
+
+      {/* Mô hình đang chạy trực tiếp: số thật từ feed và trạng thái live, mỗi dòng mở đúng mô hình đó. */}
+      <section className="overflow-hidden rounded-xl border border-line bg-panel-2" aria-labelledby="live-models">
+        <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-3 py-2.5">
+          <h2 id="live-models" className="text-[13px] font-semibold text-text">Đang chạy trực tiếp</h2>
+          <span className="text-xs text-muted">
+            {feeds.isError ? 'không nối được dịch vụ feed' : `${live.length} mô hình${live.length > 1 ? ', chạy song song' : ''}`}
+          </span>
+          <Link to="/models" className="ml-auto text-xs text-accent hover:underline">Tất cả mô hình</Link>
+        </header>
+        {live.length > 0 ? (
+          <>
+            <div className={`${LIVE_GRID} border-b border-line px-3 py-1.5 text-[11px] text-muted`}>
+              <span>Feed</span><span>Mô hình</span><span>Cần chú ý</span><span className="text-right">Giờ nhà máy</span><span />
+            </div>
+            {live.map((f) => <LiveModelRow key={f.model} feed={f} types={typeMap} />)}
+          </>
+        ) : (
+          <p className="px-3 py-5 text-xs text-muted">
+            {feeds.isPending ? 'Đang tải…' : <>Chưa mô hình nào đang phát dữ liệu. Mở <Link to="/models" className="text-accent hover:underline">Mô hình</Link>, chọn một mô hình rồi vào Trực tiếp để bắt đầu phát; nhiều mô hình có thể chạy cùng lúc.</>}
+          </p>
+        )}
       </section>
 
       {/* ════════════════════════════════════════════════════════════════════
@@ -646,11 +582,6 @@ export default function OverviewPage() {
           series={heroMarginSeries}
           tone={hero.margin_avg_pct >= 22 ? 'good' : hero.margin_avg_pct >= 12 ? 'warn' : 'err'}
         />
-      </section>
-
-      {/* Quick-actions bar (dưới hero KPI) */}
-      <section className="flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-panel px-4 py-3" aria-label="Liên kết nhanh">
-        {quickActions.map((a) => <QuickNav key={a.label + a.to} {...a} />)}
       </section>
 
       {/* ════════════════════════════════════════════════════════════════════
@@ -817,136 +748,6 @@ export default function OverviewPage() {
         </ModuleCard>
       </div>
 
-      {/* ════════════════════════════════════════════════════════════════════
-          DÒNG CUỐI: Các mô hình gần đây (click mở sơ đồ / live / scenario)
-          ════════════════════════════════════════════════════════════════════ */}
-      <section className="rounded-2xl border border-line bg-panel p-4">
-        <header className="mb-3 flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <h2 className="text-sm font-semibold text-text">Các mô hình của bạn</h2>
-            <p className="text-[11.5px] text-muted">
-              {filtered.length} / {models.data?.length ?? 0} mô hình — mỗi card đi thẳng đến 4 nơi bạn cần.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <MiniSearch value={q} onChange={setQ} />
-            <button className={btnPrimary} onClick={() => { setNewKey(''); setCreating(true) }} aria-label="Tạo mô hình mới">
-              <Plus size={11} /> Tạo
-            </button>
-          </div>
-        </header>
-        {filtered.length === 0 ? (
-          <EmptyState title={q ? 'Không có mô hình khớp' : 'Chưa có mô hình nào'}>
-            {q ? 'Thử từ khoá khác.' : 'Bấm "Tạo" ở trên, đặt tên, dựng sơ đồ kho + máy ở tab Sơ đồ.'}
-          </EmptyState>
-        ) : (
-          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {filtered.map((m) => <ModelCard key={m.model_key} m={m} />)}
-          </ul>
-        )}
-      </section>
-
-      {/* Dialog tạo model (giữ nguyên, tái sử dụng FormDialog) */}
-      <FormDialog
-        open={creating}
-        title="Tạo mô hình mới"
-        description="Mô hình là một sơ đồ nhà máy (kho + máy móc + luồng). Đặt tên rồi bắt đầu kéo thả ở tab Sơ đồ."
-        submitLabel="Tạo & mở sơ đồ"
-        pending={create.isPending}
-        error={create.error}
-        canSubmit={isValidModelKey(newKey.trim())}
-        onSubmit={() => create.mutate()}
-        onClose={() => { setCreating(false); setNewKey('') }}
-      >
-        <Field
-          label="Tên mô hình"
-          hint="Chữ, số, gạch nối, gạch dưới; không khoảng trắng. Ví dụ: bimbo-plant-south, fmcg-line-03."
-          problem={
-            newKey.trim() !== '' && !isValidModelKey(newKey.trim())
-              ? 'Tên chỉ gồm chữ, số, gạch nối, gạch dưới và phải bắt đầu bằng chữ hoặc số.'
-              : null
-          }
-        >
-          <input
-            autoFocus
-            className={`${input} w-full`}
-            placeholder="vd: bimbo-plant-south"
-            value={newKey}
-            onChange={(e) => setNewKey(e.target.value)}
-          />
-        </Field>
-      </FormDialog>
     </PageBody>
-  )
-}
-
-/* ══════════════════════════════════════════════════════════════════════════
-   Recent Model Card — gradient icon + 4 quick opens
-   ══════════════════════════════════════════════════════════════════════════ */
-function ModelCard({ m }: { m: ModelSummary }) {
-  const v1 = `/versions/${m.latest_version_id}`
-  const mk = encodeURIComponent(m.model_key)
-  const openers = [
-    { label: 'Sơ đồ',     to: v1,                           icon: Workflow,   tone: 'edit' },
-    { label: 'Live',      to: `/models/${mk}/live`,         icon: PlayCircle, tone: 'live' },
-    { label: 'Scenarios', to: `${v1}/scenarios`,            icon: LineChart,  tone: 'scenario' },
-    { label: 'Kết nối',   to: `/models/${mk}/connect`,      icon: Network,    tone: 'connect' },
-  ] as const
-  return (
-    <li className="group relative overflow-hidden rounded-2xl border border-line bg-gradient-to-br from-panel via-panel to-panel-2 p-3.5 transition hover:border-text/20 hover:-translate-y-0.5 hover:shadow-[0_6px_24px_-12px_rgba(0,0,0,0.35)]">
-      <div className="flex items-start gap-3">
-        <div className="relative flex h-10 w-10 flex-none items-center justify-center rounded-xl border border-accent-line/60 bg-linear-to-br from-accent-soft-2 via-accent-soft to-accent-2 text-accent-text">
-          <Boxes size={17} strokeWidth={1.8} />
-          <span className="absolute -bottom-1 -right-1 rounded-full border border-line bg-panel px-1 text-[9px] font-semibold text-text-2 tabular-nums">v{m.latest_version}</span>
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <Link to={v1} className="truncate text-[13px] font-semibold text-text hover:underline underline-offset-2">
-              {m.model_key}
-            </Link>
-            <span className="hidden sm:inline-flex items-center rounded-md border border-line-2 px-1.5 py-px text-[10px] text-text-2">{m.status}</span>
-          </div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] tabular-nums text-muted">
-            <span>Scenarios <b className="text-text-2 font-semibold">{m.scenarios}</b></span>
-            <span>Lần chạy <b className="text-text-2 font-semibold">{m.runs}</b></span>
-            {m.last_run_at ? (
-              <span className="inline-flex items-center gap-1"><Clock size={10.5} strokeWidth={1.7} /> {fmtDateTime(m.last_run_at)}</span>
-            ) : (
-              <span className="italic">Chưa chạy</span>
-            )}
-          </div>
-        </div>
-      </div>
-      <div className="mt-3 grid grid-cols-4 gap-1.5">
-        {openers.map((o) => (
-          <Link
-            key={o.label + o.to}
-            to={o.to}
-            className={`flex flex-col items-center justify-center gap-1 rounded-xl border px-1 py-2 text-[10.5px] font-medium transition hover:-translate-y-px ${TONE_BADGE[o.tone]}`}
-            aria-label={`${m.model_key} — ${o.label}`}
-          >
-            <o.icon size={12} strokeWidth={1.8} />
-            <span>{o.label}</span>
-          </Link>
-        ))}
-      </div>
-    </li>
-  )
-}
-
-function MiniSearch({ value, onChange, placeholder = 'Tên mô hình, phiên bản' }:
-  { value: string; onChange: (v: string) => void; placeholder?: string }) {
-  return (
-    <label className="relative inline-flex items-center">
-      <SearchIcon size={11} strokeWidth={1.8} className="pointer-events-none absolute left-2 text-muted" aria-hidden />
-      <input
-        type="search"
-        aria-label={placeholder}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className={`${input} !w-44 !pl-6 text-[11.5px]`}
-      />
-    </label>
   )
 }

@@ -47,9 +47,9 @@ export function SignalChart({ rows, marks, height = 200 }: { rows: SignalRow[]; 
         <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']} tickFormatter={fmtTime} tick={axisTick} axisLine={axisLine} tickLine={false} />
         <YAxis tick={axisTick} width={52} axisLine={axisLine} tickLine={false} />
         <Tooltip {...tooltipProps} labelFormatter={(v) => fmtTime(Number(v))} formatter={(v) => Number(v).toFixed(3)} />
-        <Line dataKey="v" stroke="var(--color-text)" dot={false} isAnimationActive={false} />
+        <Line dataKey="v" stroke="var(--color-accent)" strokeWidth={1} strokeOpacity={0.85} dot={false} isAnimationActive={false} />
         {marks.map((m) => (
-          <ReferenceLine key={`${m.t}-${m.label}`} x={m.t} stroke={m.color} label={{ value: m.label, fontSize: 10, fill: m.color }} />
+          <ReferenceLine key={`${m.t}-${m.label}`} x={m.t} stroke={m.color} strokeWidth={1.5} />
         ))}
       </LineChart>
     </ResponsiveContainer>

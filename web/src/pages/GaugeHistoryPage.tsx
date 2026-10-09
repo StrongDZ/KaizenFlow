@@ -1,8 +1,9 @@
 import { keepPreviousData, useQueries, useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { gaugeApi, type GaugeReading } from '../api/gauge'
 import { ApiDownBanner, GaugeArea, gtButton, gtField, gtPrimary } from '../components/gauge/GaugeArea'
+import { FilterChip, Loading } from '../components/ui'
 import { HistoryChart } from '../components/gauge/HistoryChart'
 import { RoiPhoto } from '../components/gauge/RoiPhoto'
 import {
@@ -24,19 +25,19 @@ function CustomRange({ bounds, onApply }: { bounds: { from: number; to: number }
   return (
     <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); if (valid) onApply(a, b) }}>
       <label className="flex flex-col gap-1 text-xs text-muted">Từ
-        <input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)} className={`${gtField} w-auto font-mono`} />
+        <input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)} className={`${gtField} w-auto`} />
       </label>
       <label className="flex flex-col gap-1 text-xs text-muted">Đến
-        <input type="datetime-local" value={to} onChange={(e) => setTo(e.target.value)} className={`${gtField} w-auto font-mono`} />
+        <input type="datetime-local" value={to} onChange={(e) => setTo(e.target.value)} className={`${gtField} w-auto`} />
       </label>
       <button type="submit" disabled={!valid} className={gtPrimary}>Xem</button>
-      {!valid && <span className="pb-3 text-xs text-bad">Mốc "Đến" phải sau mốc "Từ".</span>}
+      {!valid && <span className="pb-2 text-xs text-bad-text">Mốc "Đến" phải sau mốc "Từ".</span>}
     </form>
   )
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
-  return <div className="flex flex-col"><dt className="text-[11px] text-faint">{label}</dt><dd className="font-mono text-sm text-text">{value}</dd></div>
+  return <div className="flex flex-col"><dt className="text-[11px] text-faint">{label}</dt><dd className="text-xs tabular-nums text-text">{value}</dd></div>
 }
 
 /** Lịch sử số liệu của một máy: mỗi đồng hồ một biểu đồ, cùng một trục thời gian, kèm danh sách các lúc bất thường. */
@@ -81,55 +82,41 @@ export default function GaugeHistoryPage() {
   const first = rows.find((r) => r.history)?.history
   const zoom = (from: number, to: number) => { setRange({ from: Math.round(from), to: Math.round(Math.max(to, from + 10_000)) }); setCustom(false) }
 
-  const back = <Link to={`/gauge-twin/${encodeURIComponent(machine)}`} className="text-sm text-muted underline decoration-dotted hover:text-text">← Xem trực tiếp {machine}</Link>
-  if (station.isPending) return <GaugeArea>{back}<p className="text-muted">Đang tải trạm {machine}…</p></GaugeArea>
-  if (!station.data) return <GaugeArea>{back}<ApiDownBanner error={station.error} /></GaugeArea>
+  if (station.isPending) return <Loading />
+  if (!station.data) return <GaugeArea><ApiDownBanner error={station.error} /></GaugeArea>
 
   return (
     <GaugeArea>
-      <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
-        <div>
-          {back}
-          <h1 className="mt-1 text-3xl font-bold tracking-tight">Lịch sử <span className="font-mono">{machine}</span></h1>
-        </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2" role="group" aria-label="Khoảng thời gian">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Khoảng thời gian">
           {PRESETS.map((p) => {
             const active = !custom && 'preset' in range && range.preset === p.key
-            return (
-              <button key={p.key} aria-pressed={active} onClick={() => { setRange({ preset: p.key }); setCustom(false) }}
-                className={`min-h-11 rounded-full px-4 text-sm ${active ? 'bg-accent font-bold text-on-accent' : 'bg-panel text-text-2 hover:bg-raised'}`}>
-                {p.label}
-              </button>
-            )
+            return <FilterChip key={p.key} active={active} onClick={() => { setRange({ preset: p.key }); setCustom(false) }}>{p.label}</FilterChip>
           })}
-          <button aria-pressed={custom || 'from' in range} onClick={() => setCustom((v) => !v)}
-            className={`min-h-11 rounded-full px-4 text-sm ${custom || 'from' in range ? 'bg-accent font-bold text-on-accent' : 'bg-panel text-text-2 hover:bg-raised'}`}>
-            Tự chọn
-          </button>
+          <FilterChip active={custom || 'from' in range} onClick={() => setCustom((v) => !v)}>Tự chọn</FilterChip>
         </div>
+        <span className="text-xs text-muted">Kéo ngang trên biểu đồ để phóng to một đoạn.</span>
       </div>
 
       {custom && <CustomRange key={`${bounds.from}-${bounds.to}`} bounds={bounds} onApply={(from, to) => { setRange({ from, to }); setCustom(false) }} />}
 
-      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs text-muted">
-        <span className="text-text-2">{timeLabel(bounds.from, DAY_AND_CLOCK)} → {timeLabel(bounds.to, DAY_AND_CLOCK)}</span>
-        <span>{durationLabel(span)}</span>
-        {first && <span>mỗi điểm là {durationLabel(first.bucket_s * 1000)} · {first.source === 'raw' ? 'từ từng lần đọc' : 'từ số gộp theo phút'}</span>}
-        <span>{preset ? 'tự cập nhật' : 'khoảng cố định'}</span>
-        <span className={alarms > 0 ? 'text-bad' : ''}>{alarms} lần vượt ngưỡng</span>
-        <span className="text-faint">Kéo ngang trên biểu đồ để phóng to.</span>
+      <p className="text-xs text-muted">
+        <span className="tabular-nums text-text-2">{timeLabel(bounds.from, DAY_AND_CLOCK)} → {timeLabel(bounds.to, DAY_AND_CLOCK)}</span>
+        {' '}({durationLabel(span)}{preset ? ', tự cập nhật' : ''}).
+        {first && <> Mỗi điểm là {durationLabel(first.bucket_s * 1000)}, {first.source === 'raw' ? 'tính từ từng lần đọc' : 'tính từ số gộp theo phút'}.</>}
+        {' '}<span className={alarms > 0 ? 'font-medium text-bad-text' : ''}>{alarms === 0 ? 'Không lần nào vượt ngưỡng.' : `${alarms} lần vượt ngưỡng.`}</span>
       </p>
 
       <div className="flex flex-wrap items-start gap-4">
         <div className="flex min-w-0 flex-[999_1_600px] flex-col gap-3">
-          {rows.length === 0 && <p className="rounded-xl bg-panel px-5 py-8 text-center text-muted">Config của trạm này chưa khai báo đồng hồ nào.</p>}
+          {rows.length === 0 && <p className="rounded-lg border border-line px-4 py-8 text-center text-xs text-muted">Config của trạm này chưa khai báo đồng hồ nào.</p>}
           {rows.map(({ gauge, history, stats, events: own, limits, gapMs, shown, error }) => (
-            <section key={gauge.gauge_id} className={`flex flex-col gap-2 rounded-xl border bg-panel px-4 py-3 ${own.some((e) => e.kind !== 'gap') ? 'border-bad' : 'border-panel'}`}>
+            <section key={gauge.gauge_id} className={`flex flex-col gap-2 rounded-lg border bg-panel p-3 ${own.some((e) => e.kind !== 'gap') ? 'border-bad/70' : 'border-line'}`}>
               <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="relative h-11 w-14 flex-none overflow-hidden rounded-md bg-panel-2"><RoiPhoto machine={machine} gauge={gauge} aspect={14 / 11} /></div>
                   <div className="min-w-0">
-                    <h2 className="truncate font-mono text-sm">{gauge.gauge_id}</h2>
+                    <h2 className="truncate text-[12.5px] font-semibold">{gauge.gauge_id}</h2>
                     <p className="text-xs text-muted">{unitLabel(gauge.unit) || 'không đơn vị'}</p>
                   </div>
                 </div>
@@ -143,15 +130,15 @@ export default function GaugeHistoryPage() {
                 <a href={gaugeApi.historyCsvUrl(machine, gauge.gauge_id, bounds.from, bounds.to)} className={`${gtButton} ml-auto flex items-center`} download>Tải CSV</a>
               </div>
               {error
-                ? <p role="alert" className="py-6 text-center text-sm text-bad">Không lấy được lịch sử: {error instanceof Error ? error.message : String(error)}</p>
+                ? <p role="alert" className="py-6 text-center text-xs text-bad-text">Không lấy được lịch sử: {error instanceof Error ? error.message : String(error)}</p>
                 : <HistoryChart history={history} type={gauge.type} bounds={shown} limits={limits} stats={stats} events={own} gapMs={gapMs} hover={hover} onHover={setHover} onZoom={zoom} />}
             </section>
           ))}
         </div>
 
-        <aside className="flex min-w-0 flex-[1_1_300px] flex-col gap-2 rounded-xl bg-panel px-4 py-3 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-auto">
-          <h2 className="text-sm font-bold">Sự kiện trong khoảng này <span className="font-normal text-muted">· {events.length}</span></h2>
-          {events.length === 0 && <p className="py-4 text-sm text-muted">Không có lần vượt ngưỡng hay khoảng mất số liệu nào.</p>}
+        <aside className="flex min-w-0 flex-[1_1_280px] flex-col gap-2 rounded-lg border border-line bg-panel-2 p-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:overflow-auto">
+          <h2 className="text-xs font-semibold text-text">Sự kiện trong khoảng này <span className="font-normal text-muted">{events.length}</span></h2>
+          {events.length === 0 && <p className="text-xs text-muted">Không có lần vượt ngưỡng hay khoảng mất số liệu nào.</p>}
           <ul className="flex flex-col gap-1.5">
             {events.map((e) => (
               <li key={`${e.gauge.gauge_id}${e.kind}${e.from}`}>
@@ -169,13 +156,13 @@ function EventButton({ event, gauge, span, onClick }: { event: HistoryEvent; gau
   const gap = event.kind === 'gap'
   return (
     <button onClick={onClick} title="Phóng to vào sự kiện này"
-      className={`flex w-full flex-col gap-0.5 rounded-lg border-l-4 bg-raised px-3 py-2 text-left hover:bg-line ${gap ? 'border-faint' : 'border-bad'}`}>
+      className={`flex w-full flex-col gap-0.5 rounded-md border-l-2 bg-panel px-2.5 py-1.5 text-left hover:bg-raised ${gap ? 'border-faint' : 'border-bad'}`}>
       <span className="flex items-baseline justify-between gap-2">
-        <span className={`text-sm font-bold ${gap ? 'text-text-2' : 'text-bad'}`}>{EVENT_LABEL[event.kind]}</span>
-        <span className="font-mono text-xs text-muted">{durationLabel(event.to - event.from)}</span>
+        <span className={`text-xs font-semibold ${gap ? 'text-text-2' : 'text-bad-text'}`}>{EVENT_LABEL[event.kind]}</span>
+        <span className="text-xs text-muted">{durationLabel(event.to - event.from)}</span>
       </span>
-      <span className="truncate font-mono text-xs text-text-2">{gauge.gauge_id}</span>
-      <span className="font-mono text-xs text-muted">
+      <span className="truncate text-xs text-text-2">{gauge.gauge_id}</span>
+      <span className="text-xs text-muted">
         {timeLabel(event.from, span, span <= 6 * 3_600_000)} → {timeLabel(event.to, span, span <= 6 * 3_600_000)}
         {event.peak !== null && <> · {event.kind === 'high' ? 'đỉnh' : 'đáy'} {fmtValue(event.peak, gauge.type)} {unitLabel(gauge.unit)}</>}
       </span>

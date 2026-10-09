@@ -127,7 +127,7 @@ export function MachinePopover({ open, onOpenChange, title, anchorX, anchorY, pi
           {/* Header */}
           <header className="flex items-center justify-between border-b border-line bg-panel px-4 py-2.5">
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted">
+              <div className="flex items-center gap-1.5 text-[10px] font-medium text-muted">
                 <FactoryIcon size={11} />
                 Tình trạng máy chi tiết
                 <span className="ml-1 rounded bg-panel-2 px-1.5 py-0.5 text-[9.5px] font-semibold">Horizon {pipeline.horizon_h}h</span>
@@ -402,7 +402,7 @@ export function MachinePopover({ open, onOpenChange, title, anchorX, anchorY, pi
                     <div className="rounded-md border border-bad/40 bg-bad-bg/30 px-2 py-1 text-[9.5px] space-y-0.5">
                       <div className="font-bold text-bad-text">🚨 Đoạn chặn trong chuỗi:</div>
                       {recipe.full_chain.chain_blockers.map((b: string, i: number) => (
-                        <div key={i} className="text-bad-text-2 pl-1">· {b}</div>
+                        <div key={i} className="pl-1 text-bad-text">· {b}</div>
                       ))}
                     </div>
                   )}

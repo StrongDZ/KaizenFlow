@@ -2,12 +2,19 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { NavCtx } from '../lib/nav'
 
+/** Lần chạy đầu tiên trên trang so sánh (?a=…&b=… hoặc ?ids=…): mô hình của trang lấy theo lần chạy này. */
+function compareRun(search: string): string | undefined {
+  const q = new URLSearchParams(search)
+  const first = q.get('a') ?? q.get('ids')?.split(',')[0]
+  return first && /^\d+$/.test(first) ? first : undefined
+}
+
 /** Gom dữ liệu cho breadcrumb và tab từ URL; dùng chung cache với các trang. */
-export function useNavCtx(path: string): NavCtx {
+export function useNavCtx(path: string, search = ''): NavCtx {
   const versionParam = path.match(/^\/versions\/(\d+)/)?.[1]
   const scenarioParam = path.match(/^\/scenarios\/(\d+)/)?.[1]
-  const runParam = path.match(/^\/runs\/(\d+)/)?.[1]
-  const keyParam = path.match(/^\/models\/([^/]+)\/(?:versions|live|sources|connect|map)/)?.[1]
+  const runParam = path.match(/^\/runs\/(\d+)/)?.[1] ?? (path === '/compare' ? compareRun(search) : undefined)
+  const keyParam = path.match(/^\/models\/([^/]+)\//)?.[1]
 
   const runId = runParam ? Number(runParam) : undefined
   const run = useQuery({ queryKey: ['run', runId], queryFn: () => api.run(runId!), enabled: runId !== undefined })
@@ -28,5 +35,6 @@ export function useNavCtx(path: string): NavCtx {
     latestVersionId: latest?.id,
     versions: versions.data,
     scenarioName: scenario.data?.name || (scenario.data ? `Scenario #${scenario.data.id}` : undefined),
+    scenarioId: scenario.data?.id,
   }
 }

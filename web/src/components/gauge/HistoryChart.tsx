@@ -75,11 +75,11 @@ export function HistoryChart({ history, type, bounds, limits, stats, events, gap
           {yTicks.map((v) => (
             <g key={v}>
               <line x1={PAD.left} x2={PAD.left + inner.width} y1={y(v)} y2={y(v)} stroke="var(--color-line)" />
-              <text x={PAD.left - 8} y={y(v) + 4} textAnchor="end" className="fill-faint font-mono text-[11px]">{axisLabel(v, lo, hi)}</text>
+              <text x={PAD.left - 8} y={y(v) + 4} textAnchor="end" className="fill-faint tabular-nums text-[11px]">{axisLabel(v, lo, hi)}</text>
             </g>
           ))}
           {timeTicks(bounds.from, bounds.to, Math.max(2, Math.floor(inner.width / 110))).map((t) => (
-            <text key={t} x={x(t)} y={HEIGHT - 5} textAnchor="middle" className="fill-faint font-mono text-[11px]">{timeLabel(t, span)}</text>
+            <text key={t} x={x(t)} y={HEIGHT - 5} textAnchor="middle" className="fill-faint tabular-nums text-[11px]">{timeLabel(t, span)}</text>
           ))}
           {events.map((e) => (
             <rect key={`${e.kind}${e.from}`} x={clampX(e.from)} width={Math.max(clampX(e.to) - clampX(e.from), 2)} y={PAD.top} height={inner.height}
@@ -88,7 +88,7 @@ export function HistoryChart({ history, type, bounds, limits, stats, events, gap
           {[limits.max, limits.min].map((limit, i) => limit !== null && limit >= lo && limit <= hi && (
             <g key={i}>
               <line x1={PAD.left} x2={PAD.left + inner.width} y1={y(limit)} y2={y(limit)} stroke="var(--color-bad)" strokeDasharray="6 5" />
-              <text x={PAD.left + 6} y={y(limit) + (i === 0 ? -5 : 13)} className="fill-bad font-mono text-[11px]">
+              <text x={PAD.left + 6} y={y(limit) + (i === 0 ? -5 : 13)} className="fill-bad tabular-nums text-[11px]">
                 ngưỡng {i === 0 ? 'trên' : 'dưới'} {fmtValue(limit, 'seg7')}
               </text>
             </g>
@@ -109,11 +109,11 @@ export function HistoryChart({ history, type, bounds, limits, stats, events, gap
         </svg>
       )}
       {history && parts.length === 0 && (
-        <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-faint">Không có số liệu trong khoảng này.</p>
+        <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-xs text-faint">Không có số liệu trong khoảng này.</p>
       )}
       {at && (
-        <p className="pointer-events-none absolute right-2 top-1 rounded-md bg-bg px-2 py-1 font-mono text-xs text-text">
-          {timeLabel(at.t, span, bucket < 60_000)} · <span className="font-bold">{fmtValue(at.value, type)}</span>
+        <p className="pointer-events-none absolute right-2 top-1 rounded-md bg-bg px-2 py-1 tabular-nums text-xs text-text">
+          {timeLabel(at.t, span, bucket < 60_000)} · <span className="font-semibold">{fmtValue(at.value, type)}</span>
           {at.max > at.min && <span className="text-muted"> ({fmtValue(at.min, type)} … {fmtValue(at.max, type)})</span>}
         </p>
       )}

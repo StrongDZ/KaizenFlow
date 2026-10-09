@@ -2,16 +2,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Gauge } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Link } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
-import type { Insight, ModelSummary, RunRow, Scenario } from '../api/types'
+import type { Insight, RunRow, Scenario } from '../api/types'
 import { axisLine, axisTick, tooltipProps } from '../components/Charts'
 import BenchmarkPanel from '../components/dashboard/BenchmarkPanel'
-import { Card, ErrorBox, Loading, Notice, PageBody, PageHeader, StatusChip, Tag, btn, btnPrimary, input } from '../components/ui'
+import { Card, EmptyState, ErrorBox, Loading, Notice, PageBody, PageHeader, StatusChip, Tag, btn, btnPrimary } from '../components/ui'
 import { fmtDateTime, fmtDelta, fmtDuration } from '../lib/format'
 import { candidatesOf, describeAction, kpiP50 } from '../lib/insights'
 
-const DEFAULT_MODEL = 'bimbo-fmcg'
 const STALE_MS = 2 * 60 * 1000
 
 type Candidate = {
@@ -117,7 +116,7 @@ function EffectDelta({ label, before, after, goodWhenLower = false }: { label: s
 function HeadlineMetric({ label, value, hint, accent = 'text-text' }: { label: string; value: string; hint: string; accent?: string }) {
   return (
     <div className="rounded-xl border border-line bg-panel/80 p-4">
-      <div className="text-[11px] uppercase tracking-[0.12em] text-muted">{label}</div>
+      <div className="text-[11px] text-muted">{label}</div>
       <div className={`mt-2 text-3xl font-semibold ${accent}`}>{value}</div>
       <div className="mt-2 text-xs text-muted">{hint}</div>
     </div>
@@ -127,7 +126,7 @@ function HeadlineMetric({ label, value, hint, accent = 'text-text' }: { label: s
 function Explainer({ title, children }: { title: string; children: string }) {
   return (
     <div className="rounded-lg border border-line bg-panel-2 px-3 py-2">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">{title}</div>
+      <div className="text-[11px] font-semibold text-muted">{title}</div>
       <div className="mt-1 text-xs text-text-2">{children}</div>
     </div>
   )
@@ -136,21 +135,15 @@ function Explainer({ title, children }: { title: string; children: string }) {
 export default function OperationsDashboardPage() {
   const qc = useQueryClient()
   const models = useQuery({ queryKey: ['models'], queryFn: api.models })
-  const [modelKey, setModelKey] = useState(DEFAULT_MODEL)
+  // Trang thuộc một mô hình (/models/:key/operations): đổi mô hình ở danh sách Mô hình, không có ô chọn ở đây.
+  const modelKey = decodeURIComponent(useParams().key ?? '')
   const [selectedCandidates, setSelectedCandidates] = useState<string[]>([])
   const [selectedCompareRuns, setSelectedCompareRuns] = useState<number[]>([])
   const [lastBatchRunIds, setLastBatchRunIds] = useState<number[]>([])
   const [batchApplyIssue, setBatchApplyIssue] = useState<Error | null>(null)
 
-  useEffect(() => {
-    if (!models.data || models.data.length === 0) return
-    if (models.data.some((m) => m.model_key === modelKey)) return
-    const fallback = models.data.find((m) => m.model_key === DEFAULT_MODEL)?.model_key ?? models.data[0].model_key
-    setModelKey(fallback)
-  }, [models.data, modelKey])
-
   const currentModel = useMemo(
-    () => models.data?.find((m) => m.model_key === modelKey) ?? models.data?.find((m) => m.model_key === DEFAULT_MODEL) ?? models.data?.[0] ?? null,
+    () => models.data?.find((m) => m.model_key === modelKey) ?? null,
     [models.data, modelKey],
   )
 
@@ -340,23 +333,16 @@ export default function OperationsDashboardPage() {
   }
 
   const err = models.error ?? active.error ?? nowcasts.error ?? recentRuns.error ?? recommenderRuns.error ?? latestNowcastScenario.error ?? latestNowcastRun.error ?? appliedRun.error
-  if (models.isLoading || active.isLoading || nowcasts.isLoading || recentRuns.isLoading || recommenderRuns.isLoading) return <Loading />
+  if (models.isLoading) return <Loading />
+  if (!currentModel) return <PageBody><EmptyState title="Không có mô hình này">Mô hình {modelKey} không còn. Chọn mô hình khác ở <Link to="/models" className="text-accent underline">Mô hình</Link>.</EmptyState></PageBody>
+  if (active.isLoading || nowcasts.isLoading || recentRuns.isLoading || recommenderRuns.isLoading) return <Loading />
 
   return (
     <PageBody wide>
       <PageHeader icon={Gauge}
         title="Dashboard vận hành FMCG"
         subtitle="Theo dõi trạng thái live, recommendation và hiệu quả áp dụng trên cùng một màn hình"
-        actions={
-          <>
-            <select className={input} aria-label="Chọn mô hình" value={modelKey} onChange={(e) => setModelKey(e.target.value)}>
-              {(models.data ?? []).map((m: ModelSummary) => <option key={m.model_key} value={m.model_key}>{m.model_key}</option>)}
-            </select>
-            <Link className={btn} to="/reports/benchmarks">Benchmark FMCG</Link>
-            {latestNowcast && <Link className={btn} to={`/runs/${latestNowcast.id}`}>Mở NOWCAST mới nhất</Link>}
-            {currentModel && <Link className={btnPrimary} to={`/models/${encodeURIComponent(currentModel.model_key)}/live`}>Mở Live Twin</Link>}
-          </>
-        }
+        actions={latestNowcast && <Link className={btn} to={`/runs/${latestNowcast.id}`}>Mở NOWCAST mới nhất</Link>}
       />
       <Notice>
         Trang này trả lời 3 câu hỏi cho demo: hệ thống hiện đang nhận live data ra sao, đang khuyến nghị bù hàng gì, và lần áp dụng recommendation gần nhất có giúp giảm rủi ro hay tăng throughput hay không.
@@ -378,7 +364,7 @@ export default function OperationsDashboardPage() {
       <section className={`rounded-2xl border p-5 ${heroTone}`}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="max-w-3xl">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Executive Summary</div>
+            <div className="text-[11px] font-semibold text-muted">Executive Summary</div>
             <h2 className="mt-2 text-2xl font-semibold text-text">Hệ thống hiện tại đang theo dõi realtime, sinh recommendation và đo hiệu quả ngay trên cùng flow.</h2>
             <p className="mt-2 text-sm text-text-2">
               {systemVerdict}. {recommendationVerdict}. {effectVerdict}.
@@ -564,17 +550,17 @@ export default function OperationsDashboardPage() {
                   </div>
                   <div className="mt-3 grid gap-3 md:grid-cols-3">
                     <div className="rounded-lg bg-panel px-3 py-2">
-                      <div className="text-[11px] uppercase tracking-[0.12em] text-muted">Cần bù</div>
+                      <div className="text-[11px] text-muted">Cần bù</div>
                       <div className="mt-1 text-2xl font-semibold text-bad-text">{num(topRecommendation.recommended_replenish, 1)}</div>
                       <div className="text-xs text-muted">{topRecommendation.material}</div>
                     </div>
                     <div className="rounded-lg bg-panel px-3 py-2">
-                      <div className="text-[11px] uppercase tracking-[0.12em] text-muted">Coverage trước boost</div>
+                      <div className="text-[11px] text-muted">Coverage trước boost</div>
                       <div className="mt-1 text-2xl font-semibold text-text">{num(topRecommendation.pre_coverage_hours, 1)}h</div>
                       <div className="text-xs text-muted">Pressure {num((topRecommendation.coverage_pressure ?? 0) * 100, 0)}%</div>
                     </div>
                     <div className="rounded-lg bg-panel px-3 py-2">
-                      <div className="text-[11px] uppercase tracking-[0.12em] text-muted">Backorder live</div>
+                      <div className="text-[11px] text-muted">Backorder live</div>
                       <div className="mt-1 text-2xl font-semibold text-text">{num(topRecommendation.backorder_per_hour, 1)}/h</div>
                       <div className="text-xs text-muted">{topRecommendation.upstream_label ?? topRecommendation.upstream_sources?.[0] ?? 'upstream chưa rõ'}</div>
                     </div>
@@ -724,7 +710,7 @@ export default function OperationsDashboardPage() {
             <div className="space-y-3">
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="rounded-xl border border-line bg-panel-2 p-4">
-                  <div className="text-[11px] uppercase tracking-[0.12em] text-muted">Red minutes</div>
+                  <div className="text-[11px] text-muted">Red minutes</div>
                   <div className="mt-2 flex items-end gap-3">
                     <div className="text-3xl font-semibold text-text">{num(appliedRed, 1)}</div>
                     <div className={`text-sm font-semibold ${redDelta !== undefined && redDelta < 0 ? 'text-ok' : redDelta === 0 ? 'text-muted' : 'text-bad-text'}`}>
@@ -734,7 +720,7 @@ export default function OperationsDashboardPage() {
                   <div className="mt-1 text-xs text-muted">NOWCAST {num(nowcastRed, 1)} {'->'} RECOMMENDER {num(appliedRed, 1)}</div>
                 </div>
                 <div className="rounded-xl border border-line bg-panel-2 p-4">
-                  <div className="text-[11px] uppercase tracking-[0.12em] text-muted">Throughput</div>
+                  <div className="text-[11px] text-muted">Throughput</div>
                   <div className="mt-2 flex items-end gap-3">
                     <div className="text-3xl font-semibold text-text">{num(appliedTp, 1)}</div>
                     <div className={`text-sm font-semibold ${tpDelta !== undefined && tpDelta > 0 ? 'text-ok' : tpDelta === 0 ? 'text-muted' : 'text-bad-text'}`}>

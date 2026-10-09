@@ -47,7 +47,7 @@ export function KfEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition,
               animationPlayState: data?.running ? 'running' : 'paused',
               '--kf-at': `${at * 100}%`,
             } as CSSProperties
-            return <circle key={i} r={5.25} className="kf-flow-particle" style={particleStyle} />
+            return <circle key={i} r={3.5} className="kf-flow-particle" style={particleStyle} />
           })}
         </>
       )}

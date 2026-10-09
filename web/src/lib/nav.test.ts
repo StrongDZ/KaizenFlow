@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { crumbsFor, groupTabs, isCanvasPath, isTabActive, sectionOf, subNavFor, switchVersionPath, tabsFor } from './nav'
+import { crumbsFor, groupTabs, isCanvasPath, isTabActive, runTabs, sectionOf, subNavFor, switchVersionPath, tabsFor } from './nav'
 
 describe('sectionOf', () => {
   it('maps paths to rail sections', () => {
@@ -12,10 +12,12 @@ describe('sectionOf', () => {
     expect(sectionOf('/alerts')).toBe('alerts')
     expect(sectionOf('/gauge-twin')).toBe('gauge')
     expect(sectionOf('/gauge-twin/machine_001')).toBe('gauge')
-    // Lần chạy thuộc về mô hình (không còn mục riêng trên thanh chính)
-    expect(sectionOf('/runs')).toBe('models')
+    // Lần chạy thuộc về mô hình; Benchmark là trang cấp nhà máy (Tổng quan)
+    expect(sectionOf('/benchmarks')).toBe('overview')
     expect(sectionOf('/runs/12/report')).toBe('models')
     expect(sectionOf('/compare')).toBe('models')
+    expect(sectionOf('/models/m/operations')).toBe('models')
+    expect(sectionOf('/models/m/warehouse-report')).toBe('models')
     expect(sectionOf('/library/materials/RAW-01')).toBe('library')
   })
 })
@@ -23,29 +25,33 @@ describe('sectionOf', () => {
 describe('tabsFor', () => {
   it('gives the model workspace tabs', () => {
     const tabs = tabsFor('/versions/7', { modelKey: 'm', versionId: 7 })
-    expect(tabs.map((t) => t.label)).toEqual(['Sơ đồ', 'Phiên bản', 'Scenario', 'Lần chạy', 'Trực tiếp', 'Nguồn dữ liệu', 'Kết nối dữ liệu', 'Bản đồ AGV'])
+    expect(tabs.map((t) => t.label)).toEqual([
+      'Sơ đồ', 'Phiên bản', 'Scenario', 'Lần chạy',
+      'Trực tiếp', 'Điều khiển kho', 'Bản đồ AGV', 'Nguồn dữ liệu', 'Kết nối dữ liệu',
+      'Dashboard vận hành', 'Báo cáo kho',
+    ])
     expect(tabs.map((t) => t.to)).toEqual([
       '/versions/7', '/models/m/versions', '/versions/7/scenarios', '/versions/7/runs',
-      '/models/m/live', '/models/m/sources', '/models/m/connect', '/models/m/map',
+      '/models/m/live', '/models/m/stock', '/models/m/map', '/models/m/sources', '/models/m/connect',
+      '/models/m/operations', '/models/m/warehouse-report',
     ])
   })
 
-  it('gom tab thành ba nhóm liền nhau: Thiết kế, Mô phỏng, Vận hành thật', () => {
+  it('gom tab thành bốn nhóm liền nhau: Thiết kế, Mô phỏng, Vận hành thật, Báo cáo', () => {
     const tabs = tabsFor('/versions/7', { modelKey: 'm', versionId: 7 })
-    expect(tabs.map((t) => t.group)).toEqual(['Thiết kế', 'Thiết kế', 'Mô phỏng', 'Mô phỏng', 'Vận hành thật', 'Vận hành thật', 'Vận hành thật', 'Vận hành thật'])
-    expect(groupTabs(tabs).map((g) => [g.title, g.tabs.length])).toEqual([['Thiết kế', 2], ['Mô phỏng', 2], ['Vận hành thật', 4]])
-    // tab của lần chạy không có nhóm: một nhóm không tên
-    expect(groupTabs(tabsFor('/runs/12', {})).map((g) => g.title)).toEqual([undefined])
+    expect(groupTabs(tabs).map((g) => [g.title, g.tabs.length])).toEqual([['Thiết kế', 2], ['Mô phỏng', 2], ['Vận hành thật', 5], ['Báo cáo', 2]])
   })
 
   it('opens the latest version from the versions page', () => {
     const tabs = tabsFor('/models/m/versions', { modelKey: 'm', latestVersionId: 9 })
     expect(tabs[0].to).toBe('/versions/9')
-    expect(tabsFor('/models/m/versions', { modelKey: 'm' }).map((t) => t.label)).toEqual(['Phiên bản', 'Trực tiếp', 'Nguồn dữ liệu', 'Kết nối dữ liệu', 'Bản đồ AGV'])
+    expect(tabsFor('/models/m/versions', { modelKey: 'm' }).map((t) => t.label)).toEqual([
+      'Phiên bản', 'Trực tiếp', 'Điều khiển kho', 'Bản đồ AGV', 'Nguồn dữ liệu', 'Kết nối dữ liệu', 'Dashboard vận hành', 'Báo cáo kho',
+    ])
   })
 
   it('shows the model workspace on the live pages, with the model taken from the URL context', () => {
-    for (const path of ['/models/m/live', '/models/m/sources', '/models/m/connect', '/models/m/map']) {
+    for (const path of ['/models/m/live', '/models/m/stock', '/models/m/sources', '/models/m/connect', '/models/m/map', '/models/m/operations', '/models/m/warehouse-report']) {
       const tabs = tabsFor(path, { modelKey: 'm', latestVersionId: 9 })
       expect(tabs.map((t) => t.label)).toContain('Trực tiếp')
       expect(tabs[0].to).toBe('/versions/9')
@@ -55,10 +61,10 @@ describe('tabsFor', () => {
     expect(isTabActive(tabsFor('/models/m/connect', { modelKey: 'm' }).find((t) => t.label === 'Kết nối dữ liệu')!, '/models/m/connect')).toBe(true)
   })
 
-  it('gives the run workspace tabs and none elsewhere', () => {
-    expect(tabsFor('/runs/12/report', {}).map((t) => t.to)).toEqual([
-      '/runs/12', '/runs/12/sensors', '/runs/12/recommendations', '/runs/12/report',
-    ])
+  it('gives the model tabs on run and compare pages and none elsewhere', () => {
+    expect(tabsFor('/runs/12/report', { modelKey: 'm', versionId: 7 }).map((t) => t.label)).toContain('Lần chạy')
+    const compare = tabsFor('/compare', { modelKey: 'm', versionId: 7 })
+    expect(compare.filter((t) => isTabActive(t, '/compare')).map((t) => t.label)).toEqual(['Lần chạy'])
     expect(tabsFor('/models', {})).toEqual([])
     expect(tabsFor('/library/node-types', {})).toEqual([])
   })
@@ -86,13 +92,25 @@ describe('crumbsFor', () => {
     expect(crumbsFor('/models/m/sources', { modelKey: 'm' }).map((c) => c.label)).toEqual(['Mô hình', 'm', 'Nguồn dữ liệu'])
     expect(crumbsFor('/models/m/connect', { modelKey: 'm' }).map((c) => c.label)).toEqual(['Mô hình', 'm', 'Kết nối dữ liệu'])
     expect(crumbsFor('/models/m/map', { modelKey: 'm' }).map((c) => c.label)).toEqual(['Mô hình', 'm', 'Bản đồ AGV'])
+    expect(crumbsFor('/models/m/stock', { modelKey: 'm' }).map((c) => c.label)).toEqual(['Mô hình', 'm', 'Điều khiển kho'])
+    expect(crumbsFor('/models/m/operations', { modelKey: 'm' }).map((c) => c.label)).toEqual(['Mô hình', 'm', 'Dashboard vận hành'])
+    expect(crumbsFor('/models/m/warehouse-report', { modelKey: 'm' }).map((c) => c.label)).toEqual(['Mô hình', 'm', 'Báo cáo kho'])
+    expect(crumbsFor('/models/m/live', { modelKey: 'm' })[1].to).toBe('/models/m/versions')
+    expect(crumbsFor('/models/m/versions', { modelKey: 'm' })[1].to).toBeUndefined()
   })
 
   it('builds crumbs for top-level pages', () => {
     expect(crumbsFor('/', {}).map((c) => c.label)).toEqual(['Tổng quan'])
     expect(crumbsFor('/alerts', {}).map((c) => c.label)).toEqual(['Cảnh báo'])
     expect(crumbsFor('/models', {}).map((c) => c.label)).toEqual(['Mô hình'])
-    expect(crumbsFor('/compare', {}).map((c) => c.label)).toEqual(['Lần chạy', 'So sánh'])
+    expect(crumbsFor('/benchmarks', {}).map((c) => c.label)).toEqual(['Tổng quan', 'Benchmark FMCG'])
+  })
+
+  it('đặt trang so sánh vào mô hình của lần chạy', () => {
+    expect(crumbsFor('/compare', {}).map((c) => c.label)).toEqual(['Mô hình', '…', 'So sánh'])
+    const c = crumbsFor('/compare', { modelKey: 'm', versionId: 7 })
+    expect(c.map((x) => x.label)).toEqual(['Mô hình', 'm', 'Lần chạy', 'So sánh'])
+    expect(c[2].to).toBe('/versions/7/runs')
   })
 
   it('names the gauge pages', () => {
@@ -139,18 +157,36 @@ describe('switchVersionPath', () => {
 })
 
 describe('subNavFor (panel phụ cạnh thanh chính)', () => {
-  it('mô hình: ba nhóm Thiết kế, Mô phỏng, Vận hành thật; mỗi mục có biểu tượng; tiêu đề là tên mô hình', () => {
+  it('mô hình: bốn nhóm Thiết kế, Mô phỏng, Vận hành thật, Báo cáo; mỗi mục có biểu tượng; tiêu đề là tên mô hình', () => {
     const n = subNavFor('/versions/7', { modelKey: 'm', versionId: 7, version: 2 })!
     expect(n.title).toBe('m')
-    expect(n.groups.map((g) => g.title)).toEqual(['Thiết kế', 'Mô phỏng', 'Vận hành thật'])
+    expect(n.groups.map((g) => g.title)).toEqual(['Thiết kế', 'Mô phỏng', 'Vận hành thật', 'Báo cáo'])
     expect(n.groups.flatMap((g) => g.tabs).every((t) => !!t.icon)).toBe(true)
   })
-  it('lần chạy: nhóm của lần chạy lên đầu, các nhóm của mô hình vẫn còn bên dưới', () => {
+  it('lần chạy: panel phụ là điều hướng của mô hình, mục Lần chạy sáng; tab của lần chạy không nằm ở đây', () => {
     const n = subNavFor('/runs/12/sensors', { modelKey: 'm', versionId: 7 })!
-    expect(n.groups.map((g) => g.title)).toEqual(['Lần chạy #12', 'Thiết kế', 'Mô phỏng', 'Vận hành thật'])
-    expect(n.groups[0].tabs.map((t) => t.label)).toEqual(['Control Room', 'Cảm biến', 'Đề xuất', 'Báo cáo'])
-    // chưa biết mô hình (đang tải) thì chỉ có nhóm lần chạy
-    expect(subNavFor('/runs/12', {})!.groups.map((g) => g.title)).toEqual(['Lần chạy #12'])
+    expect(n.groups.map((g) => g.title)).toEqual(['Thiết kế', 'Mô phỏng', 'Vận hành thật', 'Báo cáo'])
+    const active = n.groups.flatMap((g) => g.tabs).filter((t) => isTabActive(t, '/runs/12/sensors')).map((t) => t.label)
+    expect(active).toEqual(['Lần chạy'])
+  })
+  it('lần chạy đang tải (chưa biết mô hình) vẫn giữ chỗ panel phụ', () => {
+    expect(subNavFor('/runs/12', {})).toEqual({ title: '…', groups: [] })
+    expect(subNavFor('/compare', {})).toEqual({ title: '…', groups: [] })
+  })
+  it('tab của một lần chạy: so với gốc chỉ có khi có lần chạy gốc, đề xuất mang số lượng', () => {
+    expect(runTabs(12).map((t) => t.label)).toEqual(['Control Room', 'Cảm biến', 'Đề xuất', 'Báo cáo'])
+    const tabs = runTabs(12, { recommendations: 3, compare: true })
+    expect(tabs.map((t) => t.to)).toEqual(['/runs/12', '/runs/12/sensors', '/runs/12/recommendations', '/runs/12/compare', '/runs/12/report'])
+    expect(tabs[2].count).toBe(3)
+    expect(isTabActive(tabs[0], '/runs/12')).toBe(true)
+    expect(isTabActive(tabs[0], '/runs/12/report')).toBe(false)
+  })
+  it('khu đồng hồ: Trạm sáng ở mọi trang trạm, Camera sáng ở trang camera', () => {
+    const tabs = subNavFor('/gauge-twin', {})!.groups[0].tabs
+    const on = (p: string) => tabs.filter((t) => isTabActive(t, p)).map((t) => t.label)
+    expect(on('/gauge-twin')).toEqual(['Trạm'])
+    expect(on('/gauge-twin/machine_001/history')).toEqual(['Trạm'])
+    expect(on('/gauge-twin/cameras/cam-1')).toEqual(['Camera'])
   })
   it('thư viện có panel phụ riêng', () => {
     const n = subNavFor('/library/materials/RAW-01', {})!
@@ -159,8 +195,18 @@ describe('subNavFor (panel phụ cạnh thanh chính)', () => {
     expect(n.groups[0].tabs.map((t) => t.label)).toEqual(['Loại node', 'Vật tư'])
     expect(isTabActive(n.groups[0].tabs[1], '/library/materials/RAW-01')).toBe(true)
   })
-  it('trang danh sách cấp cao không có panel phụ', () => {
-    for (const p of ['/', '/models', '/alerts', '/runs', '/compare']) expect(subNavFor(p, {})).toBeNull()
+  it('Tổng quan có panel phụ: hiệu năng nhà máy, Benchmark FMCG; mỗi trang sáng đúng một mục', () => {
+    for (const p of ['/', '/benchmarks']) {
+      const n = subNavFor(p, {})!
+      expect(n.title).toBe('Tổng quan')
+      expect(n.icon).toBe('overview')
+      const tabs = n.groups[0].tabs
+      expect(tabs.map((t) => t.to)).toEqual(['/', '/benchmarks'])
+      expect(tabs.filter((t) => isTabActive(t, p)).map((t) => t.to)).toEqual([p])
+    }
+  })
+  it('danh sách mô hình và Cảnh báo là một trang duy nhất: không có panel phụ', () => {
+    for (const p of ['/models', '/alerts']) expect(subNavFor(p, {})).toBeNull()
   })
 })
 

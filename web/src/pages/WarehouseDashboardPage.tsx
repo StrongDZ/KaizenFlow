@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import {
-  Warehouse as WarehouseIcon, Boxes, TrendingUp as TrendingUpIcon, TrendingDown as TrendingDownIcon,
-  AlertTriangle, Gauge, Clock, ArrowLeftRight, Package, Factory,
+  Boxes, TrendingUp as TrendingUpIcon, TrendingDown as TrendingDownIcon,
+  AlertTriangle, Gauge, Clock, ArrowLeftRight, Package,
   ChevronDown, type LucideIcon, Truck, CheckCircle2, ClipboardList,
 } from 'lucide-react'
 import {
@@ -12,10 +12,10 @@ import {
 } from 'recharts'
 import { api } from '../api/client'
 import type {
-  GraphNode, ModelSummary, WarehouseDashboardView, WarehouseAlertRow,
+  GraphNode, WarehouseDashboardView, WarehouseAlertRow,
   WarehouseSkuRow, WarehouseSeriesEntry, PipelinePoint, InboundRow,
 } from '../api/types'
-import { EmptyState, ErrorBox, Loading, PageBody, PageHeader, Card, btnGhost } from '../components/ui'
+import { EmptyState, ErrorBox, Loading, PageBody, PageHeader, Card } from '../components/ui'
 import { fmtDateTime as fmtDateTimeOrig } from '../lib/format'
 
 type Resolution = '1h' | '6h' | '1d'
@@ -79,12 +79,10 @@ function aggregateHistory(entries: WarehouseSeriesEntry[], resolution: Resolutio
 }
 
 export default function WarehouseDashboardPage() {
-  void useLocation()
   const modelsQ = useQuery({ queryKey: ['models'], queryFn: api.models, staleTime: 30_000 })
-  const selectedModelKey = useMemo(() => {
-    const m = (modelsQ.data ?? []).find((x) => x.model_key === 'bimbo-fmcg') ?? (modelsQ.data ?? [])[0]
-    return m?.model_key ?? 'bimbo-fmcg'
-  }, [modelsQ.data])
+  // Trang thuộc một mô hình (/models/:key/warehouse-report): đổi mô hình ở danh sách Mô hình, không có ô chọn ở đây.
+  const selectedModelKey = decodeURIComponent(useParams().key ?? '')
+  const modelMissing = !!modelsQ.data && !modelsQ.data.some((x) => x.model_key === selectedModelKey)
   const selectedVersionId = useMemo(() => {
     const m = (modelsQ.data ?? []).find((x) => x.model_key === selectedModelKey)
     return m?.latest_version_id
@@ -138,24 +136,13 @@ export default function WarehouseDashboardPage() {
   return (
     <PageBody>
       <PageHeader
-        title="Kho tổng thể"
-        subtitle={
-          <span className="inline-flex items-center gap-2 text-xs text-muted">
-            <WarehouseIcon size={12} strokeWidth={1.8} />
-            Dashboard tồn kho tổng hợp: order sắp tới, lịch sử nhập/xuất, hiệu suất, cảnh báo theo độ rủi ro.
-          </span>
-        }
-        actions={
-          <Link to="/reports/warehouse" className={btnGhost}>
-            <Boxes size={13} /> Điều khiển tồn kho
-          </Link>
-        }
+        title="Báo cáo kho"
+        subtitle="Đơn sắp tới, lịch sử nhập/xuất 14 ngày, hiệu suất và cảnh báo theo độ rủi ro của từng kho"
       />
 
-      {/* Sticky Selector top-[40px] — Shell header h-10 = 40px */}
-      <div className="sticky top-[40px] z-30 -mx-6 mb-4 border-b border-line bg-bg/85 px-6 py-2 backdrop-blur-sm">
+      {/* Thanh chọn kho bám đỉnh vùng cuộn (header chung nằm ngoài vùng này nên top-0). */}
+      <div className="sticky top-0 z-30 -mx-6 mb-4 border-b border-line bg-bg/85 px-6 py-2 backdrop-blur-sm">
         <div className="flex flex-wrap items-center gap-2">
-          <ModelPicker models={modelsQ.data ?? []} value={selectedModelKey} disabled={modelsQ.isLoading} />
           <NodePicker nodes={storageNodes} value={resolvedNodeKey ?? ''} onChange={setSelectedNodeKey} disabled={!graphQ.data} />
           <div className="ml-auto flex items-center gap-1 rounded-lg border border-line-2 bg-panel px-2 py-1">
             {(['1h', '6h', '1d'] as Resolution[]).map((r) => (
@@ -176,13 +163,17 @@ export default function WarehouseDashboardPage() {
         </div>
       </div>
 
-      {err ? (
+      {modelMissing ? (
+        <EmptyState title="Không có mô hình này">
+          Mô hình {selectedModelKey} không còn. Chọn mô hình khác ở <Link to="/models" className="text-accent underline">Mô hình</Link>.
+        </EmptyState>
+      ) : err ? (
         <ErrorBox error={err instanceof Error ? err : new Error(String(err))} />
       ) : isLoading ? (
         <Loading />
       ) : !dashboardQ.data ? (
         <EmptyState title="Chưa có dữ liệu kho">
-          Chọn mô hình và kho ở thanh trên để xem dashboard.
+          Chọn kho ở thanh trên để xem báo cáo.
         </EmptyState>
       ) : (
         <DashboardContent view={dashboardQ.data} aggHistory={agg} alerts={sortedAlerts} resolution={resolution} />
@@ -192,27 +183,6 @@ export default function WarehouseDashboardPage() {
 }
 
 /* ——— Subcomponents ——— */
-
-function ModelPicker({ models, value, disabled }: { models: ModelSummary[]; value: string; disabled?: boolean }) {
-  return (
-    <label className="inline-flex items-center gap-2 rounded-lg border border-line-2 bg-panel px-2.5 py-1.5 text-xs">
-      <Factory size={12} className="text-muted" />
-      <span className="text-muted">Mô hình</span>
-      <select
-        disabled={disabled}
-        value={value}
-        className="bg-transparent pr-4 text-[12px] font-medium text-text outline-none disabled:opacity-60"
-        aria-label="Chọn mô hình"
-      >
-        {models.map((m) => (
-          <option key={m.model_key} value={m.model_key}>{m.model_key} · v{m.latest_version}</option>
-        ))}
-        {models.length === 0 && <option value="">(đang tải)</option>}
-      </select>
-      <ChevronDown size={12} className="-ml-3 text-muted" />
-    </label>
-  )
-}
 
 function NodePicker({ nodes, value, onChange, disabled }: {
   nodes: GraphNode[]; value: string; onChange: (k: string) => void; disabled?: boolean
@@ -225,7 +195,7 @@ function NodePicker({ nodes, value, onChange, disabled }: {
         disabled={disabled || nodes.length === 0}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="bg-transparent pr-4 text-[12px] font-medium text-text outline-none disabled:opacity-60"
+        className="appearance-none bg-transparent pr-4 text-[12px] font-medium text-text outline-none disabled:opacity-60"
         aria-label="Chọn kho"
       >
         {nodes.map((n) => (
@@ -267,22 +237,22 @@ function DashboardContent({
     <div className="flex flex-col gap-4">
       {/* A. Hero 8 KPI */}
       <section aria-label="Hero KPI" className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <HeroCard label="TỒN TỔNG" value={fmtInt(h.on_hand_total)} unit="pallet" tone="ok" icon={Package}
+        <HeroCard label="Tồn kho" value={fmtInt(h.on_hand_total)} unit="pallet" tone="ok" icon={Package}
           sub={fmtInt(h.capacity_total) + ' dung lượng'} />
-        <HeroCard label="DUNG LƯỢNG" value={fmtInt(h.capacity_total)} unit="slot" tone="neutral" icon={Boxes}
+        <HeroCard label="Dung lượng" value={fmtInt(h.capacity_total)} unit="slot" tone="neutral" icon={Boxes}
           sub={h.fill_pct.toFixed(1) + '% đầy'} />
-        <HeroCard label="FILL %" value={h.fill_pct.toFixed(1)} unit="%" tone={h.fill_pct >= 88 ? 'bad' : h.fill_pct >= 68 ? 'warn' : 'ok'} icon={Gauge}
+        <HeroCard label="Lấp đầy" value={h.fill_pct.toFixed(1)} unit="%" tone={h.fill_pct >= 88 ? 'bad' : h.fill_pct >= 68 ? 'warn' : 'ok'} icon={Gauge}
           sub={h.fill_pct >= 88 ? 'Gần đầy — rủi ro OVERSTOCK' : h.fill_pct <= 22 ? 'Thấp — rủi ro UNDERSTOCK' : 'Trong ngưỡng an toàn'} />
-        <HeroCard label="COVERAGE" value={h.coverage_remaining_h.toFixed(0)} unit="giờ" tone={h.coverage_remaining_h < 12 ? 'bad' : h.coverage_remaining_h < 24 ? 'warn' : 'ok'} icon={Clock}
+        <HeroCard label="Độ phủ" value={h.coverage_remaining_h.toFixed(0)} unit="giờ" tone={h.coverage_remaining_h < 12 ? 'bad' : h.coverage_remaining_h < 24 ? 'warn' : 'ok'} icon={Clock}
           sub={'Tồn đủ ' + h.coverage_remaining_h.toFixed(0) + 'h nhu cầu'} />
-        <HeroCard label="VÀO 24H" value={fmtInt(h.inbound_last_24h)} unit="pallet" tone="neutral" icon={TrendingDownIcon}
+        <HeroCard label="Nhập 24 giờ" value={fmtInt(h.inbound_last_24h)} unit="pallet" tone="neutral" icon={TrendingDownIcon}
           sub="Tổng nhập 24h vừa qua" />
-        <HeroCard label="RA 24H" value={fmtInt(h.outbound_last_24h)} unit="pallet" tone="neutral" icon={TrendingUpIcon}
+        <HeroCard label="Xuất 24 giờ" value={fmtInt(h.outbound_last_24h)} unit="pallet" tone="neutral" icon={TrendingUpIcon}
           sub="Tổng xuất 24h vừa qua" />
-        <HeroCard label="NET 24H" value={(h.net_flow_last_24h >= 0 ? '+' : '') + fmtInt(h.net_flow_last_24h)} unit="pallet"
+        <HeroCard label="Chênh lệch 24 giờ" value={(h.net_flow_last_24h >= 0 ? '+' : '') + fmtInt(h.net_flow_last_24h)} unit="pallet"
           tone={h.net_flow_last_24h < -50 ? 'bad' : h.net_flow_last_24h > 50 ? 'warn' : 'ok'} icon={ArrowLeftRight}
           sub={h.net_flow_last_24h < 0 ? 'Tồn giảm' : h.net_flow_last_24h > 0 ? 'Tồn tăng' : 'Bằng phẳng'} />
-        <HeroCard label="CẢNH BÁO CAO" value={String(h.high_alert_count)} unit="bản" tone={h.high_alert_count > 0 ? 'bad' : 'ok'} icon={AlertTriangle}
+        <HeroCard label="Cảnh báo mức cao" value={String(h.high_alert_count)} unit="bản" tone={h.high_alert_count > 0 ? 'bad' : 'ok'} icon={AlertTriangle}
           sub={h.high_alert_count > 0 ? 'Xem Cảnh báo bên dưới' : 'Không có cảnh báo HIGH'} />
       </section>
 
@@ -361,17 +331,17 @@ function DashboardContent({
                       'Thiếu': Math.max(0, p.demand - p.inbound),
                     }
                   })} margin={{ top: 8, right: 10, left: -10, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--line-2))" />
-                    <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'hsl(var(--muted))' }} />
-                    <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted))' }} />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-line-2)" />
+                    <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'var(--color-muted)' }} />
+                    <YAxis tick={{ fontSize: 10, fill: 'var(--color-muted)' }} />
                     <Tooltip
-                      contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid hsl(var(--line-2))', background: 'hsl(var(--panel))' }}
-                      labelStyle={{ fontWeight: 600, color: 'hsl(var(--text))' }}
+                      contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid var(--color-line-2)', background: 'var(--color-panel)' }}
+                      labelStyle={{ fontWeight: 600, color: 'var(--color-text)' }}
                     />
                     <Legend wrapperStyle={{ fontSize: 11, paddingTop: 4 }} />
-                    <Bar dataKey="Đầu vào" stackId="in" fill="hsl(var(--ok))" radius={[4, 4, 0, 0]} opacity={0.85} />
-                    <Bar dataKey="Nhu cầu" stackId="out" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} opacity={0.85} />
-                    <Line type="monotone" dataKey="Thiếu" stroke="hsl(var(--bad))" strokeWidth={2} dot={{ r: 2 }} />
+                    <Bar dataKey="Đầu vào" stackId="in" fill="var(--color-ok)" radius={[4, 4, 0, 0]} opacity={0.85} />
+                    <Bar dataKey="Nhu cầu" stackId="out" fill="var(--color-accent)" radius={[4, 4, 0, 0]} opacity={0.85} />
+                    <Line type="monotone" dataKey="Thiếu" stroke="var(--color-bad)" strokeWidth={2} dot={{ r: 2 }} />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -406,16 +376,16 @@ function DashboardContent({
             <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
               <defs>
                 <linearGradient id="stockGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="hsl(var(--accent))" stopOpacity={0.45} />
-                  <stop offset="100%" stopColor="hsl(var(--accent))" stopOpacity={0.03} />
+                  <stop offset="0%" stopColor="var(--color-accent)" stopOpacity={0.45} />
+                  <stop offset="100%" stopColor="var(--color-accent)" stopOpacity={0.03} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--line-2))" />
-              <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'hsl(var(--muted))' }} />
-              <YAxis tick={{ fontSize: 10, fill: 'hsl(var(--muted))' }} />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-line-2)" />
+              <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'var(--color-muted)' }} />
+              <YAxis tick={{ fontSize: 10, fill: 'var(--color-muted)' }} />
               <Tooltip
-                contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid hsl(var(--line-2))', background: 'hsl(var(--panel))' }}
-                labelStyle={{ fontWeight: 600, color: 'hsl(var(--text))' }}
+                contentStyle={{ fontSize: 11, borderRadius: 10, border: '1px solid var(--color-line-2)', background: 'var(--color-panel)' }}
+                labelStyle={{ fontWeight: 600, color: 'var(--color-text)' }}
                 formatter={(v, n) => {
                   const num = typeof v === 'number' ? v : Number(v ?? 0)
                   const label = typeof n === 'string' ? n : ''
@@ -424,9 +394,9 @@ function DashboardContent({
                 }}
               />
               <Legend wrapperStyle={{ fontSize: 11, paddingTop: 4 }} />
-              <Area type="monotone" dataKey="Tồn kho" stroke="hsl(var(--accent))" strokeWidth={2} fill="url(#stockGrad)" />
-              <Line type="monotone" dataKey="Nhập vào" stroke="hsl(var(--ok))" strokeWidth={1.8} dot={false} />
-              <Line type="monotone" dataKey="Xuất ra" stroke="hsl(var(--warn))" strokeWidth={1.8} dot={false} strokeDasharray="5 3" />
+              <Area type="monotone" dataKey="Tồn kho" stroke="var(--color-accent)" strokeWidth={2} fill="url(#stockGrad)" />
+              <Line type="monotone" dataKey="Nhập vào" stroke="var(--color-ok)" strokeWidth={1.8} dot={false} />
+              <Line type="monotone" dataKey="Xuất ra" stroke="var(--color-warn)" strokeWidth={1.8} dot={false} strokeDasharray="5 3" />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -485,7 +455,7 @@ function DashboardContent({
         <div className="overflow-x-auto">
           <table className="min-w-full border-collapse text-[12px]">
             <thead>
-              <tr className="border-b border-line-2 bg-panel-2/50 text-left text-[10.5px] uppercase tracking-wider text-muted">
+              <tr className="border-b border-line-2 bg-panel-2/50 text-left text-[10.5px] text-muted">
                 <th className="px-3 py-2 font-semibold">SKU</th>
                 <th className="px-3 py-2 text-right font-semibold">Tồn</th>
                 <th className="px-3 py-2 text-right font-semibold">Max</th>
@@ -613,7 +583,7 @@ function HeroCard({
     <section className={'rounded-xl border bg-panel p-3 ' + toneRing}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted">
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted">
             <Icon size={11} strokeWidth={2} /> {label}
           </div>
           <div className="mt-1.5 flex items-baseline gap-1.5">

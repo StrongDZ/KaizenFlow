@@ -8,7 +8,6 @@ import { failureModeOptionsOf, failureModesOf, poolCount } from '../../lib/model
 import { FULL_DETAIL_MAX_HORIZON_S, formatScenarioDuration, scenarioWarmupSeconds, startStateLabel } from '../../lib/scenarioView'
 import { Card, ErrorBox, Notice, btn, btnLinkDanger, btnPrimary, input } from '../ui'
 import { ScenarioTimeline } from './ScenarioTimeline'
-import { DecisionJourney } from './DecisionJourney'
 
 const HORIZON_PRESETS = [1, 4, 8, 24]
 const REP_PRESETS = [
@@ -90,12 +89,10 @@ export function ScenarioFormView({ graph, types, initial, submitLabel, pending, 
   }`
   return (
     <div className="space-y-4">
-      <DecisionJourney active="setup" />
-      <section className="rounded-xl border border-accent/25 bg-gradient-to-br from-accent/10 via-panel to-panel p-4">
+      <section className="rounded-xl border border-line bg-panel p-4">
         <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-accent">Bắt đầu nhanh</div>
-            <h2 className="mt-0.5 text-sm font-semibold text-text">Bạn muốn kiểm chứng tình huống nào?</h2>
+            <h2 className="text-sm font-semibold text-text">Bạn muốn kiểm chứng tình huống nào?</h2>
             <p className="mt-1 text-[11px] text-muted">Chọn một mẫu để tự điền cấu hình hợp lệ; mọi tham số vẫn có thể chỉnh ở bên dưới.</p>
           </div>
           <button type="button" className={btn} onClick={savePreset}><BookmarkPlus size={13} /> Lưu cấu hình hiện tại</button>
@@ -118,7 +115,7 @@ export function ScenarioFormView({ graph, types, initial, submitLabel, pending, 
         </div>
         {savedPresets.length > 0 && (
           <div className="mt-3 border-t border-line pt-3">
-            <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted"><Save size={11} /> Preset của bạn</div>
+            <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold text-muted"><Save size={11} /> Preset của bạn</div>
             <div className="flex flex-wrap gap-2">
               {savedPresets.map((preset) => (
                 <span key={preset.id} className="inline-flex overflow-hidden rounded-lg border border-line-2 bg-panel">

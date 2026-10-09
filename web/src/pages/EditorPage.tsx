@@ -13,7 +13,7 @@ import { DRAG_TYPE, NodePalette } from '../components/editor/NodePalette'
 import { QuickAdd } from '../components/editor/QuickAdd'
 import { ShortcutsDialog } from '../components/editor/ShortcutsDialog'
 import { kfEdgeTypes } from '../components/KfEdge'
-import { kfNodeTypes } from '../components/KfNode'
+import { KfNodeContext, kfNodeTypes } from '../components/KfNode'
 import { CheckControl } from '../components/editor/CheckControl'
 import { SaveGuard } from '../components/editor/SaveGuard'
 import { WarehousePopover, type WarehouseSkuRow } from '../components/WarehousePopover'
@@ -52,6 +52,7 @@ export default function EditorPage() {
 
 function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeType[]; materials: string[] }) {
   const types = useMemo(() => byCode(typeList), [typeList])
+  const nodeCtx = useMemo(() => ({ mode: 'design' as const, types }), [types])
   const initial = useMemo(() => toFlow(graph, types), [graph, types])
   const [nodes, setNodes] = useState<FlowNode[]>(initial.nodes)
   const [edges, setEdges] = useState<FlowEdge[]>(initial.edges)
@@ -285,7 +286,7 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
     if (readOnly || nodes.length === 0) return
     remember()
     const pos = autoLayout(
-      nodes.map((n) => ({ id: n.id, w: n.measured?.width ?? 108, h: n.measured?.height ?? 92, pool: n.data.archetype === 'RESOURCE_POOL' })),
+      nodes.map((n) => ({ id: n.id, w: n.measured?.width ?? 164, h: n.measured?.height ?? 80, pool: n.data.archetype === 'RESOURCE_POOL' })),
       edges.map((e) => ({ source: e.source, target: e.target })),
       d,
     )
@@ -410,6 +411,7 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
         )}
       </HeaderActions>
 
+      <KfNodeContext.Provider value={nodeCtx}>
       <ReactFlow
         nodes={decorated} edges={decoratedEdges} nodeTypes={kfNodeTypes} edgeTypes={kfEdgeTypes} colorMode={theme}
         onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={readOnly ? undefined : onConnect} isValidConnection={(c) => canConnect(c, archetypeOf).ok}
@@ -437,6 +439,7 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
       >
         <Background gap={18} size={1} color="var(--color-line)" />
       </ReactFlow>
+      </KfNodeContext.Provider>
 
       {popover && popoverNode && (
         <WarehousePopover

@@ -165,3 +165,35 @@ export function splitTiles<T extends { state: string }>(gauges: T[], max = MAX_T
     .slice(0, max).map(([g]) => g))
   return [gauges.filter((g) => picked.has(g)), gauges.filter((g) => !picked.has(g))]
 }
+
+const range = (g: { min: number | null; max: number | null }) => `${g.min ?? '…'}–${g.max ?? '…'}`.replace(/\./g, ',')
+
+/**
+ * Một câu cho người trực ca: trạm này đang có chuyện gì và nên kiểm tra cái gì. Trạm bình thường hoặc chưa từng gửi dữ liệu thì không có.
+ * Vượt ngưỡng là chuyện của máy; ảnh kém là chuyện của camera; chậm hoặc mất tín hiệu là chuyện của edge và mạng.
+ */
+export function attentionHint(s: GaugeStation, now: number): string | undefined {
+  switch (stationKind(s)) {
+    case 'alarm': {
+      const g = s.gauges.find((x) => x.state === 'alarm')
+      return g ? `${g.gauge_id} ${fmtValue(g.value, g.type)} ${unitLabel(g.unit)} ngoài ngưỡng ${range(g)}: kiểm tra máy` : 'Có đồng hồ vượt ngưỡng: kiểm tra máy'
+    }
+    case 'poor': {
+      const g = s.gauges.find((x) => x.state === 'poor')
+      return g ? `${g.gauge_id} ${gaugeStateLabel(g.state, g.flags).toLowerCase()}: kiểm tra camera, đèn, vật che` : 'Ảnh đọc kém: kiểm tra camera'
+    }
+    case 'stale': return 'Số đọc đến chậm: kiểm tra edge và mạng'
+    case 'lost': return `Edge im lặng, lần cuối ${ageLabel(s.edge?.last_seen ?? null, now)}: kiểm tra nguồn và mạng của edge`
+    default: return undefined
+  }
+}
+
+/** Lần đọc mới nhất của trạm (theo mọi đồng hồ), null khi chưa có. */
+export function latestReading(s: GaugeStation): string | null {
+  return s.gauges.map((g) => g.ts).filter((t): t is string => t !== null).sort().at(-1) ?? null
+}
+
+const TYPE_LABEL: Record<string, string> = { analog_dial: 'Đồng hồ kim', seg7: 'Đồng hồ số LED', rolling_counter: 'Bộ đếm số lăn', timer_mmss: 'Màn hình thời gian' }
+export function gaugeTypeLabel(type: string): string {
+  return TYPE_LABEL[type] ?? type
+}

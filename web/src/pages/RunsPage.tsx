@@ -21,16 +21,15 @@ const FILTERS = [
 
 
 const RUN_COLOR: Record<string, string> = { DONE: 'var(--color-ok)', FAILED: 'var(--color-bad)', RUNNING: 'var(--color-accent)', QUEUED: 'var(--color-muted)' }
-export default function RunsPage({ scope }: { scope: 'all' | 'version' }) {
-  const params = useParams()
-  const versionId = scope === 'version' ? Number(params.id) : undefined
+export default function RunsPage() {
+  const versionId = Number(useParams().id)
   const navigate = useNavigate()
   const qc = useQueryClient()
   const [filter, setFilter] = useState<(typeof FILTERS)[number]['key']>('all')
   const [sel, setSel] = useState<number[]>([])
   const status = FILTERS.find((f) => f.key === filter)?.status
   const runs = useQuery({
-    queryKey: ['runs', 'all', versionId ?? 'all', filter],
+    queryKey: ['runs', 'all', versionId, filter],
     queryFn: () => api.allRuns({ status, version: versionId, limit: 200 }),
   })
   if (runs.isLoading) return <Loading />
