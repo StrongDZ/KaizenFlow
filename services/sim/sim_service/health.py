@@ -72,7 +72,10 @@ class Health:
             self.env.process(self._random_failures())
         injected = {i.failure: i for i in self.injections if i.kind == "failure"}
         for code, mode in self.modes.items():
-            self.env.process(self._mode_loop(mode, injected.get(code)))
+            injection = injected.get(code)
+            if mode.get("injection_only") and injection is None:
+                continue
+            self.env.process(self._mode_loop(mode, injection))
         for inj in self.injections:
             if inj.kind == "planned_stop":
                 self.env.process(self._planned(inj))
@@ -124,6 +127,8 @@ class Health:
             self.renewal += 1
             self.go_up(mode["code"])
             rec.event(env.now, key, "REPAIRED", {"mode": mode["code"]})
+            if mode.get("injection_only"):
+                return
 
     def _planned(self, inj):
         env = self.env

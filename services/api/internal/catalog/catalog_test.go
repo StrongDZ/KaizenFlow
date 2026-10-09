@@ -140,3 +140,53 @@ func TestDistOptionsHaveTitlesForForms(t *testing.T) {
 		}
 	}
 }
+
+func TestBuiltinFailureCatalogIsUsableAndConsistent(t *testing.T) {
+	expected := map[string]int{"IQC": 1, "STAMP_PRESS": 4, "ASSEMBLY_CELL": 3, "AOI": 2, "PACKING": 2}
+	for _, b := range catalog.Builtins {
+		want, relevant := expected[b.Code]
+		if !relevant {
+			continue
+		}
+		var signals, modes []map[string]any
+		if err := json.Unmarshal([]byte(b.Signals), &signals); err != nil {
+			t.Fatalf("%s signals: %v", b.Code, err)
+		}
+		if err := json.Unmarshal([]byte(b.FailureModes), &modes); err != nil {
+			t.Fatalf("%s failure modes: %v", b.Code, err)
+		}
+		if len(modes) != want {
+			t.Fatalf("%s has %d modes, want %d", b.Code, len(modes), want)
+		}
+		signalNames := map[string]bool{}
+		for _, signal := range signals {
+			signalNames[signal["name"].(string)] = true
+		}
+		codes := map[string]bool{}
+		for _, mode := range modes {
+			code, _ := mode["code"].(string)
+			label, _ := mode["label"].(string)
+			description, _ := mode["description"].(string)
+			if code == "" || label == "" || description == "" || codes[code] {
+				t.Fatalf("%s has incomplete or duplicate mode: %+v", b.Code, mode)
+			}
+			codes[code] = true
+			if mode["onset"] == nil || mode["p_to_f"] == nil || mode["on_fail"] == nil {
+				t.Fatalf("%s/%s misses lifecycle configuration", b.Code, code)
+			}
+			if code == "bearing_wear" {
+				if mode["injection_only"] != nil {
+					t.Fatalf("legacy spontaneous mode %s/%s became injection-only", b.Code, code)
+				}
+			} else if mode["injection_only"] != true {
+				t.Fatalf("new mode %s/%s must not change baseline runs", b.Code, code)
+			}
+			for _, raw := range mode["effects"].([]any) {
+				effect := raw.(map[string]any)
+				if !signalNames[effect["signal"].(string)] {
+					t.Fatalf("%s/%s references unknown signal %v", b.Code, code, effect["signal"])
+				}
+			}
+		}
+	}
+}

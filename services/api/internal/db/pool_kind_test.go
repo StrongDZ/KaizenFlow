@@ -30,10 +30,10 @@ func TestPoolKindMigrationAddsAMRToStoredNodeTypeSchemas(t *testing.T) {
 	if err := goose.SetDialect("postgres"); err != nil {
 		t.Fatal(err)
 	}
-	if err := goose.Down(sqlDB, "."); err != nil { // lùi migration cuối (AMR) rồi áp lại lên dữ liệu có sẵn
+	if err := goose.DownTo(sqlDB, ".", 5); err != nil { // lùi đúng migration AMR, không phụ thuộc migration nào được thêm sau này
 		t.Fatal(err)
 	}
-	if err := goose.Up(sqlDB, "."); err != nil {
+	if err := goose.UpTo(sqlDB, ".", 6); err != nil {
 		t.Fatal(err)
 	}
 	enum := func(code string) []string {

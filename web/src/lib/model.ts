@@ -24,9 +24,24 @@ function names(list: Json[] | undefined, field: string): string[] {
   return (list ?? []).map((x) => String(x[field]))
 }
 
-export function failureModesOf(node: NodeRef, types: Record<string, NodeType>): string[] {
+export type FailureModeOption = { code: string; label: string; description: string }
+
+/** Failure mode hiệu lực của node, kèm nội dung thân thiện cho form Scenario. */
+export function failureModeOptionsOf(node: NodeRef, types: Record<string, NodeType>): FailureModeOption[] {
   const own = node.params.failure_modes as Json[] | undefined
-  return names(own ?? types[node.node_type]?.failure_modes, 'code')
+  return (own ?? types[node.node_type]?.failure_modes ?? []).flatMap((raw) => {
+    const code = typeof raw.code === 'string' ? raw.code : ''
+    if (!code) return []
+    return [{
+      code,
+      label: typeof raw.label === 'string' && raw.label.trim() ? raw.label : code,
+      description: typeof raw.description === 'string' ? raw.description : '',
+    }]
+  })
+}
+
+export function failureModesOf(node: NodeRef, types: Record<string, NodeType>): string[] {
+  return failureModeOptionsOf(node, types).map((mode) => mode.code)
 }
 
 export function signalsOf(node: NodeRef, types: Record<string, NodeType>): string[] {

@@ -77,7 +77,13 @@ func TestTypeSignalsAndFailureModesMerged(t *testing.T) {
 		t.Fatal(err)
 	}
 	fm := node(r, "P").Params["failure_modes"].([]any)
-	if len(fm) != 1 || fm[0].(map[string]any)["code"] != "bearing_wear" || len(node(r, "P").Params["signals"].([]any)) != 1 {
+	codes := map[string]bool{}
+	for _, raw := range fm {
+		codes[raw.(map[string]any)["code"].(string)] = true
+	}
+	if len(fm) != 4 || !codes["bearing_wear"] || !codes["die_jam"] ||
+		!codes["hydraulic_pressure_loss"] || !codes["motor_overheat"] ||
+		len(node(r, "P").Params["signals"].([]any)) != 1 {
 		t.Fatalf("P params = %v", node(r, "P").Params)
 	}
 }

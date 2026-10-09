@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import type { Graph, NodeType, ScenarioBody } from '../../api/types'
 import { formProblems, formToScenarioBody, type ScenarioForm } from '../../lib/scenarioForm'
 import { affectedNodeNames, applyScenarioTemplate, scenarioTemplates, type ScenarioTemplateKey } from '../../lib/scenarioExperience'
-import { failureModesOf, poolCount } from '../../lib/model'
+import { failureModeOptionsOf, failureModesOf, poolCount } from '../../lib/model'
 import { FULL_DETAIL_MAX_HORIZON_S, formatScenarioDuration, scenarioWarmupSeconds, startStateLabel } from '../../lib/scenarioView'
 import { Card, ErrorBox, Notice, btn, btnLinkDanger, btnPrimary, input } from '../ui'
 import { ScenarioTimeline } from './ScenarioTimeline'
@@ -56,6 +56,10 @@ export function ScenarioFormView({ graph, types, initial, submitLabel, pending, 
     const shown = n.name || types[n.node_type]?.name || n.key
     return shown === n.key ? n.key : `${shown} (${n.key})`
   }
+  const failureLabel = (target: string, code: string) => {
+    const node = graph.nodes.find((item) => item.key === target)
+    return node ? failureModeOptionsOf(node, types).find((mode) => mode.code === code)?.label ?? code : code
+  }
   const problems = formProblems(f)
   const horizonS = f.hours * 3600
   const warmupS = scenarioWarmupSeconds(f.start, graph.settings)
@@ -66,7 +70,7 @@ export function ScenarioFormView({ graph, types, initial, submitLabel, pending, 
     label: row.target || 'Chưa chọn máy',
     detail: row.kind === 'planned_stop'
       ? `Dừng có kế hoạch trong ${formatScenarioDuration(row.duration_min * 60)}`
-      : row.failure ? `Lỗi ${row.failure}` : 'Chưa chọn loại lỗi',
+      : row.failure ? `Lỗi ${failureLabel(row.target, row.failure)}` : 'Chưa chọn loại lỗi',
     kind: row.kind,
     durationS: row.kind === 'planned_stop' ? row.duration_min * 60 : undefined,
   }))
@@ -184,6 +188,8 @@ export function ScenarioFormView({ graph, types, initial, submitLabel, pending, 
             {f.inj.map((row, i) => {
               const choices = row.kind === 'planned_stop' ? processes : faultable
               const node = choices.find((n) => n.key === row.target)
+              const failureModes = node ? failureModeOptionsOf(node, types) : []
+              const selectedFailure = failureModes.find((mode) => mode.code === row.failure)
               const upd = (patch: Partial<typeof row>) => set({ inj: f.inj.map((r, j) => (j === i ? { ...r, ...patch } : r)) })
               const maxMin = Math.max(0, Math.ceil(f.hours * 60) - 1)
               return (
@@ -206,7 +212,11 @@ export function ScenarioFormView({ graph, types, initial, submitLabel, pending, 
                       </select>
                     </label>
                     <label className={label}>Máy
-                      <select className={input} value={row.target} onChange={(e) => upd({ target: e.target.value, failure: '' })}>
+                      <select className={input} value={row.target} onChange={(e) => {
+                        const target = e.target.value
+                        const selected = choices.find((item) => item.key === target)
+                        upd({ target, failure: row.kind === 'failure' && selected ? failureModesOf(selected, types)[0] ?? '' : '' })
+                      }}>
                         {choices.map((n) => <option key={n.key} value={n.key}>{nameOf(n)}</option>)}
                       </select>
                     </label>
@@ -214,8 +224,9 @@ export function ScenarioFormView({ graph, types, initial, submitLabel, pending, 
                       <label className={label}>Loại lỗi
                         <select className={input} value={row.failure} onChange={(e) => upd({ failure: e.target.value })}>
                           <option value="">Chọn lỗi</option>
-                          {node && failureModesOf(node, types).map((m) => <option key={m} value={m}>{m}</option>)}
+                          {failureModes.map((mode) => <option key={mode.code} value={mode.code}>{mode.label === mode.code ? mode.code : `${mode.label} (${mode.code})`}</option>)}
                         </select>
+                        {selectedFailure?.description && <span className={hint}>{selectedFailure.description}</span>}
                       </label>
                     ) : (
                       <label className={label}>Thời gian dừng (phút)
@@ -283,7 +294,7 @@ export function ScenarioFormView({ graph, types, initial, submitLabel, pending, 
               {f.inj.map((event, index) => (
                 <div key={`${event.target}-${index}`} className="flex gap-2">
                   <span className="flex h-6 w-6 flex-none items-center justify-center rounded-md bg-warn/10 text-warn"><Clock3 size={12} /></span>
-                  <div><b className="text-text">Phút {event.at_min}: {event.target}</b><div className="text-muted">{event.kind === 'planned_stop' ? `Bảo trì ${event.duration_min} phút` : `Lỗi ${event.failure || 'chưa chọn'}`}</div></div>
+                  <div><b className="text-text">Phút {event.at_min}: {event.target}</b><div className="text-muted">{event.kind === 'planned_stop' ? `Bảo trì ${event.duration_min} phút` : `Lỗi ${event.failure ? failureLabel(event.target, event.failure) : 'chưa chọn'}`}</div></div>
                 </div>
               ))}
               {affected.length > 0 && (

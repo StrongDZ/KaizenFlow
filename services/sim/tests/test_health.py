@@ -9,13 +9,13 @@ FM = {"code": "bearing", "p_to_f": {"dist": "const", "value": 1000},
 SIG = [{"name": "vibration", "base": {"dist": "const", "value": 1.0}, "hz": 0.1}]
 
 
-def model(injections, raw_reps=(0,), horizon_s=5000):
+def model(injections, raw_reps=(0,), horizon_s=5000, failure_modes=None):
     return make_request(
         [{"key": "SRC", "archetype": "SOURCE",
           "params": {"arrivals": {"interarrival": 1}, "lots": [{"material": "X", "qty": 1}]}},
          {"key": "M", "archetype": "PROCESS", "params": {
              "recipes": [{"inputs": [{"material": "X", "qty": 1}], "outputs": [{"material": "Y", "qty": 1}]}],
-             "cycle": 1, "failure_modes": [FM], "signals": SIG}},
+             "cycle": 1, "failure_modes": failure_modes or [FM], "signals": SIG}},
          {"key": "OUT", "archetype": "SINK", "params": {}}],
         [{"key": "SRC>M", "src": "SRC", "dst": "M", "material": "X"},
          {"key": "M>OUT", "src": "M", "dst": "OUT", "material": "Y"}],
@@ -61,6 +61,22 @@ def test_injection_beyond_horizon_is_harmless():
     res = run_replication(model([{"target": "M", "failure": "bearing", "at_s": 99999}]))
     assert events_of(res, "FAILURE") == []
     assert "DOWN" not in res.kpis["processes"]["M"]["state_s"]
+
+
+def test_injection_only_mode_never_changes_baseline_but_runs_when_selected():
+    manual = {"code": "jam", "injection_only": True,
+              "onset": {"dist": "const", "value": 10},
+              "p_to_f": {"dist": "const", "value": 100},
+              "on_fail": {"mttr": {"dist": "const", "value": 200}}}
+    baseline = run_replication(model([], horizon_s=1500, failure_modes=[manual]))
+    assert events_of(baseline, "FAULT_ONSET", "FAILURE", "REPAIRED") == []
+    assert "DOWN" not in baseline.kpis["processes"]["M"]["state_s"]
+
+    injected = run_replication(model([{"target": "M", "failure": "jam", "at_s": 500}],
+                                     horizon_s=1500, failure_modes=[manual]))
+    assert events_of(injected, "FAULT_ONSET", "FAILURE", "REPAIRED") == [
+        (at(400), "FAULT_ONSET"), (at(500), "FAILURE"), (at(700), "REPAIRED")]
+    assert injected.kpis["processes"]["M"]["state_s"]["DOWN"] == pytest.approx(200)
 
 
 def test_non_raw_rep_keeps_labels_but_no_signals():
