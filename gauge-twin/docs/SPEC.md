@@ -109,6 +109,7 @@ Tọa độ `calib` tính trong mặt phẳng đã nắn: `quad` (4 điểm TL, 
 | `denso/{plant}/{line}/{machine}/status` | edge → server | 1 | có | `Status` (mục 3.3b); LWT cũng là `Status` với `STATE_OFFLINE` |
 | `denso/{plant}/{line}/{machine}/config` | server → edge | 1 | có | Config trạm (3.1) |
 | `denso/{plant}/{line}/{machine}/sample` | edge → server | 0 | không | Tham chiếu crop ảnh quality thấp (ảnh nằm trên MinIO) |
+| `denso/edges/{edge_id}/assignment` | server → edge | 1 | có | Danh sách máy edge đọc (`EdgeAssignment`, protojson); edge theo nó thay cho `EDGE_MACHINES` và lưu bản cuối xuống đĩa |
 | `denso/{plant}/{line}/{machine}/watch` | server → edge | 1 | không | Có người đang xem máy: edge gửi `preview` trong số giây yêu cầu (tối đa 60), server nhắc lại để giữ |
 | `denso/{plant}/{line}/{machine}/preview` | edge → server | 1 | không | Chỉ khi đang được xem: ảnh JPEG thu nhỏ của một khung hình kèm số đọc trên chính khung hình đó. Không đệm ở edge, không vào Kafka hay DB; server chỉ giữ khung mới nhất trong bộ nhớ |
 | `denso/{plant}/edge/{edge_id}/cmd/resend` | server → edge | 1 | không | `ResendRequest {edge_id, from_seq, to_seq}` (bao gồm hai đầu, ≤ 10.000 seq) |
@@ -273,7 +274,7 @@ Tiền xử lý model (resize, nội suy, thứ tự kênh, mean/std, xám/màu)
 | Làm mượt | Median trong cửa sổ + min/max | Mode (giá trị xuất hiện nhiều nhất) | Giữ giá trị chấp nhận gần nhất |
 | Gửi | Mỗi cửa sổ `window_sec` | Mỗi cửa sổ, hoặc khi đổi vượt deadband | Mỗi `report_interval_s` hoặc khi đổi |
 
-**Quality score (0–1)** = tích của các thành phần: độ tin cậy model (trung bình kp_conf hoặc tích xác suất ô), độ nét, mức cháy sáng, độ nhất quán trong cửa sổ (tỷ lệ frame đồng thuận), và hệ số phạt khi có flag. Công thức cụ thể và ngưỡng 0.7 được hiệu chỉnh lại bằng dữ liệu mô phỏng ở Giai đoạn 5.
+**Quality score (0–1)** = độ tin cậy model (trung bình kp_conf của tâm và mũi kim, hoặc xác suất của ô kém chắc chắn nhất: tích các ô làm màn 6 chữ số ở 0,9 mỗi ô chỉ còn 0,53) × độ nhất quán trong cửa sổ (tỷ lệ frame đồng thuận) × 0,5 cho mỗi flag. Độ nét và mức cháy sáng chỉ tính qua flag (`FLAG_BLUR` dưới `DECODE_BLUR_BELOW` = 20, `FLAG_GLARE` trên `DECODE_GLARE_ABOVE` = 0,10, với màn LED `DECODE_GLARE_ABOVE_LIT` = 0,35 vì đoạn sáng của LED vốn bão hoà). Lý do (đo 2026-10-10 trên 73 đồng hồ demo): phương sai Laplacian của màn số nét chỉ khoảng 36, của đồng hồ kim nhỏ khoảng 28, nên chia cho một mốc cố định 100 làm gần như mọi đồng hồ đọc đúng rơi xuống dưới 0,7. Ảnh mờ tới mức ảnh hưởng thì độ tin cậy model đã giảm. Ngưỡng 0,7 giữ nguyên.
 
 ### 4.3 Chống nghẽn và chống mất dữ liệu tại edge
 

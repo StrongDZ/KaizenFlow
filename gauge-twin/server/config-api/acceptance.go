@@ -276,6 +276,7 @@ func NewAcceptance(c *Commissioning, samples SampleStore, rules AcceptanceRules)
 func (a *Acceptance) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/commissioning/acceptance", a.record)
 	mux.HandleFunc("GET /v1/commissioning/acceptance/{machine}", a.list)
+	mux.HandleFunc("GET /v1/commissioning/accuracy", a.accuracy)
 	mux.HandleFunc("DELETE /v1/commissioning/acceptance/{machine}/{gauge}", a.clear)
 	mux.HandleFunc("GET /v1/commissioning/acceptance/{machine}/{gauge}/{id}", a.frame)
 }
@@ -423,4 +424,126 @@ func (a *Acceptance) frame(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "image/jpeg")
 	_, _ = w.Write(jpeg)
+}
+
+// ListAll returns the samples of every machine.
+func (d *DirSampleStore) ListAll(_ context.Context) ([]AcceptanceSample, error) {
+	files, err := filepath.Glob(filepath.Join(d.root, "*", "*", "*.json"))
+	if err != nil {
+		return nil, err
+	}
+	samples := make([]AcceptanceSample, 0, len(files))
+	for _, file := range files {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			return nil, err
+		}
+		var s AcceptanceSample
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return nil, fmt.Errorf("%s: %w", file, err)
+		}
+		samples = append(samples, s)
+	}
+	return samples, nil
+}
+
+// AccuracyRow is the field accuracy of a group of gauges.
+type AccuracyRow struct {
+	Key     string `json:"key"` // gauge type, or machine/gauge
+	Type    string `json:"type"`
+	Samples int    `json:"samples"`
+	Passed  int    `json:"passed"`
+	// PassRate is Passed / Samples; LowerBound is the lower end of its 95%
+	// Wilson interval: what the samples prove, given how few they may be.
+	PassRate   float64 `json:"pass_rate"`
+	LowerBound float64 `json:"lower_bound"`
+	// LowQuality counts the readings that were right but below the quality
+	// threshold (kept out of gauge_1m).
+	LowQuality int `json:"low_quality"`
+	// MeanErrorPct is the mean absolute error of dials in % of full scale.
+	MeanErrorPct *float64 `json:"mean_error_pct,omitempty"`
+}
+
+// AccuracyReport is the accuracy measured on site, from the acceptance samples.
+type AccuracyReport struct {
+	Samples int           `json:"samples"`
+	ByType  []AccuracyRow `json:"by_type"`
+	ByGauge []AccuracyRow `json:"by_gauge"`
+}
+
+// wilsonLower is the lower bound of the 95% Wilson score interval of k successes in n.
+func wilsonLower(k, n int) float64 {
+	if n == 0 {
+		return 0
+	}
+	const z = 1.959964
+	p, nf := float64(k)/float64(n), float64(n)
+	centre := p + z*z/(2*nf)
+	spread := z * math.Sqrt(p*(1-p)/nf+z*z/(4*nf*nf))
+	return math.Max(0, (centre-spread)/(1+z*z/nf))
+}
+
+// Accuracy groups the samples by gauge type and by gauge.
+func Accuracy(samples []AcceptanceSample) AccuracyReport {
+	type acc struct {
+		row        AccuracyRow
+		errSum     float64
+		errSamples int
+	}
+	byType, byGauge := map[string]*acc{}, map[string]*acc{}
+	add := func(groups map[string]*acc, key string, s AcceptanceSample) {
+		g, ok := groups[key]
+		if !ok {
+			g = &acc{row: AccuracyRow{Key: key, Type: s.Type}}
+			groups[key] = g
+		}
+		g.row.Samples++
+		if s.Passed {
+			g.row.Passed++
+			if !s.QualityOK {
+				g.row.LowQuality++
+			}
+		}
+		if s.Error != nil && s.FullScale > 0 {
+			g.errSum += math.Abs(*s.Error) / s.FullScale * 100
+			g.errSamples++
+		}
+	}
+	for _, s := range samples {
+		add(byType, s.Type, s)
+		add(byGauge, s.MachineID+"/"+s.GaugeID, s)
+	}
+	rows := func(groups map[string]*acc) []AccuracyRow {
+		out := make([]AccuracyRow, 0, len(groups))
+		for _, g := range groups {
+			r := g.row
+			r.PassRate = float64(r.Passed) / float64(r.Samples)
+			r.LowerBound = wilsonLower(r.Passed, r.Samples)
+			if g.errSamples > 0 {
+				mean := g.errSum / float64(g.errSamples)
+				r.MeanErrorPct = &mean
+			}
+			out = append(out, r)
+		}
+		sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+		return out
+	}
+	return AccuracyReport{Samples: len(samples), ByType: rows(byType), ByGauge: rows(byGauge)}
+}
+
+func (a *Acceptance) accuracy(w http.ResponseWriter, r *http.Request) {
+	lister, ok := a.samples.(interface {
+		ListAll(context.Context) ([]AcceptanceSample, error)
+	})
+	if !ok {
+		http.Error(w, "sample store cannot list every machine", http.StatusNotImplemented)
+		return
+	}
+	samples, err := lister.ListAll(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(Accuracy(samples))
 }

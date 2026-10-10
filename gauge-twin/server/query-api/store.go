@@ -130,6 +130,9 @@ type Store interface {
 	// History returns the readings of a gauge in [from, to) per bucket, from
 	// the readings (sourceRaw) or from the one-minute aggregate (sourceMinute).
 	History(ctx context.Context, machine, gauge string, from, to time.Time, bucket time.Duration, source string) ([]HistoryPoint, error)
+	// Cameras lists the cameras of the registry (table camera), whether or
+	// not a gauge is on them yet.
+	Cameras(ctx context.Context) ([]CameraRef, error)
 	Ping(ctx context.Context) error
 }
 
@@ -139,6 +142,23 @@ type PgStore struct{ pool *pgxpool.Pool }
 func NewPgStore(pool *pgxpool.Pool) *PgStore { return &PgStore{pool: pool} }
 
 func (p *PgStore) Ping(ctx context.Context) error { return p.pool.Ping(ctx) }
+
+func (p *PgStore) Cameras(ctx context.Context) ([]CameraRef, error) {
+	rows, err := p.pool.Query(ctx, `SELECT camera_id, url FROM camera ORDER BY camera_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CameraRef
+	for rows.Next() {
+		var c CameraRef
+		if err := rows.Scan(&c.ID, &c.URL); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
 
 func (p *PgStore) Stations(ctx context.Context, machineID string) ([]StationRow, error) {
 	rows, err := p.pool.Query(ctx, `

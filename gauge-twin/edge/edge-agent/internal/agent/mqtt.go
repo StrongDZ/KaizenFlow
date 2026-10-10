@@ -60,12 +60,13 @@ func (t MQTTTransport) Connect(ctx context.Context, clientID string, will Will, 
 			return true, nil
 		}},
 	})
-	ack, err := client.Connect(ctx, &paho.Connect{
-		ClientID:    clientID,
-		KeepAlive:   t.KeepAlive,
-		CleanStart:  true,
-		WillMessage: &paho.WillMessage{Topic: will.Topic, Payload: will.Payload, QoS: 1, Retain: true},
-	})
+	connect := &paho.Connect{ClientID: clientID, KeepAlive: t.KeepAlive, CleanStart: true}
+	// An edge no machine is assigned to has no status topic, so no will:
+	// a will with an empty topic makes the broker refuse the connection.
+	if will.Topic != "" {
+		connect.WillMessage = &paho.WillMessage{Topic: will.Topic, Payload: will.Payload, QoS: 1, Retain: true}
+	}
+	ack, err := client.Connect(ctx, connect)
 	if err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("connect: %w", err)

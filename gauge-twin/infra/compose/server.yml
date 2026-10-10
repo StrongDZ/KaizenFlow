@@ -69,6 +69,10 @@ services:
       MQTT_BROKER: emqx:1883
       PREVIEW_URL: http://preview-svc:8080
       ACCEPTANCE_DIR: /acceptance
+      # Gauge discovery: scans that must find a gauge before it is proposed, and how long a declared gauge may go unseen.
+      DISCOVERY_MIN_SEEN: ${DISCOVERY_MIN_SEEN:-3}
+      DISCOVERY_LOST_AFTER: ${DISCOVERY_LOST_AFTER:-15m}
+      DISCOVERY_MIN_SCORE: ${DISCOVERY_MIN_SCORE:-0.3}
       # The one web origin allowed to edit cameras and configs (the KaizenFlow dev server by default).
       CORS_ALLOWED_ORIGIN: ${CONFIG_API_CORS_ORIGIN:-http://localhost:5173}
     depends_on:
@@ -108,6 +112,8 @@ services:
         SERVICE: query-api
     restart: unless-stopped
     environment:
+      # Problems that last are posted here (Slack-style webhook); empty: shown in the UI only.
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
       # User and password travel apart from the URL, in the variables libpq and pgx read.
       DATABASE_URL: postgres://timescaledb:5432/${POSTGRES_DB:-gauge}?sslmode=disable
       PGUSER: ${POSTGRES_USER:-gauge}
@@ -141,6 +147,49 @@ services:
     networks:
       gauge-twin:
         aliases: [preview-svc]
+
+  # HTTPS for the APIs (profile tls): https://localhost:8443/query and /config.
+  # Point the web at them with VITE_GAUGE_API_URL and VITE_GAUGE_CONFIG_API_URL.
+  tls-proxy:
+    image: caddy:2.8-alpine
+    profiles: [tls]
+    restart: unless-stopped
+    environment:
+      TLS_SITE: ${TLS_SITE:-localhost}
+      TLS_ISSUER: ${TLS_ISSUER:-internal}
+    volumes:
+      - ./tls/Caddyfile:/etc/caddy/Caddyfile:ro
+      - tls-data:/data
+    ports:
+      - "${TLS_PORT:-8443}:8443"
+    networks:
+      - gauge-twin
+
+  # Finds gauges on the camera frames and proposes the undeclared ones for a
+  # person to check (config-api /v1/discovery). Optional: its image carries
+  # torch and the detector weights; start it with COMPOSE_PROFILES=discovery.
+  discover-svc:
+    image: gauge-twin-discover-svc:local
+    profiles: [discovery]
+    build:
+      context: ../..
+      dockerfile: sim/ds-sim/Dockerfile
+      target: discover
+    restart: unless-stopped
+    depends_on: [config-api-1]
+    environment:
+      CONFIG_API_URL: http://config-api:8080
+      MODEL_DIR: /models
+      DISCOVER_INTERVAL: ${DISCOVER_INTERVAL:-300}
+      DETECT_THRESHOLD: ${DETECT_THRESHOLD:-0.2}
+      INFERENCE_THREADS: ${DISCOVER_THREADS:-2}
+    volumes:
+      - ${PREVIEW_MODEL_DIR:-../../data/ml-runs/onnx}:/models:ro
+    cpus: ${DISCOVER_CPUS:-2}
+    # The detector needs about 1 GB at its peak; above the limit only this service is stopped, never the database.
+    mem_limit: ${DISCOVER_MEMORY:-2g}
+    networks:
+      - gauge-twin
 
   # Replicas share the consumer group; Kafka spreads the 24 partitions.
   ingest-1:
@@ -200,4 +249,5 @@ networks:
     external: true
 
 volumes:
+  tls-data:
   acceptance:

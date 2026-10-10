@@ -1,6 +1,6 @@
 # Demo ba nhà máy qua luồng RTSP giả
 
-Ba nhà máy, 21 máy, 20 camera giả (mỗi camera một luồng RTSP), mỗi camera nhìn 2–8 thiết bị đo. Edge đọc các luồng
+Ba nhà máy, 21 máy, 21 camera giả (mỗi camera một luồng RTSP), mỗi camera nhìn 2–8 thiết bị đo. Edge đọc các luồng
 này như đọc camera thật, nhận dạng tại chỗ và chỉ gửi số về server.
 
 | Nhà máy / dây chuyền | Máy | Đặc điểm |
@@ -17,7 +17,7 @@ Từ thư mục gốc của repo, sau `make up`:
 sh infra/compose/sim/demo-factory.sh
 ```
 
-Lệnh này phát 20 luồng, bật server và edge, rồi khai báo camera và máy qua config-api. Chờ khoảng 1 phút là có số.
+Lệnh này phát 21 luồng, bật server và edge, rồi khai báo camera và máy qua config-api. Chờ khoảng 1 phút là có số.
 
 Thêm `PRUNE=1` trước lệnh để xoá mọi trạm và camera khác (dữ liệu test tải, demo cũ) khỏi danh sách; số liệu cũ của
 chúng vẫn nằm trong lịch sử.
@@ -77,8 +77,24 @@ Link dưới đây mở được trên chính máy chạy demo. Từ máy khác 
 | Lò nhiệt luyện 32, đầu ra | `rtsp://localhost:8554/lo_nhiet_luyen_cuoi` | `LO_NHIET_LUYEN_32` | nhiệt độ vùng ra, bộ đếm giờ chạy, công tơ điện |
 | Máy nén khí 33 | `rtsp://localhost:8554/may_nen_khi_33` | `MAY_NEN_KHI_33` | áp suất bình, áp suất dầu, bộ đếm giờ chạy, công tơ điện |
 | Khu hàn và cắt plasma | `rtsp://localhost:8554/han_cat` | `MAY_HAN_34`, `MAY_CAT_PLASMA_35` | hàn: áp suất khí bảo vệ, bộ đếm giờ; cắt: áp suất khí cắt, số lần cắt |
+| Tủ điện mới lắp | `rtsp://localhost:8554/tu_dien_moi` | chưa gán máy nào | một đồng hồ kim, một màn nhiệt độ, một công tơ LCD: chưa khai báo, để thử AI phát hiện |
 
 Mọi luồng là H.264, 10 khung hình/giây, lặp lại sau 210 giây.
+
+## Thử AI phát hiện đồng hồ mới
+
+Script bật thêm `discover-svc` (bỏ bằng `DISCOVERY=0`; image khoảng 2 GB, lần build đầu mất 10–20 phút). Nó quét
+từng camera mỗi phút; một đồng hồ chưa khai báo được đề xuất sau 3 lần quét liền, tức khoảng 10–15 phút sau khi bật.
+
+1. Mở <http://localhost:5173/gauge-twin/gauges> (mục Đồng hồ → Danh mục đồng hồ), nhóm **Chờ duyệt**: ba đồng hồ của
+   camera `cam-tu-dien-moi`, kèm ảnh cắt.
+2. Bấm **Kiểm tra và gán**: trang camera mở ra, khung viền đứt “Mới” là chỗ AI khoanh. Kiểm tra khung, kéo bốn góc nếu
+   lệch, xem ô “Model sẽ thấy”; với đồng hồ kim, kiểm tra ba điểm T, m, M.
+3. Chọn máy (ví dụ `LO_NHIET_LUYEN_32`), đặt tên, đơn vị, giá trị hai đầu thang đo, bấm **Đọc thử** rồi **Lưu vào máy**.
+   Khoảng một phút sau, trang máy đó có thêm đồng hồ mới với số đọc từ camera mới.
+4. Chỗ không phải đồng hồ cần đo: **Không phải đồng hồ cần đo**, AI không đề xuất lại.
+
+Chạy lại script sẽ đưa config của các máy về như trong `stations/`: đồng hồ đã gán thêm bị gỡ, và AI đề xuất lại.
 
 ## Xem một luồng
 
@@ -116,7 +132,7 @@ Luồng chỉ tồn tại khi demo đang chạy (`docker ps` phải thấy `gaug
 2. Chạy lại `make sim-down && make sim-up` với `SIM_DATA_DIR=$PWD/data/sim-factory`.
 3. Trên giao diện, mục *Camera và khai báo*, thêm camera với địa chỉ `rtsp://mediamtx:8554/<tên_mới>` rồi khoanh
    vùng đọc cho từng đồng hồ.
-4. Thêm máy mới vào `EDGE_MACHINES` của edge (dạng `NHA_MAY_1/XUONG_A/<MÃ_MÁY>`) và khởi động lại edge.
+4. Máy mới tự về edge đang đọc camera đó (trang Đồng hồ → Edge để xem hoặc chuyển); không cần sửa edge.
 
 ## Nguồn hình
 

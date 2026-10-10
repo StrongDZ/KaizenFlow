@@ -126,7 +126,10 @@ type Agent struct {
 
 	framesSinceStatus int
 	lastStatus        time.Time
-	lastRestart       time.Time // last RESTART command; it restarts the whole pipeline
+	lastRestart       time.Time // last RESTART command of the whole pipeline
+	// lastCameraRestart: last RESTART of one camera (by url), which reopens
+	// that stream only.
+	lastCameraRestart map[string]time.Time
 }
 
 // New builds an agent. frames delivers the pipeline output.
@@ -345,6 +348,22 @@ func modelVersion(cfg *gaugev1.StationConfig) string {
 // pipeline is told to restart.
 func (a *Agent) watchdog(now time.Time) {
 	restart := false
+	silentURLs, allURLs := map[string]bool{}, map[string]bool{}
+	for _, m := range a.machines {
+		if m.active == nil {
+			continue
+		}
+		for url, cam := range m.cameras {
+			allURLs[url] = true
+			limit := a.cfg.StaleAfter
+			if !cam.seenFrame {
+				limit = a.cfg.StartupGrace
+			}
+			if now.Sub(cam.lastFrame) >= limit {
+				silentURLs[url] = true
+			}
+		}
+	}
 	for _, m := range a.machines {
 		if m.active == nil {
 			continue
@@ -385,16 +404,45 @@ func (a *Agent) watchdog(now time.Time) {
 			a.closeWindow(m, endMs, true)
 		}
 	}
-	// RESTART restarts the whole pipeline, so it is sent at most once per
-	// period and every camera gets the startup grace again.
-	if restart && now.Sub(a.lastRestart) >= restartEvery {
+	if !restart {
+		return
+	}
+	// Every camera silent: the pipeline itself is stuck, restart it whole.
+	// Otherwise reopen only the silent streams, so that the live cameras keep
+	// their readings. Either is sent at most once per period, and the cameras
+	// it concerns get the startup grace again.
+	if len(silentURLs) == len(allURLs) {
+		if now.Sub(a.lastRestart) < restartEvery {
+			return
+		}
 		a.lastRestart = now
-		for _, m := range a.machines {
-			for _, cam := range m.cameras {
+		a.graceCameras(now, nil)
+		a.command(a.machines[a.cfg.Machines[0].Machine], &gaugev1.Command{Type: gaugev1.CommandType_COMMAND_TYPE_RESTART})
+		return
+	}
+	if a.lastCameraRestart == nil {
+		a.lastCameraRestart = map[string]time.Time{}
+	}
+	for url := range silentURLs {
+		if now.Sub(a.lastCameraRestart[url]) < restartEvery {
+			continue
+		}
+		a.lastCameraRestart[url] = now
+		a.graceCameras(now, map[string]bool{url: true})
+		a.logger.Warn("reopening a silent camera", "camera", url)
+		a.command(a.machines[a.cfg.Machines[0].Machine], &gaugev1.Command{Type: gaugev1.CommandType_COMMAND_TYPE_RESTART, CameraUrl: url})
+	}
+}
+
+// graceCameras gives the startup grace to the cameras of urls (all when nil)
+// on every machine that reads them.
+func (a *Agent) graceCameras(now time.Time, urls map[string]bool) {
+	for _, m := range a.machines {
+		for url, cam := range m.cameras {
+			if urls == nil || urls[url] {
 				cam.seenFrame, cam.lastFrame = false, now
 			}
 		}
-		a.command(a.machines[a.cfg.Machines[0].Machine], &gaugev1.Command{Type: gaugev1.CommandType_COMMAND_TYPE_RESTART})
 	}
 }
 
@@ -415,10 +463,16 @@ func (a *Agent) connect() {
 	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
 	defer cancel()
 	// The will is built now, so its ts_ms is the connect time.
-	will := Will{Topic: a.cfg.statusTopic(), Payload: a.status(gaugev1.State_STATE_OFFLINE)}
+	var will Will
+	if len(a.cfg.Machines) > 0 {
+		will = Will{Topic: a.cfg.statusTopic(), Payload: a.status(gaugev1.State_STATE_OFFLINE)}
+	}
 	sess, err := a.transport.Connect(ctx, a.cfg.EdgeID, will, a.onMessage)
 	if err == nil {
-		topics := []string{a.cfg.resendTopic()}
+		topics := []string{a.cfg.assignmentTopic()}
+		if len(a.cfg.Machines) > 0 {
+			topics = append(topics, a.cfg.resendTopic())
+		}
 		for _, ref := range a.cfg.Machines {
 			topics = append(topics, a.cfg.machineTopic(ref, "config"), a.cfg.machineTopic(ref, "watch"))
 		}
@@ -532,6 +586,9 @@ func (a *Agent) replayOne() {
 }
 
 func (a *Agent) status(state gaugev1.State) []byte {
+	if len(a.cfg.Machines) == 0 {
+		return nil
+	}
 	primary := a.machines[a.cfg.Machines[0].Machine]
 	st := &gaugev1.Status{
 		EdgeId:    a.cfg.EdgeID,
@@ -561,7 +618,7 @@ func (a *Agent) status(state gaugev1.State) []byte {
 
 func (a *Agent) publishStatus(state gaugev1.State) {
 	payload := a.status(state)
-	if a.sess == nil {
+	if a.sess == nil || payload == nil {
 		return
 	}
 	a.framesSinceStatus, a.lastStatus = 0, time.Now()
@@ -606,6 +663,10 @@ func (a *Agent) shutdown() {
 // ------------------------------------------------------------ messages ----
 
 func (a *Agent) handleMessage(msg inbound) {
+	if msg.topic == a.cfg.assignmentTopic() {
+		a.handleAssignment(msg.payload)
+		return
+	}
 	if msg.topic == a.cfg.resendTopic() {
 		a.handleResend(msg.payload)
 		return
@@ -621,6 +682,77 @@ func (a *Agent) handleMessage(msg inbound) {
 		}
 	}
 	a.logger.Warn("message on unexpected topic", "topic", msg.topic)
+}
+
+// handleAssignment follows the machines config-api assigns to this edge: a
+// machine added starts from its stored config (the broker sends the current
+// one), a machine removed is dropped with its stored config. The session is
+// opened again, so that the subscriptions, the status topic and the will
+// match the new list; a pipeline that lost a machine is restarted to forget it.
+func (a *Agent) handleAssignment(payload []byte) {
+	if len(payload) == 0 {
+		return // a cleared retained message: keep what the edge has
+	}
+	refs, err := ParseAssignment(payload, a.cfg.EdgeID)
+	if err != nil {
+		a.logger.Error("assignment rejected", "error", err)
+		return
+	}
+	if sameMachines(refs, a.cfg.Machines) {
+		return
+	}
+	if err := os.WriteFile(AssignmentPath(a.cfg.ConfigDir), payload, 0o644); err != nil {
+		a.logger.Error("store assignment", "error", err)
+	}
+	keep := map[string]bool{}
+	for _, ref := range refs {
+		keep[ref.Machine] = true
+	}
+	removed := false
+	for id, m := range a.machines {
+		if keep[id] {
+			continue
+		}
+		if m.active != nil && m.haveWindow {
+			a.closeWindow(m, (m.window+1)*m.windowMs, false)
+		}
+		_ = os.Remove(a.configPath(m))
+		delete(a.machines, id)
+		removed = true
+	}
+	for _, ref := range refs {
+		if m, ok := a.machines[ref.Machine]; ok {
+			m.ref = ref
+			continue
+		}
+		m := &machine{ref: ref}
+		a.machines[ref.Machine] = m
+		a.loadStoredConfig(m)
+	}
+	// A pipeline that lost a machine still has its config loaded: restart it.
+	// With no machine left nothing addresses it, and its frames are dropped as
+	// frames of unknown machines.
+	if removed {
+		for _, ref := range refs {
+			a.command(a.machines[ref.Machine], &gaugev1.Command{Type: gaugev1.CommandType_COMMAND_TYPE_RESTART})
+			break
+		}
+	}
+	a.cfg.Machines = refs
+	a.logger.Info("assignment applied", "machines", len(refs))
+	a.dropSession()
+}
+
+func sameMachines(a, b []MachineRef) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (a *Agent) configPath(m *machine) string {
@@ -726,6 +858,9 @@ func (a *Agent) command(m *machine, cmd *gaugev1.Command) {
 
 func (a *Agent) handleCommandResult(res commandResult) {
 	m := a.machines[res.machine]
+	if m == nil {
+		return // the machine was unassigned while its command ran
+	}
 	ok := res.err == nil && res.reply.GetOk()
 	result := "ok"
 	if !ok {

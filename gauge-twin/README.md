@@ -152,6 +152,29 @@ edge; **config-api** quản lý config trạm; **query-api** cho giao diện đ�
 | state | Topic status → `edge_node`, Redis; theo dõi seq theo edge | Seq thiếu chỉ tính là mất sau 10 phút khi edge online và buffer đã rỗng |
 | query-api | REST chỉ đọc cho màn giám sát trực tiếp (cổng 8092): trạm, giá trị mới nhất, xu hướng, một khung hình camera | Chỉ đọc PostgreSQL; mọi truy vấn sắp theo `ts`. Trạng thái `ok`/`poor`/`alarm`/`stale` của từng đồng hồ do service tính, xem `server/query-api/README.md` |
 
+### HTTPS
+
+HTTPS: `COMPOSE_PROFILES=tls make server-up` bật Caddy ở `https://localhost:8443`, chuyển `/query/...` tới query-api
+và `/config/...` tới config-api; trỏ web vào đó bằng `VITE_GAUGE_API_URL=https://localhost:8443/query` và
+`VITE_GAUGE_CONFIG_API_URL=https://localhost:8443/config`. Với localhost Caddy tự cấp chứng chỉ từ CA riêng (tin
+nó một lần, hoặc chấp nhận cảnh báo); với tên miền thật đặt `TLS_SITE` và `TLS_ISSUER` (email) để lấy chứng chỉ
+Let's Encrypt.
+
+### Cảnh báo chủ động
+
+query-api theo dõi các sự cố kéo dài và hiện chúng ở đầu trang Trạm (`GET /v1/alerts`):
+
+| Sự cố | Mức | Báo khi |
+| --- | --- | --- |
+| Edge mất kết nối | nghiêm trọng | edge không còn `online`, kèm danh sách máy bị ảnh hưởng |
+| Máy im lặng | nghiêm trọng | máy từng gửi số nay không đồng hồ nào có số mới (edge vẫn online) |
+| Vượt ngưỡng | cảnh báo | số đọc ngoài giới hạn đã khai |
+| Không đọc được | cảnh báo | một đồng hồ đọc không tin cậy liên tục `ALERT_UNREADABLE_AFTER` (10 phút) |
+
+Một sự cố phải kéo dài `ALERT_AFTER` (60 giây) mới được báo, và tự đóng khi hết. Mỗi lần mở và đóng được POST tới
+`ALERT_WEBHOOK_URL` nếu có: JSON `{status, alert, text}`, trường `text` dùng thẳng được cho webhook Slack,
+Mattermost, Google Chat. Trạng thái giữ trong bộ nhớ: sau khi khởi động lại, sự cố còn mở được báo lại.
+
 Xử lý lỗi của ingest:
 
 - **Lỗi hạ tầng** (DB, Redis, Kafka): thử lại mãi với backoff tới 30 s, không commit offset, `/healthz`
@@ -181,6 +204,38 @@ config đó. Config phát xuống edge vì thế tự đủ, edge không cần �
 web KaizenFlow (mục Đồng hồ → Camera và khai báo); nó gọi config-api từ origin đặt trong `CORS_ALLOWED_ORIGIN`
 (compose: `CONFIG_API_CORS_ORIGIN`, mặc định `http://localhost:5173`). Không đặt biến này thì config-api không
 trả lời trang từ origin khác.
+
+## AI phát hiện đồng hồ chưa khai báo
+
+`discover-svc` cứ `DISCOVER_INTERVAL` giây (mặc định 300) lấy một khung hình của mỗi camera trong danh mục, chạy model
+phát hiện theo mô tả (OWLv2, giấy phép Apache 2.0) để tìm đồng hồ kim, màn hình số và bộ đếm, rồi gửi kết quả cho
+config-api. Chỗ nào chưa khai báo đồng hồ thì thành **đề xuất**; đề xuất chỉ hiện cho người dùng khi đã thấy ở
+`DISCOVERY_MIN_SEEN` lần quét (mặc định 3), để vật đi ngang qua camera không bị tính, và khi điểm tin cậy cao nhất đạt
+`DISCOVERY_MIN_SCORE` (mặc định 0,3; nhãn chữ và ốc vít thường chỉ được 0,2–0,3). Ngưỡng thấp hơn của discover-svc
+(`DETECT_THRESHOLD`, 0,2) vẫn đủ để ghi nhận đồng hồ đã khai báo còn trong khung hình. Kèm mỗi đề xuất là gợi ý cho
+form khai báo: loại đồng hồ, với đồng hồ kim là tâm và hai đầu thang đo (model `dial_pose`), với màn số là số chữ
+số (model `digit_cls`) và màu.
+
+Không đề xuất nào tự thành số đo. Người dùng mở camera trên web (mục Đồng hồ → Danh mục đồng hồ, hoặc khung viền đứt
+“Mới” trên ảnh camera), kiểm tra vùng khoanh, kéo bốn góc nếu lệch, xem ô “Model sẽ thấy”, gán máy, đặt tên, nhập
+thang đo, đọc thử rồi lưu; hoặc bấm “Không phải đồng hồ cần đo” để AI không đề xuất lại. Lần quét sau đánh dấu đề
+xuất đã gán. Đồng hồ đã khai báo mà các lần quét trong `DISCOVERY_LOST_AFTER` (mặc định 15 phút) không còn thấy, trong
+khi trước đó từng thấy, hiện là “AI không còn thấy”.
+
+| Route (config-api) | Việc làm |
+| --- | --- |
+| `POST /v1/discovery/scans` | discover-svc gửi một lần quét: `camera_id`, `width`, `height`, `detections` (`roi`, `type`, `score`, `hint`, `crop_jpeg`) |
+| `GET /v1/discovery/candidates?status=pending\|accepted\|ignored&camera_id=` | Đề xuất theo trạng thái (mặc định chờ duyệt) |
+| `POST /v1/discovery/candidates/{id}/ignore`, `.../restore` | Bỏ qua, hoặc khôi phục |
+| `GET /v1/discovery/gauges` | Mỗi đồng hồ đã khai báo: AI còn thấy (`seen`), không còn thấy (`lost`), chưa từng nhận ra (`never`), camera chưa quét (`unscanned`) |
+
+Image của discover-svc chứa torch và trọng số model (khoảng 2 GB), nên service nằm trong profile `discovery`:
+`COMPOSE_PROFILES=discovery make server-up`. Trên CPU một camera mất khoảng 7–16 giây; `DISCOVER_CPUS` và
+`DISCOVER_THREADS` đặt số lõi. Service dùng khoảng 1 GB RAM lúc đỉnh và bị giới hạn ở `DISCOVER_MEMORY` (mặc định 2 GB),
+để khi thiếu bộ nhớ chỉ nó dừng chứ không phải database hay edge. Camera lâu chưa quét nhất được quét trước, nên service
+có khởi động lại thì vẫn tiến qua mọi camera. Đo ngày 2026-10-10 trên 20 camera demo: tìm được 70/72 đồng hồ đã khai báo ở ngưỡng
+0,15 (69/72 ở ngưỡng mặc định 0,2), kèm 24 đề xuất thừa (nhãn chữ trên bảng mạch, ốc, viền đồng hồ tốc độ) ở ngưỡng đề xuất
+0,2, còn 1 ở ngưỡng 0,3; ba đồng hồ chưa khai báo của camera `cam-tu-dien-moi` có điểm 0,35–0,48. Khung hình demo ghép từ ảnh chụp cận từng đồng hồ, dễ hơn một góc xưởng thật.
 
 ## Commissioning và nghiệm thu trạm
 
@@ -240,14 +295,31 @@ flag) → SQLite → MQTT.
   và edge-agent bảo pipeline đính ảnh thu nhỏ (rộng tối đa 960 px) vào khung hình của các camera của máy đó;
   mỗi khung được publish lên `preview` cùng số đọc trên chính khung đó, nên ảnh và số luôn khớp. Hết người xem
   thì sau tối đa 60 giây edge ngừng gửi ảnh. Ảnh không được lưu ở đâu.
+- **Nối lại pipeline**: edge-agent không nhận khung hình nào trong 10 giây thì đóng và mở lại socket ZeroMQ. Thư viện
+  tự nối lại khi pipeline khởi động lại bình thường, nhưng không khi pipeline bị giết (hết bộ nhớ, SIGKILL); trước bản
+  sửa này edge im lặng mãi dù pipeline đã chạy lại.
 - **Watchdog**: camera im lặng quá `STALE_AFTER` (30 s) thì các đồng hồ của camera đó báo `FLAG_STALE` (đồng hồ
   trên camera khác của cùng máy vẫn có số) và pipeline nhận lệnh `RESTART` (tối đa một lần mỗi phút). Trước frame đầu tiên áp dụng `STARTUP_GRACE` (2 phút), vì
   mở luồng camera mất thời gian.
 - **Tiền xử lý**: `ds-sim` đọc `<model>.preprocess.json` cạnh file ONNX, không tự đặt thông số.
-- **Ngưỡng giải mã** (`DECODE_*`) là giá trị tạm, sẽ hiệu chỉnh ở GD5.
+- **Ngưỡng giải mã** (`DECODE_*`) là giá trị tạm, sẽ hiệu chỉnh ở GD5. Điểm chất lượng = độ tin cậy của model
+  (với màn số: chữ số kém chắc nhất) × độ nhất quán giữa các khung × 0,5 cho mỗi cờ; độ nét và độ chói chỉ tính qua
+  cờ `FLAG_BLUR` và `FLAG_GLARE` (ngưỡng chói riêng cho màn LED: `DECODE_GLARE_ABOVE_LIT`, 0,35). Xem SPEC mục 4.
+
+**Gán máy cho edge.** Đặt `EDGE_MACHINES=` (rỗng) thì edge không cần biết trước mình đọc máy nào: config-api giữ
+danh sách (`GET /v1/edges`, `PUT /v1/edges/{edge_id}` với `machine_ids`, hoặc trang Đồng hồ → Edge) và phát nó
+retained lên `denso/edges/{edge_id}/assignment`. Edge áp danh sách mới không cần khởi động lại, lưu nó vào
+`CONFIG_DIR/edge-assignment.pbjson` để khởi động được khi mất broker, xoá config của máy bị bớt và khởi động lại
+pipeline để nó quên máy đó. Máy mới khai trên một camera mà một edge đang đọc cho máy khác tự về edge đó (hoặc về
+edge duy nhất, nếu chỉ có một). config-api phát lại mọi config và danh sách gán mỗi `REPUBLISH_EVERY` (10 phút),
+phòng khi broker mất bản tin retained.
+
+**Camera chết.** Watchdog chỉ mở lại luồng của camera im lặng (`RESTART` kèm `camera_url`); chỉ khi mọi camera cùng
+im lặng mới khởi động lại cả pipeline. Không có khung hình nào trong 10 giây thì edge-agent mở lại socket ZeroMQ: thư
+viện tự nối lại khi pipeline khởi động lại bình thường nhưng không khi pipeline bị giết (hết bộ nhớ, SIGKILL).
 
 Biến môi trường chính của edge-agent: `EDGE_ID`, `EDGE_MACHINES` (`plant/line/machine`, cách nhau dấu
-phẩy), `MQTT_BROKER`, `CONFIG_DIR`, `BUFFER_PATH`, `BUFFER_MAX_BYTES`, `FRAMES_ENDPOINT`,
+phẩy; rỗng là theo config-api), `MQTT_BROKER`, `CONFIG_DIR`, `BUFFER_PATH`, `BUFFER_MAX_BYTES`, `FRAMES_ENDPOINT`,
 `CONTROL_ENDPOINT`. Metric ở `:8080/metrics`.
 
 ## Model (ml/)

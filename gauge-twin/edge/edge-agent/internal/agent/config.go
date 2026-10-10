@@ -6,6 +6,7 @@ package agent
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -78,8 +79,6 @@ func (c Config) Validate() error {
 	switch {
 	case c.EdgeID == "":
 		return errors.New("edge id is required")
-	case len(c.Machines) == 0:
-		return errors.New("at least one machine is required")
 	case c.ConfigDir == "":
 		return errors.New("config directory is required")
 	case c.ReplayRate <= 0 || c.Heartbeat <= 0 || c.StaleAfter <= 0 || c.Tick <= 0:
@@ -99,11 +98,31 @@ func (c Config) machineTopic(m MachineRef, kind string) string {
 	return strings.Join([]string{c.TopicPrefix, m.Plant, m.Line, m.Machine, kind}, "/")
 }
 
-// Status and the last will go to the status topic of the first machine.
-func (c Config) statusTopic() string { return c.machineTopic(c.Machines[0], "status") }
+// Status and the last will go to the status topic of the first machine. An
+// edge no machine is assigned to yet publishes no status.
+func (c Config) statusTopic() string {
+	if len(c.Machines) == 0 {
+		return ""
+	}
+	return c.machineTopic(c.Machines[0], "status")
+}
+
+// assignmentTopic carries the machines config-api assigns to this edge.
+func (c Config) assignmentTopic() string {
+	return strings.Join([]string{c.TopicPrefix, "edges", c.EdgeID, "assignment"}, "/")
+}
+
+// AssignmentPath is where the last assignment is kept. Not a .json file: the
+// pipeline loads every .json of the directory as a station config.
+func AssignmentPath(configDir string) string {
+	return filepath.Join(configDir, "edge-assignment.pbjson")
+}
 
 // Resend requests are per edge, because sequence numbers are per edge.
 func (c Config) resendTopic() string {
+	if len(c.Machines) == 0 {
+		return ""
+	}
 	return strings.Join([]string{c.TopicPrefix, c.Machines[0].Plant, "edge", c.EdgeID, "cmd", "resend"}, "/")
 }
 

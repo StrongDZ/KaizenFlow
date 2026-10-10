@@ -75,14 +75,21 @@ func run() int {
 		errs = append(errs, err)
 	}
 	cfg.Machines = machines
+	// Without EDGE_MACHINES the edge reads the machines config-api assigns it,
+	// starting from the last assignment it received.
+	if len(machines) == 0 && cfg.EdgeID != "" {
+		if cfg.Machines, err = agent.StoredAssignment(cfg.ConfigDir, cfg.EdgeID); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	cfg.Heartbeat = envDuration("HEARTBEAT", cfg.Heartbeat, &errs)
 	cfg.StaleAfter = envDuration("STALE_AFTER", cfg.StaleAfter, &errs)
 	cfg.StartupGrace = envDuration("STARTUP_GRACE", cfg.StartupGrace, &errs)
 	cfg.ReplayRate = envFloat("REPLAY_RATE", cfg.ReplayRate, &errs)
 	cfg.Decode.MinConfidence = envFloat("DECODE_MIN_CONFIDENCE", cfg.Decode.MinConfidence, &errs)
-	cfg.Decode.SharpnessRef = envFloat("DECODE_SHARPNESS_REF", cfg.Decode.SharpnessRef, &errs)
 	cfg.Decode.BlurBelow = envFloat("DECODE_BLUR_BELOW", cfg.Decode.BlurBelow, &errs)
 	cfg.Decode.GlareAbove = envFloat("DECODE_GLARE_ABOVE", cfg.Decode.GlareAbove, &errs)
+	cfg.Decode.GlareAboveLit = envFloat("DECODE_GLARE_ABOVE_LIT", cfg.Decode.GlareAboveLit, &errs)
 	cfg.Decode.HourMeterSlack = envFloat("DECODE_HOURMETER_SLACK", cfg.Decode.HourMeterSlack, &errs)
 	cfg.Decode.DialOvertravel = envFloat("DECODE_DIAL_OVERTRAVEL", cfg.Decode.DialOvertravel, &errs)
 	bufferMax := envFloat("BUFFER_MAX_BYTES", 500<<20, &errs)
@@ -120,8 +127,13 @@ func run() int {
 	defer receiver.Close()
 	frames := make(chan *gaugev1.FrameResult, 1024)
 	go func() {
+		var redials int64
 		for {
 			frame, err := receiver.Recv()
+			if n := receiver.Redials.Load(); n != redials {
+				redials = n
+				logger.Warn("frames socket dialed again after a silence", "redials", n)
+			}
 			switch {
 			case ctx.Err() != nil:
 				return

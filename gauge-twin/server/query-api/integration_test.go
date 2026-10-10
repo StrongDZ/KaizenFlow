@@ -208,3 +208,17 @@ func TestIntegrationHistory(t *testing.T) {
 		t.Errorf("aggregate bucket: %+v (value %v)", m, *m.Value)
 	}
 }
+
+func TestIntegrationCameras(t *testing.T) {
+	store, pool, machine := testStore(t)
+	exec(t, pool, `INSERT INTO camera (camera_id, url, sample_fps) VALUES ($1, 'rtsp://cam/itest', 2)`, machine)
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM camera WHERE camera_id = $1`, machine) })
+	cameras, err := store.Cameras(ctx)
+	found := false
+	for _, c := range cameras {
+		found = found || (c.ID == machine && c.URL == "rtsp://cam/itest")
+	}
+	if err != nil || !found {
+		t.Errorf("got %v, %v", cameras, err)
+	}
+}

@@ -135,6 +135,8 @@ type harness struct {
 	store     *memStore
 	broker    *fakeBroker
 	publisher *Publisher
+	discovery *Discovery
+	edges     *memEdges
 }
 
 func newHarness(t *testing.T) *harness {
@@ -148,9 +150,16 @@ func newHarness(t *testing.T) *harness {
 	api.cameras = &memCameras{rows: map[string]Camera{}}
 	api.Register(mux)
 	NewCameras(api.cameras, store, publisher, api).Register(mux)
+	discovery := NewDiscovery(newMemDiscovery(), api.cameras, store, api)
+	discovery.Register(mux)
+	edgeStore := &memEdges{lists: map[string][]string{}}
+	edges := NewEdges(edgeStore, store, broker, "denso", api)
+	api.edges = edges
+	publisher.AlsoRepublish = edges.PublishAll
+	edges.Register(mux)
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
-	return &harness{server, store, broker, publisher}
+	return &harness{server, store, broker, publisher, discovery, edgeStore}
 }
 
 func (h *harness) do(t *testing.T, method, path string, body []byte) (int, map[string]any) {
@@ -243,6 +252,26 @@ func TestBrokerOutageDelaysPublishingButLosesNothing(t *testing.T) {
 	h.publisher.Sync(context.Background())
 	if _, body := h.do(t, http.MethodGet, configPath, nil); body["published_version"].(float64) != 1 || h.broker.get(topic) == nil {
 		t.Errorf("not published after the broker came back: %v", body)
+	}
+}
+
+func TestRepublishRestoresConfigsTheBrokerLost(t *testing.T) {
+	h := newHarness(t)
+	if code, _ := h.do(t, http.MethodPut, configPath, specConfig(t)); code != http.StatusOK {
+		t.Fatal(code)
+	}
+	h.publisher.Sync(context.Background())
+	// The broker restarts without its data: the database still says published.
+	h.broker.mu.Lock()
+	h.broker.retained = map[string][]byte{}
+	h.broker.mu.Unlock()
+	h.publisher.Sync(context.Background())
+	if h.broker.get(topic) != nil {
+		t.Fatal("Sync publishes pending configs only; the test needs a lost one")
+	}
+	h.publisher.Republish(context.Background())
+	if h.broker.get(topic) == nil {
+		t.Error("config not published again")
 	}
 }
 

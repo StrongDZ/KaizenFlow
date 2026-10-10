@@ -180,14 +180,19 @@ func (a *Aggregator) Close(endMs int64, stale bool) Result {
 	if meanSharp < a.opt.BlurBelow {
 		flags[gaugev1.Flag_FLAG_BLUR] = true
 	}
-	if meanGlare > a.opt.GlareAbove {
+	glareLimit := a.opt.GlareAbove
+	if g.lit {
+		glareLimit = a.opt.GlareAboveLit
+	}
+	if meanGlare > glareLimit {
 		flags[gaugev1.Flag_FLAG_GLARE] = true
 	}
 
-	// Quality: product of model confidence, sharpness, glare, agreement
-	// between frames and a penalty per flag.
-	quality := conf * clamp01(meanSharp/a.opt.SharpnessRef) * (1 - clamp01(meanGlare/a.opt.GlareMax)) *
-		consistency * math.Pow(a.opt.FlagPenalty, float64(len(flags)))
+	// Quality: model confidence, agreement between frames and a penalty per
+	// flag. Sharpness and glare count through their flags only: the Laplacian
+	// variance of a sharp display or of a small dial is low by nature, and an
+	// image blurred enough to matter already lowers the model confidence.
+	quality := conf * consistency * math.Pow(a.opt.FlagPenalty, float64(len(flags)))
 	m.Quality = float32(clamp01(quality))
 	m.Value = &value
 	m.Flags = sortedFlags(flags)

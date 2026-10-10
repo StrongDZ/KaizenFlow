@@ -81,20 +81,40 @@ func TestDialRestingJustUnderZeroIsReportedAndFarOutsideIsFlagged(t *testing.T) 
 	}
 }
 
-func TestQualityDropsWithBlurAndGlare(t *testing.T) {
-	a := NewAggregator(mustGauge(t, dialConfig()), DefaultOptions())
-	soft := valid(0, 50)
-	soft.Sharpness, soft.Glare = 50, 0.25 // half sharp, half of GlareMax, above GlareAbove
-	a.Add(soft)
-
-	m := a.Close(1000, false).Measurement
-
-	if !reflect.DeepEqual(flagsOf(m), []gaugev1.Flag{gaugev1.Flag_FLAG_GLARE}) {
-		t.Errorf("flags: %v", flagsOf(m))
+func TestQualityDropsWithBlurAndGlareFlagsOnly(t *testing.T) {
+	quality := func(sharpness, glare float64) (float32, []gaugev1.Flag) {
+		a := NewAggregator(mustGauge(t, dialConfig()), DefaultOptions())
+		r := valid(0, 50)
+		r.Sharpness, r.Glare = sharpness, glare
+		a.Add(r)
+		m := a.Close(1000, false).Measurement
+		return m.GetQuality(), flagsOf(m)
 	}
-	// 0.9 * 0.5 (sharpness) * 0.5 (glare) * 1 * 0.5 (one flag).
-	if math.Abs(float64(m.GetQuality())-0.1125) > 1e-3 {
-		t.Errorf("quality: %v", m.GetQuality())
+	// A soft image the model reads with confidence is a good reading: 0.9.
+	if q, flags := quality(30, 0.05); math.Abs(float64(q)-0.9) > 1e-3 || len(flags) != 0 {
+		t.Errorf("soft image: %v %v", q, flags)
+	}
+	// Glare above GlareAbove: flagged, 0.9 * 0.5.
+	if q, flags := quality(200, 0.25); math.Abs(float64(q)-0.45) > 1e-3 || !reflect.DeepEqual(flags, []gaugev1.Flag{gaugev1.Flag_FLAG_GLARE}) {
+		t.Errorf("glare: %v %v", q, flags)
+	}
+	// Blurred and glaring: two flags, 0.9 * 0.25.
+	if q, flags := quality(10, 0.25); math.Abs(float64(q)-0.225) > 1e-3 || len(flags) != 2 {
+		t.Errorf("blur and glare: %v %v", q, flags)
+	}
+}
+
+func TestLitSegmentsOfAnLEDDisplayAreNotGlare(t *testing.T) {
+	for color, want := range map[string]bool{"red_led": false, "lcd": true} {
+		g := digitGauge(t, TypeSeg7, &gaugev1.Calib{Digits: u32(4), DecimalPos: u32(3), Color: &color}, nil)
+		a := NewAggregator(g, DefaultOptions())
+		r := valid(0, 12.5)
+		r.Glare = 0.2
+		a.Add(r)
+		flagged := len(flagsOf(a.Close(1000, false).Measurement)) > 0
+		if flagged != want {
+			t.Errorf("%s with 20%% saturated pixels: flagged %v, want %v", color, flagged, want)
+		}
 	}
 }
 

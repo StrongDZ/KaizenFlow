@@ -65,6 +65,10 @@ func run() int {
 	broker := newMQTTBroker(env.String("MQTT_BROKER", "emqx:1883"), env.String("MQTT_CLIENT_ID", "config-api-"+hostname))
 	prefix := env.String("MQTT_TOPIC_PREFIX", topics.DefaultPrefix)
 	publisher := NewPublisher(store, broker, prefix, interval, registry, logger)
+	if publisher.RepublishEvery, err = env.Duration("REPUBLISH_EVERY", 10*time.Minute); err != nil || publisher.RepublishEvery < 0 {
+		logger.Error("invalid configuration", "error", err, "republish_every", publisher.RepublishEvery)
+		return 2
+	}
 	api := NewAPI(store, broker, publisher, prefix, registry, logger)
 	cameras := NewPgCameraStore(pool)
 	api.cameras = cameras
@@ -81,6 +85,24 @@ func run() int {
 	mux.Handle("/", httpserver.Handler(registry, health))
 	api.Register(mux)
 	NewCameras(cameras, store, publisher, api).Register(mux)
+	edges := NewEdges(NewPgEdgeStore(pool), store, broker, prefix, api)
+	api.edges = edges
+	publisher.AlsoRepublish = edges.PublishAll
+	edges.Register(mux)
+	discovery := NewDiscovery(NewPgDiscoveryStore(pool), cameras, store, api)
+	if discovery.MinSeen, err = env.Int("DISCOVERY_MIN_SEEN", 3); err == nil {
+		discovery.LostAfter, err = env.Duration("DISCOVERY_LOST_AFTER", 15*time.Minute)
+	}
+	var minScore float64
+	if err == nil {
+		minScore, err = strconv.ParseFloat(env.String("DISCOVERY_MIN_SCORE", "0.3"), 32)
+		discovery.MinScore = float32(minScore)
+	}
+	if err != nil || discovery.MinSeen < 1 || discovery.LostAfter <= 0 || minScore < 0 || minScore > 1 {
+		logger.Error("invalid discovery configuration", "error", err)
+		return 2
+	}
+	discovery.Register(mux)
 	commissioning := NewCommissioning(store, env.String("PREVIEW_URL", "http://preview-svc:8080"))
 	commissioning.cameras = cameras
 	commissioning.Register(mux)

@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package denso.gauge.v1;
+
+option go_package = "gauge-twin/gen/go/denso/gauge/v1;gaugev1";
+
+// EdgeAssignment lists the machines an edge reads. config-api publishes it
+// retained on denso/edges/{edge_id}/assignment, as JSON (protojson), whenever
+// it changes; the edge follows it without a restart and keeps the last one
+// on disk so that it can start without the broker.
+message EdgeAssignment {
+  string edge_id = 1;
+  repeated MachineRef machines = 2;
+}
+
+// MachineRef is where the topics of a machine live.
+message MachineRef {
+  string plant = 1;
+  string line = 2;
+  string machine_id = 3;
+}

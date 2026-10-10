@@ -75,6 +75,22 @@ func run() int {
 		go api.WarmStills(ctx, every)
 	}
 
+	// Alerts: problems that last are raised, and posted to ALERT_WEBHOOK_URL when set.
+	alerter := NewAlerter(api, env.String("ALERT_WEBHOOK_URL", ""), registry)
+	alertEvery, err := env.Duration("ALERT_EVERY", 15*time.Second)
+	if err == nil {
+		alerter.After, err = env.Duration("ALERT_AFTER", time.Minute)
+	}
+	if err == nil {
+		alerter.Unreadable, err = env.Duration("ALERT_UNREADABLE_AFTER", 10*time.Minute)
+	}
+	if err != nil || alertEvery <= 0 || alerter.After < 0 || alerter.Unreadable < 0 {
+		logger.Error("invalid alert configuration", "error", err)
+		return 2
+	}
+	api.alerts = alerter
+	go alerter.Run(ctx, alertEvery)
+
 	health := func() error {
 		pingCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()

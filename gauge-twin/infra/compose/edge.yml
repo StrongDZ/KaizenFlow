@@ -58,7 +58,9 @@ services:
     environment:
       EDGE_ID: ${EDGE_ID:-edge-0001}
       # plant/line/machine of every camera this edge serves.
-      EDGE_MACHINES: ${EDGE_MACHINES:-SIM/L01/machine_001}
+      # Unset: the one simulated machine. Set empty: the edge reads the machines config-api assigns it
+      # (PUT /v1/edges/{edge_id}), starting from the last assignment it received.
+      EDGE_MACHINES: ${EDGE_MACHINES-SIM/L01/machine_001}
       MQTT_BROKER: emqx:1883
       CONFIG_DIR: /config
       BUFFER_PATH: /buffer/buffer.db

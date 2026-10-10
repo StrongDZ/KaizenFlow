@@ -8,9 +8,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"os"
 	"sort"
@@ -232,5 +234,112 @@ func TestIntegrationConfigIsRetainedOnTheBrokerAndClearedOnDelete(t *testing.T) 
 	}
 	if payload := retained(t, address, topic); payload != nil {
 		t.Errorf("retained config still there after clearing: %d bytes", len(payload))
+	}
+}
+
+func TestIntegrationDiscoveryStore(t *testing.T) {
+	_, pool := testStore(t)
+	store := NewPgDiscoveryStore(pool)
+	ctx := context.Background()
+	camera := fmt.Sprintf("itest-cam-%d", time.Now().UnixNano())
+	gauge := GaugeRef{MachineID: camera, GaugeID: "OIL"}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM gauge_candidate WHERE camera_id = $1`, camera)
+		_, _ = pool.Exec(ctx, `DELETE FROM camera_scan WHERE camera_id = $1`, camera)
+		_, _ = pool.Exec(ctx, `DELETE FROM gauge_sighting WHERE machine_id = $1`, camera)
+	})
+	at := time.Now().UTC().Truncate(time.Second)
+	scan := CameraScan{CameraID: camera, ScannedAt: at, Width: 1280, Height: 720, Detections: 2}
+	det := Detection{ROI: []int32{10, 20, 300, 200}, Type: "analog_dial", Score: 0.3, Hint: json.RawMessage(`{"center": [128, 128]}`), CropJPEG: []byte{1, 2, 3}}
+	if err := store.ApplyScan(ctx, scan, scanPlan{Sighted: []GaugeRef{gauge}, Inserts: []Detection{det}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Candidates(ctx, camera)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	c := got[0]
+	if c.Status != candidatePending || c.Seen != 1 || c.Type != "analog_dial" || string(c.CropJPEG) != "\x01\x02\x03" || !c.FirstSeen.Equal(at) {
+		t.Errorf("inserted: %+v", c)
+	}
+
+	// Found again with a better score and a new region; ignored afterwards, then found again: only the count moves.
+	later := at.Add(5 * time.Minute)
+	moved := Detection{ROI: []int32{12, 22, 300, 200}, Type: "analog_dial", Score: 0.5, Hint: json.RawMessage(`{}`)}
+	if err := store.ApplyScan(ctx, CameraScan{CameraID: camera, ScannedAt: later, Width: 1280, Height: 720}, scanPlan{Updates: map[int64]Detection{c.ID: moved}}); err != nil {
+		t.Fatal(err)
+	}
+	if c, err = store.SetCandidateStatus(ctx, c.ID, candidateIgnored); err != nil || c.Status != candidateIgnored || c.DecidedAt == nil {
+		t.Fatalf("ignore: %+v, %v", c, err)
+	}
+	moved.ROI = []int32{500, 500, 10, 10}
+	if err := store.ApplyScan(ctx, CameraScan{CameraID: camera, ScannedAt: later.Add(time.Minute), Width: 1280, Height: 720}, scanPlan{Updates: map[int64]Detection{c.ID: moved}}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = store.Candidates(ctx, camera)
+	// Mean score: (0.3 + 0.5) / 2, then (0.4 * 2 + 0.5) / 3.
+	if c := got[0]; c.Seen != 3 || math.Abs(float64(c.Score)-1.3/3) > 1e-4 || c.ROI[0] != 12 || string(c.CropJPEG) != "\x01\x02\x03" || c.Status != candidateIgnored {
+		t.Errorf("after two more scans: %+v", c)
+	}
+
+	// Restored, then accepted when a gauge is declared on it.
+	if _, err := store.SetCandidateStatus(ctx, c.ID, candidatePending); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ApplyScan(ctx, CameraScan{CameraID: camera, ScannedAt: later.Add(2 * time.Minute), Width: 1280, Height: 720}, scanPlan{Accepted: map[int64]GaugeRef{c.ID: gauge}}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = store.Candidates(ctx, camera)
+	if c := got[0]; c.Status != candidateAccepted || c.GaugeID == nil || *c.GaugeID != "OIL" {
+		t.Errorf("accepted: %+v", c)
+	}
+	// Its gauge removed: back to pending.
+	if err := store.ApplyScan(ctx, CameraScan{CameraID: camera, ScannedAt: later.Add(3 * time.Minute), Width: 1280, Height: 720}, scanPlan{Reopened: []int64{c.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = store.Candidates(ctx, camera)
+	if c := got[0]; c.Status != candidatePending || c.GaugeID != nil || c.DecidedAt != nil {
+		t.Errorf("reopened: %+v", c)
+	}
+	if _, err := store.SetCandidateStatus(ctx, 1<<62, candidateIgnored); !errors.Is(err, ErrCandidateNotFound) {
+		t.Errorf("unknown candidate: %v", err)
+	}
+
+	scans, err := store.Scans(ctx)
+	found := false
+	for _, s := range scans {
+		found = found || (s.CameraID == camera && s.ScannedAt.Equal(later.Add(3*time.Minute)))
+	}
+	sightings, err2 := store.Sightings(ctx)
+	seen := false
+	for _, s := range sightings {
+		seen = seen || (s.GaugeRef == gauge && s.LastSeen.Equal(at))
+	}
+	if err != nil || err2 != nil || !found || !seen {
+		t.Errorf("scans %v sightings %v (%v %v)", found, seen, err, err2)
+	}
+}
+
+func TestIntegrationEdgeStore(t *testing.T) {
+	_, pool := testStore(t)
+	store := NewPgEdgeStore(pool)
+	ctx := context.Background()
+	edge := fmt.Sprintf("itest-edge-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _, _ = pool.Exec(ctx, `DELETE FROM edge_assignment WHERE edge_id LIKE $1`, edge+"%") })
+	if err := store.SetAssignments(ctx, map[string][]string{edge: {"M1", "M2"}, edge + "-b": nil}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetAssignments(ctx, map[string][]string{edge: {"M2"}}); err != nil {
+		t.Fatal(err)
+	}
+	lists, err := store.Assignments(ctx)
+	if err != nil || len(lists[edge]) != 1 || lists[edge][0] != "M2" {
+		t.Errorf("assignments: %v, %v", lists[edge], err)
+	}
+	if b, ok := lists[edge+"-b"]; !ok || len(b) != 0 {
+		t.Errorf("empty assignment: %v %v", b, ok)
+	}
+	if _, err := store.Nodes(ctx); err != nil {
+		t.Error(err)
 	}
 }

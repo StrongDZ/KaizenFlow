@@ -7,6 +7,7 @@ package decode
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	gaugev1 "gauge-twin/gen/go/denso/gauge/v1"
@@ -48,6 +49,9 @@ type Gauge struct {
 	// Digit displays.
 	digits   int
 	decimals int // digits after the decimal point
+	// lit is an LED display: its segments are bright by design, so saturated
+	// pixels are not glare until far more of them are.
+	lit bool
 }
 
 // NewGauge validates a gauge config and prepares its decoder.
@@ -84,6 +88,7 @@ func NewGauge(cfg *gaugev1.Gauge) (*Gauge, error) {
 		}
 	case TypeSeg7:
 		g.digits = int(calib.GetDigits())
+		g.lit = strings.HasSuffix(calib.GetColor(), "_led")
 		g.decimals = g.digits - int(calib.GetDecimalPos())
 		if g.digits < 1 || calib.DecimalPos == nil || g.decimals < 0 {
 			return nil, fmt.Errorf("gauge %s: seg7 needs digits and decimal_pos", g.ID)
@@ -163,10 +168,11 @@ type Reading struct {
 // against simulation data in GD5.
 type Options struct {
 	MinConfidence float64 // frames below this model confidence are rejected
-	SharpnessRef  float64 // Laplacian variance at or above which an image counts as fully sharp
 	BlurBelow     float64 // sharpness below this flags FLAG_BLUR
 	GlareAbove    float64 // glare ratio above this flags FLAG_GLARE
-	GlareMax      float64 // glare ratio at which the glare factor of the quality reaches 0
+	// GlareAboveLit is GlareAbove for an LED display, whose lit segments
+	// saturate the camera as a matter of course.
+	GlareAboveLit float64
 	FlagPenalty   float64 // quality multiplier per flag on a measurement
 	// DialTolerance is the share of the range within which dial frames count
 	// as agreeing with the window median.
@@ -184,7 +190,7 @@ type Options struct {
 // DefaultOptions are starting values pending calibration.
 func DefaultOptions() Options {
 	return Options{
-		MinConfidence: 0.5, SharpnessRef: 100, BlurBelow: 20, GlareAbove: 0.10, GlareMax: 0.5,
+		MinConfidence: 0.5, BlurBelow: 20, GlareAbove: 0.10, GlareAboveLit: 0.35,
 		FlagPenalty: 0.5, DialTolerance: 0.02, DialOvertravel: 0.05, HourMeterSlack: 0,
 	}
 }

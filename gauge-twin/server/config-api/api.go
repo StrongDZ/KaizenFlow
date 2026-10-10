@@ -26,6 +26,8 @@ type API struct {
 	requests  *prometheus.CounterVec
 	// cameras is the registry gauges may refer to; nil when there is none.
 	cameras CameraStore
+	// edges assigns new machines to an edge; nil when edges keep EDGE_MACHINES.
+	edges *Edges
 }
 
 func NewAPI(store Store, broker Broker, publisher *Publisher, prefix string, reg prometheus.Registerer, logger *slog.Logger) *API {
@@ -143,6 +145,9 @@ func (a *API) put(w http.ResponseWriter, r *http.Request) int {
 		return a.fail(w, err)
 	}
 	a.publisher.Wake()
+	if a.edges != nil {
+		a.edges.Stored(r.Context(), machineID)
+	}
 	a.logger.Info("config stored", "machine_id", machineID, "config_version", stored.ConfigVersion)
 	return writeJSON(w, http.StatusOK, view(stored))
 }
@@ -167,6 +172,9 @@ func (a *API) delete(w http.ResponseWriter, r *http.Request) int {
 	}
 	if err := a.store.Delete(r.Context(), stored.MachineID); err != nil {
 		return a.fail(w, err)
+	}
+	if a.edges != nil {
+		a.edges.Deleted(r.Context(), stored.MachineID)
 	}
 	w.WriteHeader(http.StatusNoContent)
 	return http.StatusNoContent

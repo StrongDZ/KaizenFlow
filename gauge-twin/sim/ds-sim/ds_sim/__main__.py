@@ -108,6 +108,17 @@ class App:
                 return False, f"no camera {command.camera_url!r}"
             self.preview_until[command.camera_url] = time.monotonic() + command.preview_seconds
             return True, ""
+        if command.type == command_pb2.COMMAND_TYPE_RESTART and command.camera_url:
+            # One silent stream: reopen it, the other cameras keep running.
+            url = command.camera_url
+            if url not in self.cameras:
+                return False, f"no camera {url!r}"
+            fps = 1.0 / self.cameras[url].interval_s
+            self.cameras.pop(url).close()
+            self.cameras[url] = Camera(url, fps)
+            self.detectors[url] = DriftDetector(self.drift_interval_s, self.drift_threshold_px)
+            log("WARNING", "camera reopened at the request of edge-agent", camera=url)
+            return True, ""
         if command.type == command_pb2.COMMAND_TYPE_RESTART:
             log("WARNING", "restart requested by edge-agent", machine_id=command.machine_id)
             self.running = False

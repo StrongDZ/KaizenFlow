@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -221,5 +222,33 @@ func TestAcceptanceRejectsBadRequestsAndPathsOutsideTheStore(t *testing.T) {
 	store := NewDirSampleStore(t.TempDir())
 	if err := store.Save(context.Background(), AcceptanceSample{ID: "1", MachineID: "../x", GaugeID: "G"}, nil); err == nil {
 		t.Error("a machine id with a path separator must be refused")
+	}
+}
+
+func TestAccuracyReport(t *testing.T) {
+	errOf := func(v float64) *float64 { return &v }
+	samples := []AcceptanceSample{
+		{MachineID: "M1", GaugeID: "P", Type: "analog_dial", Passed: true, QualityOK: true, Error: errOf(0.06), FullScale: 6},
+		{MachineID: "M1", GaugeID: "P", Type: "analog_dial", Passed: true, QualityOK: false, Error: errOf(-0.12), FullScale: 6},
+		{MachineID: "M2", GaugeID: "T", Type: "seg7", Passed: true, QualityOK: true},
+		{MachineID: "M2", GaugeID: "T", Type: "seg7", Passed: false, QualityOK: true},
+	}
+	r := Accuracy(samples)
+	if r.Samples != 4 || len(r.ByType) != 2 || len(r.ByGauge) != 2 {
+		t.Fatalf("report: %+v", r)
+	}
+	dial, display := r.ByType[0], r.ByType[1]
+	if dial.Type != "analog_dial" || dial.Passed != 2 || dial.LowQuality != 1 || math.Abs(*dial.MeanErrorPct-1.5) > 1e-9 {
+		t.Errorf("dial: %+v", dial)
+	}
+	if display.PassRate != 0.5 || display.MeanErrorPct != nil {
+		t.Errorf("display: %+v", display)
+	}
+	// Ten out of ten proves about 72%, not 100%.
+	if lb := wilsonLower(10, 10); math.Abs(lb-0.722) > 0.001 {
+		t.Errorf("wilson 10/10: %v", lb)
+	}
+	if lb := wilsonLower(0, 0); lb != 0 {
+		t.Errorf("wilson 0/0: %v", lb)
 	}
 }

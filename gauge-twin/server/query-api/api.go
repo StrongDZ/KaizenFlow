@@ -40,6 +40,8 @@ type API struct {
 	// live serves the live view; nil when the service has no MQTT broker.
 	live   *LiveFrames
 	stills *Stills
+	// alerts keeps the open problems; nil when the service raises none.
+	alerts *Alerter
 }
 
 func NewAPI(store Store, previewURL, corsOrigin string, staleAfter, lookback time.Duration, now func() time.Time,
@@ -61,6 +63,13 @@ func (a *API) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/stations/{machine_id}/history", a.wrap("history", a.history))
 	mux.HandleFunc("GET /v1/stations/{machine_id}/frame", a.wrap("frame", a.frame))
 	mux.HandleFunc("GET /v1/stations/{machine_id}/live-frame", a.wrap("live_frame", a.liveFrame))
+	mux.HandleFunc("GET /v1/cameras/{camera_id}/frame", a.wrap("camera_frame", a.cameraFrame))
+	mux.HandleFunc("GET /v1/alerts", a.wrap("alerts", func(w http.ResponseWriter, r *http.Request) int {
+		if a.alerts == nil {
+			return writeJSON(w, http.StatusOK, alertsView{Alerts: []Alert{}})
+		}
+		return a.alerts.handle(w, r)
+	}))
 }
 
 type apiError struct {
@@ -249,6 +258,27 @@ func (a *API) frame(w http.ResponseWriter, r *http.Request) int {
 	if url == "" {
 		return writeJSON(w, http.StatusNotFound, apiError{Error: "station has no such camera"})
 	}
+	return a.still(w, r, url)
+}
+
+// cameraFrame answers one frame of a camera of the registry, gauges on it or
+// not: the preview of a camera card. Same max_age as frame.
+func (a *API) cameraFrame(w http.ResponseWriter, r *http.Request) int {
+	cameras, err := a.store.Cameras(r.Context())
+	if err != nil {
+		return a.fail(w, err)
+	}
+	for _, c := range cameras {
+		if c.ID == r.PathValue("camera_id") {
+			return a.still(w, r, c.URL)
+		}
+	}
+	return writeJSON(w, http.StatusNotFound, apiError{Error: "camera not found"})
+}
+
+// still answers a frame of a camera url, from memory when one pulled within
+// ?max_age= seconds is kept.
+func (a *API) still(w http.ResponseWriter, r *http.Request, url string) int {
 	maxAge := time.Duration(0)
 	if raw := r.URL.Query().Get("max_age"); raw != "" {
 		seconds, err := strconv.Atoi(raw)
@@ -286,23 +316,30 @@ func (a *API) WarmStills(ctx context.Context, every time.Duration) {
 }
 
 // warmStills refreshes the frames older than maxAge, each camera once
-// whatever the number of machines it serves.
+// whatever the number of machines it serves: the cameras the stations use and
+// the ones of the registry no gauge is on yet.
 func (a *API) warmStills(ctx context.Context, maxAge time.Duration) {
 	stations, err := a.store.Stations(ctx, "")
 	if err != nil {
 		a.logger.Warn("thumbnails: stations", "error", err)
 		return
 	}
-	seen := map[string]bool{}
+	var cameras []CameraRef
 	for _, s := range stations {
-		for _, c := range s.Cameras {
-			if seen[c.URL] || ctx.Err() != nil {
-				continue
-			}
-			seen[c.URL] = true
-			if _, err := a.stills.Get(ctx, c.URL, maxAge); err != nil {
-				a.logger.Debug("thumbnails: camera", "camera_id", c.ID, "error", err)
-			}
+		cameras = append(cameras, s.Cameras...)
+	}
+	registry, err := a.store.Cameras(ctx)
+	if err != nil {
+		a.logger.Warn("thumbnails: cameras", "error", err)
+	}
+	seen := map[string]bool{}
+	for _, c := range append(cameras, registry...) {
+		if seen[c.URL] || ctx.Err() != nil {
+			continue
+		}
+		seen[c.URL] = true
+		if _, err := a.stills.Get(ctx, c.URL, maxAge); err != nil {
+			a.logger.Debug("thumbnails: camera", "camera_id", c.ID, "error", err)
 		}
 	}
 }

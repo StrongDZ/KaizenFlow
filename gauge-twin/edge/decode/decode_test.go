@@ -225,10 +225,15 @@ func TestSeg7InsertsTheDecimalPointAndAllowsLeadingBlanks(t *testing.T) {
 			t.Errorf("%q should be a format error, got %+v", text, r)
 		}
 	}
-	// Confidence is the product over the slots.
+	// Confidence is the least sure slot, whatever the number of digits.
 	r := g.Read(0, &gaugev1.RoiResult{SlotProbs: slots("2205", 0.9)}, opt)
-	if math.Abs(r.Confidence-math.Pow(0.9, 4)) > 1e-5 {
+	if math.Abs(r.Confidence-0.9) > 1e-5 {
 		t.Errorf("confidence: %v", r.Confidence)
+	}
+	mixed := slots("2205", 0.95)
+	mixed[1] = slots("2", 0.8)[0]
+	if r := g.Read(0, &gaugev1.RoiResult{SlotProbs: mixed}, opt); math.Abs(r.Confidence-0.8) > 1e-5 {
+		t.Errorf("confidence with one weaker slot: %v", r.Confidence)
 	}
 	// Rejection looks at the weakest slot, so long displays are not penalised.
 	if r := g.Read(0, &gaugev1.RoiResult{SlotProbs: slots("2205", 0.6)}, opt); !r.Valid {

@@ -6,7 +6,7 @@ set -euo pipefail
 
 : "${DATABASE_URL:?DATABASE_URL is required}"
 MIGRATIONS="$(cd "$(dirname "$0")/../sql" && pwd)"
-LATEST=9
+LATEST=11
 
 m() { migrate -path "$MIGRATIONS" -database "$DATABASE_URL" "$@"; }
 q() { psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qAt -c "$1"; }
@@ -30,9 +30,10 @@ expect "schema not dirty" "f" "$(q 'SELECT dirty FROM schema_migrations')"
 expect "hypertables" "gauge_reading" \
   "$(q "SELECT string_agg(hypertable_name, ',' ORDER BY hypertable_name)
         FROM timescaledb_information.hypertables WHERE hypertable_schema = 'public'")"
-expect "auxiliary tables" "camera,edge_node,machine,rejected_reading,station_config" \
+expect "auxiliary tables" "camera,camera_scan,edge_assignment,edge_node,gauge_candidate,gauge_sighting,machine,rejected_reading,station_config" \
   "$(q "SELECT string_agg(tablename, ',' ORDER BY tablename) FROM pg_tables
-        WHERE schemaname = 'public' AND tablename IN ('machine', 'gauge', 'edge_node', 'station_config', 'rejected_reading', 'camera')")"
+        WHERE schemaname = 'public' AND tablename IN ('machine', 'gauge', 'edge_node', 'station_config', 'rejected_reading', 'camera',
+                                                      'gauge_candidate', 'camera_scan', 'gauge_sighting', 'edge_assignment')")"
 expect "background policies" \
   "gauge_reading:policy_compression,policy_refresh_continuous_aggregate,gauge_reading:policy_retention" \
   "$(q "SELECT string_agg(concat_ws(':', h.hypertable_name, j.proc_name), ',' ORDER BY j.proc_name)
@@ -84,6 +85,15 @@ expect "gauge view lists the gauges of the config" "A:seg7:V:7,B:analog_dial::7"
   "$(q "SELECT string_agg(concat_ws(':', gauge_id, type, unit, config_version), ',' ORDER BY gauge_id) FROM gauge")"
 expect "edge_node.machine_ids defaults to empty" "0" \
   "$(q "INSERT INTO edge_node (edge_id) VALUES ('E1') RETURNING cardinality(machine_ids)")"
+
+echo "== gauge_candidate"
+expect "a new candidate is pending and seen once" "pending|1" \
+  "$(q "INSERT INTO gauge_candidate (camera_id, roi, type, score) VALUES ('C1', '{1,2,30,40}', 'analog_dial', 0.4)
+        RETURNING status || '|' || seen")"
+if q "INSERT INTO gauge_candidate (camera_id, roi, type, score, status) VALUES ('C1', '{1,2,3,4}', 'seg7', 0.4, 'maybe')" 2>/dev/null; then
+  fail "an unknown candidate status was accepted"
+fi
+echo "ok: unknown candidate status is refused"
 
 echo "== migrate down"
 m down -all

@@ -57,12 +57,13 @@ func (g *Gauge) readDigits(roi *gaugev1.RoiResult, opt Options, r *Reading) {
 			}
 		}
 		classes[i] = best
-		// Product of the slot probabilities: every digit has to be right.
-		r.Confidence *= float64(probs[best])
 		weakest = math.Min(weakest, float64(probs[best]))
 	}
-	// Frames are rejected on their weakest slot, not on the product, which
-	// would penalise displays simply for having more digits.
+	// A reading is as sure as its least sure digit. The product of the slot
+	// probabilities would penalise a display simply for having more digits
+	// (six digits at 0.9 each make 0.53), both for the rejection below and for
+	// the quality of the window.
+	r.Confidence = weakest
 	if weakest < opt.MinConfidence {
 		r.Reason = gaugev1.Flag_FLAG_OCCLUDED
 		return

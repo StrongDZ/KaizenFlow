@@ -32,6 +32,7 @@ type memStore struct {
 	series   []seriesCall
 	history  []HistoryPoint
 	asked    []historyCall
+	cameras  []CameraRef
 }
 
 type historyCall struct {
@@ -71,6 +72,8 @@ func (m *memStore) Series(_ context.Context, machine, gauge string, since time.T
 }
 
 func (m *memStore) Ping(context.Context) error { return m.err }
+
+func (m *memStore) Cameras(context.Context) ([]CameraRef, error) { return m.cameras, m.err }
 
 var testNow = time.Date(2026, 10, 6, 3, 0, 0, 0, time.UTC)
 
@@ -311,13 +314,14 @@ func TestWarmStillsPullsEveryCameraOnce(t *testing.T) {
 	}))
 	defer preview.Close()
 	store := newTestStore()
-	// A second machine on the side camera of the first one.
+	// A second machine on the side camera of the first one, and a camera no gauge is on yet.
 	store.stations = append(store.stations, StationRow{MachineID: "machine_003", Cameras: []CameraRef{{ID: "side", URL: "rtsp://cam/side"}}})
+	store.cameras = []CameraRef{{ID: "side", URL: "rtsp://cam/side"}, {ID: "new", URL: "rtsp://cam/new"}}
 	api := NewAPI(store, preview.URL, "*", 30*time.Second, 10*time.Minute, func() time.Time { return testNow }, prometheus.NewRegistry(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	api.warmStills(context.Background(), time.Minute)
 	api.warmStills(context.Background(), time.Minute) // still fresh: nothing is pulled
-	if len(asked) != 2 || asked["rtsp://cam/machine_001"] != 1 || asked["rtsp://cam/side"] != 1 {
-		t.Errorf("cameras asked: %v, want the two cameras once each", asked)
+	if len(asked) != 3 || asked["rtsp://cam/machine_001"] != 1 || asked["rtsp://cam/side"] != 1 || asked["rtsp://cam/new"] != 1 {
+		t.Errorf("cameras asked: %v, want the three cameras once each", asked)
 	}
 }
 
@@ -328,4 +332,25 @@ func TestStoreErrorIsInternal(t *testing.T) {
 	for _, path := range []string{"/v1/live/stations", "/v1/live/stations/machine_001", "/v1/stations/machine_001/series?gauge=X"} {
 		wantError(t, srv.URL+path, http.StatusInternalServerError, "internal error")
 	}
+}
+
+func TestCameraFrame(t *testing.T) {
+	var asked map[string]string
+	preview := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&asked)
+		_, _ = w.Write([]byte(`{"frame_jpeg":"abcd","width":1280,"height":720}`))
+	}))
+	defer preview.Close()
+	store := newTestStore()
+	store.cameras = []CameraRef{{ID: "new", URL: "rtsp://cam/new"}}
+	srv := newTestServer(t, store, preview.URL)
+	var got map[string]any
+	if resp := get(t, srv.URL+"/v1/cameras/new/frame?max_age=600", &got); resp.StatusCode != http.StatusOK || got["width"] != float64(1280) {
+		t.Errorf("got %d %v", resp.StatusCode, got)
+	}
+	if asked["url"] != "rtsp://cam/new" {
+		t.Errorf("preview asked for %q", asked["url"])
+	}
+	wantError(t, srv.URL+"/v1/cameras/gone/frame", http.StatusNotFound, "camera not found")
+	wantError(t, srv.URL+"/v1/cameras/new/frame?max_age=x", http.StatusBadRequest, "max_age must be a number of seconds")
 }

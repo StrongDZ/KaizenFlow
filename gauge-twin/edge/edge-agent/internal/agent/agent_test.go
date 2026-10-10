@@ -129,6 +129,17 @@ func (p *fakePipeline) Do(_ context.Context, cmd *gaugev1.Command) (*gaugev1.Com
 	return &gaugev1.CommandReply{CommandId: cmd.GetCommandId(), Ok: true}, nil
 }
 
+func (p *fakePipeline) last(kind gaugev1.CommandType) *gaugev1.Command {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for i := len(p.commands) - 1; i >= 0; i-- {
+		if p.commands[i].GetType() == kind {
+			return p.commands[i]
+		}
+	}
+	return nil
+}
+
 func (p *fakePipeline) count(kind gaugev1.CommandType) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()

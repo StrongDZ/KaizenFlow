@@ -19,6 +19,7 @@ message Command {
   string machine_id = 4;
   // PREVIEW: the camera (its url) whose frames must carry a preview image,
   // and for how long from now. Sent again to extend the period.
+  // RESTART: when set, reopen this camera's stream only.
   string camera_url = 5;
   uint32 preview_seconds = 6;
 }
@@ -27,7 +28,8 @@ enum CommandType {
   COMMAND_TYPE_UNSPECIFIED = 0;
   // Load the station config written by edge-agent and rebuild what depends on it.
   COMMAND_TYPE_RELOAD_CONFIG = 1;
-  // Exit so the container supervisor starts a fresh pipeline.
+  // Exit so the container supervisor starts a fresh pipeline; with
+  // camera_url, reopen that camera's stream and leave the others running.
   COMMAND_TYPE_RESTART = 2;
   // Attach a small JPEG of the frame to the FrameResults of one camera for a
   // while: somebody is watching that camera. Never the default; the edge

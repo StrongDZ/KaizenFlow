@@ -96,6 +96,14 @@ type Publisher struct {
 	logger   *slog.Logger
 	wake     chan struct{}
 	interval time.Duration
+	// RepublishEvery is how often every config is published again, published
+	// or not: the broker may have lost its retained messages (restarted
+	// without its data, or cleared by hand) while the database says all is
+	// published. The edge ignores a version it already runs. 0 disables it.
+	RepublishEvery time.Duration
+	lastRepublish  time.Time
+	// AlsoRepublish runs with every republish (the edge assignments).
+	AlsoRepublish func(ctx context.Context)
 
 	published   prometheus.Counter
 	failures    prometheus.Counter
@@ -105,7 +113,8 @@ type Publisher struct {
 func NewPublisher(store Store, broker Broker, prefix string, interval time.Duration, reg prometheus.Registerer, logger *slog.Logger) *Publisher {
 	p := &Publisher{
 		store: store, broker: broker, prefix: prefix, logger: logger, interval: interval,
-		wake: make(chan struct{}, 1),
+		wake:           make(chan struct{}, 1),
+		RepublishEvery: 10 * time.Minute,
 		published: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "config_api_published_total", Help: "Station configs published to MQTT."}),
 		failures: prometheus.NewCounter(prometheus.CounterOpts{
@@ -131,6 +140,9 @@ func (p *Publisher) Run(ctx context.Context) {
 	defer ticker.Stop()
 	for {
 		p.Sync(ctx)
+		if p.RepublishEvery > 0 && time.Since(p.lastRepublish) >= p.RepublishEvery {
+			p.Republish(ctx)
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -168,6 +180,38 @@ func (p *Publisher) Sync(ctx context.Context) {
 		p.logger.Info("config published", "machine_id", s.MachineID, "config_version", s.ConfigVersion, "topic", topic)
 	}
 	p.unpublished.Set(float64(remaining))
+}
+
+// Republish publishes every stored config again, retained.
+func (p *Publisher) Republish(ctx context.Context) {
+	stations, err := p.store.List(ctx)
+	if err != nil {
+		if ctx.Err() == nil {
+			p.logger.Error("list configs to republish", "error", err)
+		}
+		return
+	}
+	failed := 0
+	for _, s := range stations {
+		topic, err := configTopic(p.prefix, s.Config)
+		if err == nil {
+			err = p.broker.PublishRetained(ctx, topic, s.Config)
+		}
+		if err != nil {
+			failed++
+			p.failures.Inc()
+			continue
+		}
+		p.published.Inc()
+	}
+	if p.AlsoRepublish != nil {
+		p.AlsoRepublish(ctx)
+	}
+	// A failed pass is tried again at the next interval, not after RepublishEvery.
+	if failed == 0 {
+		p.lastRepublish = time.Now()
+	}
+	p.logger.Info("configs republished", "configs", len(stations), "failed", failed)
 }
 
 // configTopic is denso/{plant}/{line}/{machine}/config for a stored config.

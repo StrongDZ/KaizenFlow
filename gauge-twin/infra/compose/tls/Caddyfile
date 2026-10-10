@@ -1,0 +1,20 @@
+# HTTPS in front of the two APIs of the web UI (profile tls):
+#   https://<host>:8443/query/...  -> query-api
+#   https://<host>:8443/config/... -> config-api
+# TLS_SITE is the name the browser uses. For localhost and IP addresses Caddy
+# issues a certificate from its own CA (trust it once, or accept the warning);
+# for a public DNS name it obtains a real certificate by itself.
+{
+	auto_https disable_redirects
+}
+
+{$TLS_SITE:localhost}:8443 {
+	tls {$TLS_ISSUER:internal}
+	handle_path /query/* {
+		reverse_proxy query-api:8080
+	}
+	handle_path /config/* {
+		reverse_proxy config-api:8080
+	}
+	header Strict-Transport-Security "max-age=31536000"
+}

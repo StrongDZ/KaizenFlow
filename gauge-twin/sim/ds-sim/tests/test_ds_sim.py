@@ -343,3 +343,41 @@ def test_attach_preview_adds_a_scaled_down_image_and_the_frame_size():
     pipeline.attach_preview(result, small)
     image = cv2.imdecode(np.frombuffer(result.preview_jpeg, np.uint8), cv2.IMREAD_COLOR)
     assert image.shape[:2] == (480, 640)  # never scaled up
+
+
+def test_restart_of_one_camera_reopens_that_stream_only(monkeypatch):
+    import ds_sim.__main__ as app_module
+    from denso.gauge.v1 import command_pb2
+
+    opened = []
+
+    class FakeCamera:
+        def __init__(self, url, fps):
+            self.url, self.interval_s, self.closed = url, 1.0 / fps, False
+            opened.append(url)
+
+        def close(self):
+            self.closed = True
+
+    monkeypatch.setattr(app_module, "Camera", FakeCamera)
+    app = app_module.App.__new__(app_module.App)
+    app.drift_interval_s, app.drift_threshold_px = 600.0, 8.0
+    front, side = FakeCamera("rtsp://front", 2), FakeCamera("rtsp://side", 4)
+    app.cameras, app.detectors, app.running = {"rtsp://front": front, "rtsp://side": side}, {}, True
+    opened.clear()
+
+    restart = command_pb2.Command(type=command_pb2.COMMAND_TYPE_RESTART, camera_url="rtsp://side")
+    assert app.handle(restart) == (True, "")
+    assert side.closed and not front.closed and app.running
+    assert opened == ["rtsp://side"] and app.cameras["rtsp://side"].interval_s == 0.25
+    assert (
+        app.handle(
+            command_pb2.Command(type=command_pb2.COMMAND_TYPE_RESTART, camera_url="rtsp://gone")
+        )[0]
+        is False
+    )
+    # Without a camera the whole pipeline exits, as before.
+    assert (
+        app.handle(command_pb2.Command(type=command_pb2.COMMAND_TYPE_RESTART)) == (True, "")
+        and not app.running
+    )

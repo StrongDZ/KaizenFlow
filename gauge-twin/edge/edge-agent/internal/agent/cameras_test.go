@@ -149,6 +149,10 @@ func TestSilentCameraOnlyMakesItsOwnGaugesStale(t *testing.T) {
 	}
 	h.eventually("the side camera reported stale", func() bool { return testutil.ToFloat64(h.metrics.PipelineStale) == 1 })
 	h.eventually("restart command", func() bool { return h.pipeline.count(gaugev1.CommandType_COMMAND_TYPE_RESTART) == 1 })
+	// Only the silent stream is reopened: the front camera keeps reading.
+	if url := h.pipeline.last(gaugev1.CommandType_COMMAND_TYPE_RESTART).GetCameraUrl(); url != camSide {
+		t.Errorf("restart of camera %q, want only the silent one %q", url, camSide)
+	}
 
 	all := h.telemetry()
 	last := all[len(all)-1]
