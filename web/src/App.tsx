@@ -16,6 +16,8 @@ import EditorPage from './pages/EditorPage'
 import GaugeCameraPage from './pages/GaugeCameraPage'
 import GaugeCamerasPage from './pages/GaugeCamerasPage'
 import GaugeOverviewPage from './pages/GaugeOverviewPage'
+import GaugeEdgesPage from './pages/GaugeEdgesPage'
+import GaugeInventoryPage from './pages/GaugeInventoryPage'
 import GaugeHistoryPage from './pages/GaugeHistoryPage'
 import GaugeStationPage from './pages/GaugeStationPage'
 import LibraryLayout from './pages/LibraryLayout'
@@ -78,6 +80,8 @@ export default function App() {
             <Route path="/benchmarks" element={<ReportPage mode="benchmarks" />} />
             <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/gauge-twin" element={<GaugeOverviewPage />} />
+            <Route path="/gauge-twin/gauges" element={<GaugeInventoryPage />} />
+            <Route path="/gauge-twin/edges" element={<GaugeEdgesPage />} />
             <Route path="/gauge-twin/cameras" element={<GaugeCamerasPage />} />
             <Route path="/gauge-twin/cameras/:camera" element={<GaugeCameraPage />} />
             <Route path="/gauge-twin/:machine" element={<StationLayout />}>

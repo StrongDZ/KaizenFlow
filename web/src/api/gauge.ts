@@ -70,7 +70,15 @@ const station = (machine: string) => `/v1/stations/${encodeURIComponent(machine)
 const historyPath = (machine: string, gauge: string, from: number, to: number) =>
   `${station(machine)}/history?gauge=${encodeURIComponent(gauge)}&from=${new Date(from).toISOString()}&to=${new Date(to).toISOString()}`
 
+/** Một sự cố đang mở: kéo dài đủ lâu mới được báo, hết thì tự đóng. */
+export type GaugeAlert = {
+  key: string; kind: 'edge_offline' | 'machine_silent' | 'out_of_range' | 'unreadable'; severity: 'critical' | 'warning'
+  plant?: string; line?: string; machine_id?: string; gauge_id?: string; edge_id?: string; machines?: string[]
+  message: string; value?: number; since: string
+}
+
 export const gaugeApi = {
+  alerts: () => get<{ alerts: GaugeAlert[]; webhook: boolean; webhook_error?: string }>('/v1/alerts'),
   stations: () => get<GaugeStation[]>('/v1/live/stations'),
   station: (machine: string) => get<GaugeStation>(`/v1/live/stations/${encodeURIComponent(machine)}`),
   series: (machine: string, gauge: string, minutes = 15) =>
@@ -80,6 +88,8 @@ export const gaugeApi = {
   historyCsvUrl: (machine: string, gauge: string, from: number, to: number) => `${GAUGE_API_BASE}${historyPath(machine, gauge, from, to)}&format=csv`,
   /** Xem trực tiếp: gọi lặp lại để edge tiếp tục gửi ảnh; ảnh chỉ nằm trong bộ nhớ server, không được lưu. Chưa có khung hình thì lỗi. */
   liveFrame: (machine: string, camera = '') => get<LiveFrame>(`${station(machine)}/live-frame${camera ? `?camera=${encodeURIComponent(camera)}` : ''}`),
+  /** Một khung hình của một camera trong danh mục, kể cả camera chưa gắn đồng hồ nào: ảnh xem trước trên thẻ camera. */
+  cameraFrame: (cameraId: string, maxAgeS = 600) => get<GaugeFrame>(`/v1/cameras/${encodeURIComponent(cameraId)}/frame?max_age=${maxAgeS}`),
   /** Một khung hình do server tự kéo từ camera; dùng khi chưa có xem trực tiếp. `maxAgeS` là tuổi lớn nhất chấp nhận được (giây):
       server trả ngay khung hình nó vừa kéo gần đây thay vì mở lại camera, đủ cho ảnh nhỏ minh hoạ. */
   frame: (machine: string, camera = '', maxAgeS = 0) => get<GaugeFrame>(`${station(machine)}/frame?max_age=${maxAgeS}${camera ? `&camera=${encodeURIComponent(camera)}` : ''}`),

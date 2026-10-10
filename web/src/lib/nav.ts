@@ -95,8 +95,10 @@ function modelTabs(ctx: NavCtx): Tab[] {
 export type SubNav = { title: string; subtitle?: string; icon?: 'overview' | 'library' | 'gauge'; groups: { title: string | undefined; tabs: Tab[] }[] }
 
 const GAUGE_TABS: Tab[] = [
-  { label: 'Trạm', to: '/gauge-twin', not: ['/gauge-twin/cameras'], icon: 'gauge' },
+  { label: 'Trạm', to: '/gauge-twin', not: ['/gauge-twin/cameras', '/gauge-twin/gauges', '/gauge-twin/edges'], icon: 'gauge' },
+  { label: 'Danh mục đồng hồ', to: '/gauge-twin/gauges', icon: 'scan' },
   { label: 'Camera', to: '/gauge-twin/cameras', icon: 'camera' },
+  { label: 'Edge', to: '/gauge-twin/edges', icon: 'cpu' },
 ]
 
 const LIBRARY_TABS: Tab[] = [
@@ -158,6 +160,8 @@ export function crumbsFor(path: string, ctx: NavCtx): Crumb[] {
     if (camera[1]) out.push({ label: decodeURIComponent(camera[1]) })
     return out
   }
+  if (path === '/gauge-twin/gauges') return [{ label: 'Đồng hồ', to: '/gauge-twin' }, { label: 'Danh mục đồng hồ' }]
+  if (path === '/gauge-twin/edges') return [{ label: 'Đồng hồ', to: '/gauge-twin' }, { label: 'Edge' }]
   const gauge = path.match(/^\/gauge-twin(?:\/([^/]+))?/)
   if (gauge) {
     if (!gauge[1]) return [{ label: 'Đồng hồ' }]

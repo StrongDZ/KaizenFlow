@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { gaugeApi } from '../api/gauge'
 import { gaugeConfigApi, GAUGE_CONFIG_API_BASE, type CameraDoc } from '../api/gaugeConfig'
 import { Plus } from 'lucide-react'
 import { ActionError, GaugeArea, gtButton, gtField, gtPrimary } from '../components/gauge/GaugeArea'
 import { btnAccentOutline, btnDangerOutline, btnPrimary } from '../components/ui'
+import { pendingByCamera } from '../lib/gaugeDiscovery'
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -80,7 +82,24 @@ function AddCamera({ taken, onClose }: { taken: string[]; onClose?: () => void }
   )
 }
 
-function CameraCard({ camera }: { camera: CameraDoc }) {
+/** Ảnh xem trước của camera: khung hình server giữ trong bộ nhớ (tối đa 10 phút tuổi), làm mới mỗi phút. Bấm để mở camera. */
+function CameraPreview({ camera }: { camera: CameraDoc }) {
+  const frame = useQuery({
+    queryKey: ['gauge', 'camera-frame', camera.camera_id], queryFn: () => gaugeApi.cameraFrame(camera.camera_id),
+    refetchInterval: 60_000, retry: 1, refetchOnWindowFocus: false,
+  })
+  return (
+    <Link to={`/gauge-twin/cameras/${encodeURIComponent(camera.camera_id)}`} title="Mở camera"
+      className="relative flex aspect-video items-center justify-center overflow-hidden rounded-md bg-raised hover:opacity-90">
+      {frame.data
+        ? <img src={`data:image/jpeg;base64,${frame.data.frame_jpeg}`} alt={`Hình từ camera ${camera.camera_id}`} className="h-full w-full object-contain" />
+        : <span className="px-4 text-center text-xs text-faint">{frame.isPending ? 'Đang lấy hình…' : 'Camera chưa trả về hình'}</span>}
+      {frame.data && <span className="absolute bottom-1.5 right-1.5 rounded bg-bg/80 px-1.5 py-0.5 tabular-nums text-[10.5px] text-muted">{frame.data.width}×{frame.data.height}</span>}
+    </Link>
+  )
+}
+
+function CameraCard({ camera, newGauges }: { camera: CameraDoc; newGauges: number }) {
   const qc = useQueryClient()
   const remove = useMutation({
     mutationFn: () => gaugeConfigApi.deleteCamera(camera.camera_id),
@@ -94,8 +113,17 @@ function CameraCard({ camera }: { camera: CameraDoc }) {
           <h3 className="truncate text-[13px] font-semibold">{camera.name || camera.camera_id}</h3>
           <p className="tabular-nums text-xs text-muted">{camera.camera_id}{camera.location && ` · ${camera.location}`}</p>
         </div>
-        <span className="flex-none rounded-full bg-raised px-2.5 py-1 tabular-nums text-xs text-text-2">{camera.sample_fps} hình/s</span>
+        <span className="flex flex-none flex-col items-end gap-1">
+          <span className="rounded-full bg-raised px-2.5 py-1 tabular-nums text-xs text-text-2">{camera.sample_fps} hình/s</span>
+          {newGauges > 0 && (
+            <Link to={`/gauge-twin/cameras/${encodeURIComponent(camera.camera_id)}`} title="AI phát hiện đồng hồ chưa khai báo trên camera này"
+              className="rounded-full border border-dashed border-warn px-2.5 py-0.5 text-xs font-semibold text-warn hover:bg-warn/10">
+              {newGauges} đồng hồ mới
+            </Link>
+          )}
+        </span>
       </div>
+      <CameraPreview camera={camera} />
       <p className="truncate tabular-nums text-xs text-faint" title={camera.url}>{camera.url}</p>
       {camera.machines.length > 0 ? (
         <div>
@@ -130,6 +158,8 @@ function CameraCard({ camera }: { camera: CameraDoc }) {
 /** Danh mục camera: mỗi camera khai một lần, không thuộc máy nào; đồng hồ của máy nào cũng có thể nằm trên nó. */
 export default function GaugeCamerasPage() {
   const q = useQuery({ queryKey: ['gauge-config', 'cameras'], queryFn: gaugeConfigApi.cameras })
+  const pending = useQuery({ queryKey: ['gauge-config', 'candidates', 'pending'], queryFn: () => gaugeConfigApi.candidates('pending'), refetchInterval: 30_000 })
+  const newOn = pendingByCamera(pending.data?.candidates ?? [])
   const [adding, setAdding] = useState(false)
   const empty = q.data !== undefined && q.data.length === 0
   return (
@@ -152,7 +182,7 @@ export default function GaugeCamerasPage() {
       {(adding || empty) && <AddCamera taken={(q.data ?? []).map((c) => c.camera_id)} onClose={empty ? undefined : () => setAdding(false)} />}
       {q.data && q.data.length > 0 && (
         <ul className="grid grid-cols-[repeat(auto-fill,minmax(340px,1fr))] gap-3">
-          {q.data.map((c) => <CameraCard key={c.camera_id} camera={c} />)}
+          {q.data.map((c) => <CameraCard key={c.camera_id} camera={c} newGauges={newOn.get(c.camera_id) ?? 0} />)}
         </ul>
       )}
       {q.isPending && <p className="text-xs text-muted">Đang tải danh sách camera…</p>}

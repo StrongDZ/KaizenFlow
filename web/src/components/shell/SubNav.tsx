@@ -1,6 +1,6 @@
 import {
   Activity, Boxes, Camera, Database, Gauge, Library, FileText, FlaskConical, History, LayoutGrid, Lightbulb, Map as MapIcon, Monitor, Package, PanelLeftClose, PanelLeftOpen,
-  Play, Plug, Radio, Shapes, Trophy, Warehouse, Workflow, type LucideIcon,
+  Cpu, Play, Plug, Radio, ScanSearch, Shapes, Trophy, Warehouse, Workflow, type LucideIcon,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { isTabActive, type SubNav as SubNavData } from '../../lib/nav'
@@ -8,7 +8,7 @@ import { isTabActive, type SubNav as SubNavData } from '../../lib/nav'
 const ICONS: Record<string, LucideIcon> = {
   diagram: Workflow, history: History, flask: FlaskConical, play: Play, radio: Radio, database: Database, plug: Plug, map: MapIcon,
   monitor: Monitor, activity: Activity, lightbulb: Lightbulb, file: FileText, shapes: Shapes, package: Package, gauge: Gauge, camera: Camera,
-  trophy: Trophy, boxes: Boxes, warehouse: Warehouse,
+  trophy: Trophy, boxes: Boxes, warehouse: Warehouse, scan: ScanSearch, cpu: Cpu,
 }
 const HEAD_ICONS = { overview: LayoutGrid, library: Library, gauge: Gauge } as const
 

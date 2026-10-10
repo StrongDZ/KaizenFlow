@@ -7,7 +7,7 @@ import { EmptyState, Loading, btn } from '../components/ui'
 import { GaugeCard } from '../components/gauge/GaugeCard'
 import { DEFAULT_FRAME, RoiSchematic } from '../components/gauge/RoiSchematic'
 import { toneOf } from '../components/gauge/tone'
-import { ageLabel, cameraLabel, fmtValue, gaugesOn, latestReading, MAX_TILES, roiBox, unitLabel } from '../lib/gaugeView'
+import { ageLabel, cameraLabel, fmtValue, gaugesOn, latestReading, roiBox, unitLabel } from '../lib/gaugeView'
 
 /** Thẻ đồng hồ cần xem đứng trước. */
 const STATE_RANK: Record<string, number> = { alarm: 0, poor: 1, stale: 2, ok: 3 }
@@ -29,17 +29,17 @@ function ValueTag({ gauge, frame, onFrame }: {
     : box.top > 14 ? { left: `${Math.min(box.left, 80)}%`, bottom: `${100 - box.top + 1.2}%` }
     : { left: `${Math.min(box.left, 80)}%`, top: `${box.top + box.height + 1.2}%` }
   return (
+    // Một dòng gọn trên nền tối; chỉ vượt ngưỡng mới có nền màu, trạng thái khác là một chấm màu.
     <div
-      className={`absolute flex flex-col rounded-md px-2 py-1 shadow ${tone.solid}`}
+      className={`absolute flex items-baseline gap-1.5 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] shadow ${gauge.state === 'alarm' ? tone.solid : 'bg-bg/80 text-text'}`}
       style={place}
     >
-      <span className="text-[10.5px] opacity-80">{gauge.gauge_id}</span>
-      <span className="flex items-baseline gap-1">
-        <span className="text-base font-semibold leading-tight tabular-nums">
-          {onFrame !== undefined ? fmtValue(onFrame, gauge.type) : gauge.state === 'stale' ? '—' : fmtValue(gauge.value, gauge.type)}
-        </span>
-        <span className="text-[11px]">{unitLabel(gauge.unit)}</span>
+      {gauge.state !== 'ok' && gauge.state !== 'alarm' && <i className={`h-1.5 w-1.5 flex-none self-center rounded-full ${tone.dot}`} aria-hidden />}
+      <span className="opacity-75">{gauge.gauge_id}</span>
+      <span className="text-[13px] font-semibold tabular-nums">
+        {onFrame !== undefined ? fmtValue(onFrame, gauge.type) : gauge.state === 'stale' ? '—' : fmtValue(gauge.value, gauge.type)}
       </span>
+      <span className="opacity-75">{unitLabel(gauge.unit)}</span>
     </div>
   )
 }
@@ -113,7 +113,6 @@ export default function GaugeStationPage() {
   }
 
   const station = q.data
-  const many = station.gauges.length > MAX_TILES
   const latest = latestReading(station)
 
   return (
@@ -128,9 +127,9 @@ export default function GaugeStationPage() {
         )}
       </div>
 
-      {/* Máy nhiều đồng hồ: ảnh camera chiếm cả bề ngang, thẻ đồng hồ xếp lưới bên dưới thay vì một cột dài bên phải. */}
-      <div className={many ? 'flex flex-col gap-4' : 'flex flex-wrap items-start gap-4'}>
-        <div className={many ? 'flex min-w-0 flex-col gap-4' : 'flex min-w-0 flex-[999_1_560px] flex-col gap-4'}>
+      {/* Ảnh camera ở trên, thẻ đồng hồ xếp lưới bên dưới: bố cục chia ngang, không có cột bên phải. */}
+      <div className="flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4">
           {cameras.length === 0 && <p className="rounded-lg border border-line px-4 py-8 text-center text-xs text-muted">Máy này chưa có đồng hồ nào gắn với camera.</p>}
           {cameras.map((c) => (
             <CameraView key={c} machine={station.machine_id} camera={c} gauges={gaugesOn(station.gauges, c)} showRoi={showRoi}
@@ -138,7 +137,7 @@ export default function GaugeStationPage() {
           ))}
         </div>
 
-        <aside className={many ? 'grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3' : 'flex min-w-0 flex-[1_1_320px] flex-col gap-3'}>
+        <aside className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
           {station.gauges.length === 0
             ? <p className="rounded-lg border border-line px-4 py-8 text-center text-xs text-muted">Config của trạm này chưa khai báo đồng hồ nào.</p>
             : [...station.gauges].sort((a, b) => STATE_RANK[a.state] - STATE_RANK[b.state]).map((g) => (

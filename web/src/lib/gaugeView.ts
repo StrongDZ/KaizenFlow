@@ -176,11 +176,12 @@ export function attentionHint(s: GaugeStation, now: number): string | undefined 
   switch (stationKind(s)) {
     case 'alarm': {
       const g = s.gauges.find((x) => x.state === 'alarm')
-      return g ? `${g.gauge_id} ${fmtValue(g.value, g.type)} ${unitLabel(g.unit)} ngoài ngưỡng ${range(g)}: kiểm tra máy` : 'Có đồng hồ vượt ngưỡng: kiểm tra máy'
+      return g ? `${g.gauge_id} ${fmtValue(g.value, g.type)} ${unitLabel(g.unit)} ngoài ngưỡng ${range(g)}` : 'Có đồng hồ vượt ngưỡng'
     }
     case 'poor': {
-      const g = s.gauges.find((x) => x.state === 'poor')
-      return g ? `${g.gauge_id} ${gaugeStateLabel(g.state, g.flags).toLowerCase()}: kiểm tra camera, đèn, vật che` : 'Ảnh đọc kém: kiểm tra camera'
+      // Chỉ tên đồng hồ và lý do; lời khuyên kiểm tra camera nằm ở trang của trạm, không lặp lại ở mọi dòng.
+      const poor = s.gauges.filter((x) => x.state === 'poor')
+      return poor.length ? poor.map((g) => `${g.gauge_id} ${gaugeStateLabel(g.state, g.flags).toLowerCase()}`).join(' · ') : 'Ảnh đọc kém'
     }
     case 'stale': return 'Số đọc đến chậm: kiểm tra edge và mạng'
     case 'lost': return `Edge im lặng, lần cuối ${ageLabel(s.edge?.last_seen ?? null, now)}: kiểm tra nguồn và mạng của edge`

@@ -19,6 +19,45 @@ export type PreviewGauge = { gauge_id: string; error?: string; value?: number; u
 export type AcceptanceSample = { passed: boolean; truth: number; value?: number; reason?: string; quality_ok: boolean }
 export type AcceptanceVerdict = { gauge_id: string; verdict: string; passed: number; failed: number; needed: number }
 
+/** Một vật thể AI phát hiện trên khung hình camera ở chỗ chưa khai báo đồng hồ nào. Chỉ thành đồng hồ khi người dùng kiểm tra và lưu. */
+export type GaugeCandidate = {
+  candidate_id: number
+  camera_id: string
+  /** x, y, rộng, cao theo pixel khung hình camera. */
+  roi: number[]
+  type: string
+  score: number
+  /** Gợi ý của AI: với đồng hồ kim là tâm và hai đầu thang đo (toạ độ trong hình vuông 256 của vùng), với màn số là số chữ số và màu. */
+  hint: { center?: [number, number]; min_pt?: [number, number]; max_pt?: [number, number]; confidence?: number; digits?: number; color?: string }
+  /** Ảnh cắt vùng đó ở lần thấy gần nhất, base64. */
+  crop_jpeg: string | null
+  seen: number
+  first_seen: string
+  last_seen: string
+  status: 'pending' | 'accepted' | 'ignored'
+  machine_id: string | null
+  gauge_id: string | null
+}
+/** Đồng hồ đã khai báo có còn được AI nhìn thấy trên camera không. */
+export type GaugeSight = {
+  machine_id: string
+  gauge_id: string
+  camera_id: string
+  /** seen: vẫn thấy; lost: từng thấy nay không còn; never: AI chưa từng nhận ra; unscanned: camera chưa được quét. */
+  state: 'seen' | 'lost' | 'never' | 'unscanned'
+  last_seen: string | null
+  scanned_at: string | null
+}
+export type CameraScan = { camera_id: string; scanned_at: string; width: number; height: number; detections: number }
+
+export type EdgeDoc = { edge_id: string; status: string; last_seen: string | null; machines: string[] }
+export type AccuracyRow = {
+  key: string; type: string; samples: number; passed: number; pass_rate: number
+  /** Cận dưới khoảng tin cậy 95% của tỉ lệ đạt: điều số mẫu chứng minh được. */
+  lower_bound: number; low_quality: number; mean_error_pct?: number
+}
+export type AccuracyReport = { samples: number; by_type: AccuracyRow[]; by_gauge: AccuracyRow[] }
+
 /** Lỗi của config-api: câu chính và danh sách chi tiết (từng trường sai). */
 export class ConfigApiError extends Error {
   details: string[]
@@ -65,6 +104,20 @@ export const gaugeConfigApi = {
   preview: (machineId: string, gauge: GaugeDoc, frameJpeg: string) =>
     call<{ gauges: PreviewGauge[] }>('POST', '/v1/commissioning/preview', { config: singleGaugeConfig(machineId, gauge), frame_jpeg: frameJpeg })
       .then((r) => r.gauges[0]),
+  /** Edge và các máy nó đọc; máy có config mà chưa edge nào đọc. */
+  edges: () => call<{ edges: EdgeDoc[]; unassigned: string[] }>('GET', '/v1/edges'),
+  /** Giao danh sách máy cho một edge; máy đang ở edge khác được chuyển sang. Edge nhận qua MQTT, không cần khởi động lại. */
+  putEdge: (edgeId: string, machineIds: string[]) => call<EdgeDoc>('PUT', `/v1/edges/${id(edgeId)}`, { machine_ids: machineIds }),
+  /** Độ chính xác đo tại hiện trường, từ các mẫu nghiệm thu đã ghi. */
+  accuracy: () => call<AccuracyReport>('GET', '/v1/commissioning/accuracy'),
+  /** Đồng hồ AI phát hiện, theo trạng thái; chờ duyệt chỉ gồm những cái đã thấy đủ số lần quét. */
+  candidates: (status: GaugeCandidate['status'] = 'pending', cameraId?: string) =>
+    call<{ candidates: GaugeCandidate[]; min_seen: number }>('GET', `/v1/discovery/candidates?status=${status}${cameraId ? `&camera_id=${id(cameraId)}` : ''}`),
+  /** Không phải đồng hồ cần đo: AI sẽ không đề xuất lại chỗ này. */
+  ignoreCandidate: (candidateId: number) => call<GaugeCandidate>('POST', `/v1/discovery/candidates/${candidateId}/ignore`),
+  restoreCandidate: (candidateId: number) => call<GaugeCandidate>('POST', `/v1/discovery/candidates/${candidateId}/restore`),
+  /** Đồng hồ đã khai báo nào AI còn thấy, và lần quét gần nhất của từng camera. */
+  sightings: () => call<{ gauges: GaugeSight[]; scans: CameraScan[]; lost_after_s: number }>('GET', '/v1/discovery/gauges'),
   /** Ghi một mẫu nghiệm thu: giá trị người dùng đang thấy so với giá trị hệ thống đọc trên khung hình vừa lấy. Mẫu được lưu kèm ảnh. */
   accept: (machineId: string, gauge: GaugeDoc, truth: number, frameJpeg: string) =>
     call<{ sample: AcceptanceSample; gauges: AcceptanceVerdict[] }>('POST', '/v1/commissioning/acceptance', {

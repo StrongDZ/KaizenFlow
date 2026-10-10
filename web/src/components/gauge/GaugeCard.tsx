@@ -19,7 +19,7 @@ export function GaugeCard({ machine, gauge, camera }: { machine: string; gauge: 
   const stale = gauge.state === 'stale'
   const quality = gauge.quality === null ? null : Math.round(gauge.quality * 100)
   return (
-    <section className={`rounded-lg border bg-panel p-3 ${tone.border}`}>
+    <section className={`rounded-lg border bg-panel p-3 ${gauge.state === 'alarm' ? tone.border : 'border-line'}`}>
       <div className="flex items-center gap-2.5">
         <div className="relative h-8 w-10 flex-none overflow-hidden rounded bg-panel-2"><RoiPhoto machine={machine} gauge={gauge} aspect={10 / 8} /></div>
         <div className="min-w-0 flex-1 leading-tight">

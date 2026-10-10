@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { gaugeConfigApi, type AcceptanceVerdict, type PreviewGauge } from '../api/gaugeConfig'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { gaugeConfigApi, type AcceptanceVerdict, type GaugeCandidate, type PreviewGauge } from '../api/gaugeConfig'
 import { ActionError, GaugeArea, gtButton, gtField, gtPrimary } from '../components/gauge/GaugeArea'
 import {
   buildGauge, calibPoint, calibToFrame, draftFromGauge, dragToRoi, emptyDraft, gaugesOnCamera, machineColor, mergeGauge, removeGauge, toFrame,
   upsertGauge, type GaugeDoc, type GaugeDraft, type GaugeType, type Point,
 } from '../lib/gaugeCommission'
+import { draftFromCandidate, moveCorner, TYPE_LABEL, type Corner } from '../lib/gaugeDiscovery'
 import { fmtValue, unitLabel } from '../lib/gaugeView'
 
 const TYPES: { value: GaugeType; label: string }[] = [
@@ -30,9 +31,38 @@ function Field({ label, children, wide = false }: { label: string; children: Rea
 
 const pct = (v: number, total: number) => `${(v * 100) / total}%`
 
+const CORNERS: Corner[] = ['nw', 'ne', 'sw', 'se']
+
+/** Vùng đọc như model sẽ thấy: vùng được kéo giãn về hình vuông (đồng hồ kim) hoặc giữ tỉ lệ và chia ô từng chữ số (màn số). */
+function RegionPreview({ frameJpeg, size, roi, type, digits }: {
+  frameJpeg: string; size: { width: number; height: number }; roi: number[]; type: GaugeType; digits: number
+}) {
+  const [x, y, w, h] = roi
+  const square = type === 'analog_dial'
+  const width = 160
+  const height = square ? 160 : Math.max(32, Math.min(160, (width * h) / w))
+  const slots = type === 'seg7' || type === 'rolling_counter' ? digits : type === 'timer_mmss' ? 4 : 0
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs text-text-2">Model sẽ thấy</span>
+      <div className="relative overflow-hidden rounded-md bg-black" style={{ width, height }}>
+        <img src={`data:image/jpeg;base64,${frameJpeg}`} alt="Vùng đọc sau khi cắt" draggable={false} className="absolute max-w-none"
+          style={{ width: `${(size.width / w) * 100}%`, height: `${(size.height / h) * 100}%`, left: `${(-x / w) * 100}%`, top: `${(-y / h) * 100}%` }} />
+        {Array.from({ length: Math.max(0, slots - 1) }, (_, i) => (
+          <span key={i} className="absolute inset-y-0 w-px bg-warn/80" style={{ left: `${((i + 1) * 100) / slots}%` }} />
+        ))}
+      </div>
+      <span className="text-[11px] text-muted">
+        {square ? 'Mặt đồng hồ phải nằm trọn và gần đầy ô.' : `Mỗi ô vàng phải chứa đúng một chữ số (${slots} ô).`}
+      </span>
+    </div>
+  )
+}
+
 /** Mở một camera: thấy nó đang quay gì, khoanh từng đồng hồ và chọn đồng hồ đó thuộc máy nào. */
 export default function GaugeCameraPage() {
   const cameraId = useParams().camera ?? ''
+  const [params, setParams] = useSearchParams()
   const qc = useQueryClient()
   const cameras = useQuery({ queryKey: ['gauge-config', 'cameras'], queryFn: gaugeConfigApi.cameras })
   const stations = useQuery({ queryKey: ['gauge-config', 'stations'], queryFn: gaugeConfigApi.stations })
@@ -42,6 +72,10 @@ export default function GaugeCameraPage() {
     staleTime: Infinity, retry: false, refetchOnWindowFocus: false,
   })
 
+  // Đồng hồ AI phát hiện trên camera này, chưa ai khai báo.
+  const candidates = useQuery({
+    queryKey: ['gauge-config', 'candidates', 'pending', cameraId], queryFn: () => gaugeConfigApi.candidates('pending', cameraId), refetchInterval: 30_000,
+  })
   const camera = cameras.data?.find((c) => c.camera_id === cameraId)
   const onCamera = useMemo(() => gaugesOnCamera(stations.data ?? [], cameraId), [stations.data, cameraId])
   const machineIds = useMemo(() => [...new Set(onCamera.map((e) => e.machine_id))], [onCamera])
@@ -51,6 +85,9 @@ export default function GaugeCameraPage() {
   const [draft, setDraft] = useState<GaugeDraft>(() => emptyDraft('analog_dial'))
   // Đồng hồ đã lưu đang được sửa (để giữ các trường form không quản lý); null là đồng hồ mới.
   const [editing, setEditing] = useState<{ machine_id: string; gauge: GaugeDoc } | null>(null)
+  // Đề xuất của AI đang được kiểm tra; null khi khai báo tay hoặc sửa đồng hồ đã có.
+  const [fromCandidate, setFromCandidate] = useState<GaugeCandidate | null>(null)
+  const [resize, setResize] = useState<Corner | null>(null)
   const [tool, setTool] = useState<Tool>('roi')
   const [drag, setDrag] = useState<{ from: Point; to: Point } | null>(null)
   const [reading, setReading] = useState<PreviewGauge | null>(null)
@@ -73,11 +110,32 @@ export default function GaugeCameraPage() {
     setSaved('')
   }
   const startNew = () => {
-    setEditing(null); setDraft(emptyDraft('analog_dial')); setTool('roi'); setReading(null); setVerdict(null); setTruth(''); setSaved('')
+    setEditing(null); setFromCandidate(null); setDraft(emptyDraft('analog_dial')); setTool('roi'); setReading(null); setVerdict(null); setTruth(''); setSaved('')
   }
   const edit = (entry: { machine_id: string; gauge: GaugeDoc }) => {
+    setFromCandidate(null)
     setEditing(entry); setDraft(draftFromGauge(entry.gauge)); pickMachine(entry.machine_id); setTool('roi'); setReading(null); setVerdict(null); setTruth('')
   }
+  /** Kiểm tra một đề xuất của AI: form điền sẵn vùng, loại và các điểm; người dùng chỉnh rồi gán vào máy. */
+  const review = (c: GaugeCandidate) => {
+    setEditing(null); setFromCandidate(c); setDraft(draftFromCandidate(c)); setMachine({ machine_id: '', plant: '', line: '' })
+    setTool('roi'); setReading(null); setVerdict(null); setTruth(''); setSaved('')
+  }
+  // Mở thẳng từ danh mục đồng hồ: ?candidate= một đề xuất, ?machine=&gauge= một đồng hồ đã có.
+  const opened = useRef(false)
+  useEffect(() => {
+    if (opened.current) return
+    const wanted = params.get('candidate')
+    if (wanted && candidates.data) {
+      opened.current = true
+      const c = candidates.data.candidates.find((x) => String(x.candidate_id) === wanted)
+      if (c) review(c)
+    } else if (params.get('gauge') && stations.data) {
+      opened.current = true
+      const entry = onCamera.find((e) => e.machine_id === params.get('machine') && e.gauge.gauge_id === params.get('gauge'))
+      if (entry) edit(entry)
+    }
+  }, [candidates.data, stations.data])
 
   const at = (e: React.PointerEvent): Point => {
     const box = imageRef.current!.getBoundingClientRect()
@@ -99,7 +157,16 @@ export default function GaugeCameraPage() {
       if (next) setTool(next.tool)
     }
   }
+  /** Kéo một góc: vùng đổi, các điểm đã chấm của đồng hồ kim giữ nguyên chỗ trên ảnh. */
+  const onResize = (e: React.PointerEvent) => {
+    if (!resize || !draft.roi) return
+    const roi = moveCorner(draft.roi, resize, toFrame(at(e), shown(), size))
+    if (roi === draft.roi) return
+    const keep = (p: [number, number] | null) => (p ? calibPoint(calibToFrame(p, draft.roi!), roi) : null)
+    patch({ roi, center: keep(draft.center), min_pt: keep(draft.min_pt), max_pt: keep(draft.max_pt) })
+  }
   const onUp = () => {
+    if (resize) { setResize(null); return }
     if (!drag) return
     const roi = dragToRoi(drag.from, drag.to, shown(), size)
     setDrag(null)
@@ -116,11 +183,17 @@ export default function GaugeCameraPage() {
   const refreshLists = () => {
     void qc.invalidateQueries({ queryKey: ['gauge-config', 'stations'] })
     void qc.invalidateQueries({ queryKey: ['gauge-config', 'cameras'] })
+    void qc.invalidateQueries({ queryKey: ['gauge-config', 'candidates'] })
   }
+  const ignore = useMutation({
+    mutationFn: (candidateId: number) => gaugeConfigApi.ignoreCandidate(candidateId),
+    onSuccess: () => { startNew(); refreshLists(); setParams({}, { replace: true }) },
+  })
   const save = useMutation({
     mutationFn: () => gaugeConfigApi.putStation(upsertGauge(existing?.config ?? null, machine, gauge!)),
     onSuccess: (stored) => {
-      setSaved(`Đã lưu vào ${stored.machine_id}. Config mới được đẩy xuống edge.`)
+      setSaved(`Đã lưu vào ${stored.machine_id}. Config mới được đẩy xuống edge.${fromCandidate ? ' Đề xuất của AI được đánh dấu đã gán.' : ''}`)
+      setFromCandidate(null)
       setEditing({ machine_id: stored.machine_id, gauge: gauge! })
       refreshLists()
     },
@@ -170,8 +243,9 @@ export default function GaugeCameraPage() {
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-4">
-        <div className="flex min-w-0 flex-[999_1_560px] flex-col gap-3">
+      {/* Ảnh camera ở trên, form khai báo bên dưới trải thành cột: bố cục chia ngang. */}
+      <div className="flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2.5">
             <button className={gtButton} onClick={() => void frame.refetch()} disabled={frame.isFetching}>
               {frame.isFetching ? 'Đang lấy hình…' : 'Lấy khung hình mới'}
@@ -182,10 +256,10 @@ export default function GaugeCameraPage() {
           <div
             ref={imageRef}
             onPointerDown={onDown}
-            onPointerMove={(e) => drag && setDrag({ ...drag, to: at(e) })}
+            onPointerMove={(e) => { if (resize) onResize(e); else if (drag) setDrag({ ...drag, to: at(e) }) }}
             onPointerUp={onUp}
-            className={`relative touch-none select-none overflow-hidden rounded-lg bg-raised ${frame.data ? 'cursor-crosshair' : ''}`}
-            style={{ aspectRatio: `${size.width} / ${size.height}` }}
+            className={`relative mx-auto w-full touch-none select-none overflow-hidden rounded-lg bg-raised ${frame.data ? 'cursor-crosshair' : ''}`}
+            style={{ aspectRatio: `${size.width} / ${size.height}`, maxWidth: `calc(66vh * ${size.width} / ${size.height})` }}
           >
             {frame.data
               ? <img src={`data:image/jpeg;base64,${frame.data.frame_jpeg}`} alt={`Khung hình từ camera ${cameraId}`} draggable={false} className="absolute inset-0 h-full w-full" />
@@ -207,6 +281,29 @@ export default function GaugeCameraPage() {
               )
             })}
 
+            {(candidates.data?.candidates ?? []).filter((c) => c.candidate_id !== fromCandidate?.candidate_id).map((c) => {
+              const [x, y, w, h] = c.roi
+              return (
+                <button key={c.candidate_id} type="button" title="AI phát hiện đồng hồ chưa khai báo: bấm để kiểm tra và gán"
+                  onPointerDown={(e) => e.stopPropagation()} onClick={() => review(c)}
+                  className="absolute rounded-sm border-2 border-dashed border-warn hover:bg-warn/10"
+                  style={{ left: pct(x, size.width), top: pct(y, size.height), width: pct(w, size.width), height: pct(h, size.height) }}>
+                  <span className="absolute bottom-full left-0 mb-0.5 whitespace-nowrap rounded bg-warn px-1.5 py-0.5 text-[11px] font-semibold text-on-warn">
+                    Mới · {TYPE_LABEL[c.type] ?? c.type}
+                  </span>
+                </button>
+              )
+            })}
+            {draft.roi && tool === 'roi' && CORNERS.map((corner) => {
+              const [x, y, w, h] = draft.roi!
+              const cx = corner.includes('w') ? x : x + w, cy = corner.startsWith('n') ? y : y + h
+              return (
+                <span key={corner} role="presentation" title="Kéo để chỉnh vùng"
+                  onPointerDown={(e) => { e.stopPropagation(); imageRef.current?.setPointerCapture(e.pointerId); setResize(corner) }}
+                  className={`absolute z-10 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border-2 border-bg bg-text ${corner === 'nw' || corner === 'se' ? 'cursor-nwse-resize' : 'cursor-nesw-resize'}`}
+                  style={{ left: pct(cx, size.width), top: pct(cy, size.height) }} />
+              )
+            })}
             {draft.roi && (
               <div className="pointer-events-none absolute border-2 border-dashed border-text"
                 style={{ left: pct(draft.roi[0], size.width), top: pct(draft.roi[1], size.height), width: pct(draft.roi[2], size.width), height: pct(draft.roi[3], size.height) }} />
@@ -228,6 +325,11 @@ export default function GaugeCameraPage() {
 
           <section className="rounded-lg border border-line bg-panel p-3.5">
             <h2 className="text-[13px] font-semibold text-text">Đồng hồ trên camera này</h2>
+            {(candidates.data?.candidates.length ?? 0) > 0 && (
+              <p className="mt-1 text-xs text-warn">
+                AI phát hiện {candidates.data!.candidates.length} đồng hồ chưa khai báo (khung viền đứt “Mới” trên ảnh). Bấm vào khung để kiểm tra và gán.
+              </p>
+            )}
             {onCamera.length === 0
               ? <p className="mt-1 text-xs text-muted">Chưa có. Khoanh đồng hồ đầu tiên trên ảnh rồi lưu ở khung bên phải.</p>
               : (
@@ -251,11 +353,25 @@ export default function GaugeCameraPage() {
           </section>
         </div>
 
-        <aside className="flex min-w-0 flex-[1_1_380px] flex-col gap-4 rounded-lg border border-line bg-panel p-3.5">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-xs font-semibold">{editing ? 'Sửa đồng hồ' : 'Đồng hồ mới'}</h2>
-            {editing && <button className={gtButton} onClick={startNew}>Thêm đồng hồ khác</button>}
+        <section className="grid min-w-0 items-start gap-x-6 gap-y-4 rounded-lg border border-line bg-panel p-3.5 md:grid-cols-2 xl:grid-cols-4">
+          <div className="col-span-full flex items-center justify-between gap-2">
+            <h2 className="text-xs font-semibold">{editing ? 'Sửa đồng hồ' : fromCandidate ? 'Kiểm tra đồng hồ AI phát hiện' : 'Đồng hồ mới'}</h2>
+            {(editing || fromCandidate) && <button className={gtButton} onClick={startNew}>Khai báo tay</button>}
           </div>
+          {fromCandidate && (
+            <div className="col-span-full flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-dashed border-warn px-3 py-2.5 text-xs text-text-2">
+              <p className="min-w-0 flex-1">
+                AI đề xuất <b className="text-text">{TYPE_LABEL[fromCandidate.type] ?? fromCandidate.type}</b> (tin {Math.round(fromCandidate.score * 100)}%,
+                thấy {fromCandidate.seen} lần quét). Kiểm tra trước khi gán: khung phải ôm sát {fromCandidate.type === 'analog_dial' ? 'mặt đồng hồ' : 'các chữ số'} (kéo bốn góc để chỉnh)
+                {fromCandidate.type === 'analog_dial' ? ', ba điểm T, m, M phải nằm đúng tâm kim và hai vạch đầu cuối' : ', số chữ số phải đúng'}.
+                Sau đó chọn máy, đặt tên, {fromCandidate.type === 'analog_dial' ? 'nhập giá trị hai đầu thang đo, ' : ''}bấm Đọc thử rồi Lưu.
+              </p>
+              <button className={gtButton} disabled={ignore.isPending} onClick={() => ignore.mutate(fromCandidate.candidate_id)}>
+                Không phải đồng hồ cần đo
+              </button>
+              <ActionError error={ignore.error} />
+            </div>
+          )}
 
           <fieldset className="grid grid-cols-2 gap-3">
             <legend className="mb-2 text-xs font-semibold text-text">1. Đồng hồ này của máy nào</legend>
@@ -305,6 +421,9 @@ export default function GaugeCameraPage() {
               {draft.roi ? `vùng đọc: x ${draft.roi[0]}, y ${draft.roi[1]}, rộng ${draft.roi[2]}, cao ${draft.roi[3]}` : 'chưa khoanh vùng'}
             </p>
             {draft.type !== 'analog_dial' && <p className="text-xs text-muted">Với màn hình số, khoanh sát mép các chữ số, không lấy viền và nhãn.</p>}
+            {draft.roi && frame.data && (
+              <RegionPreview frameJpeg={frame.data.frame_jpeg} size={size} roi={draft.roi} type={draft.type} digits={Number(draft.digits) || 0} />
+            )}
           </fieldset>
 
           <fieldset className="grid grid-cols-2 gap-3">
@@ -345,12 +464,12 @@ export default function GaugeCameraPage() {
           </fieldset>
 
           {problems.length > 0 && (
-            <ul className="list-disc rounded-lg bg-panel-2 py-2.5 pl-8 pr-3 text-xs text-text-2">
+            <ul className="col-span-full list-disc rounded-lg bg-panel-2 py-2.5 pl-8 pr-3 text-xs text-text-2">
               {problems.map((p) => <li key={p}>{p}</li>)}
             </ul>
           )}
 
-          <div className="flex flex-wrap gap-2.5">
+          <div className="col-span-full flex flex-wrap gap-2.5">
             <button className={gtButton} disabled={!gauge || !frame.data || preview.isPending} onClick={() => preview.mutate()}>
               {preview.isPending ? 'Đang đọc…' : 'Đọc thử trên ảnh này'}
             </button>
@@ -365,7 +484,7 @@ export default function GaugeCameraPage() {
             )}
           </div>
           {reading && (
-            <p role="status" className="rounded-lg bg-panel-2 px-3.5 py-2.5 text-xs">
+            <p role="status" className="col-span-full rounded-lg bg-panel-2 px-3.5 py-2.5 text-xs">
               {reading.error ? <span className="text-warn">Chưa đọc được: {reading.error}</span> : (
                 <>
                   Hệ thống đọc được{' '}
@@ -375,10 +494,10 @@ export default function GaugeCameraPage() {
               )}
             </p>
           )}
-          {saved && <p role="status" className="rounded-lg bg-panel-2 px-3.5 py-2.5 text-xs text-ok">{saved}</p>}
-          <ActionError error={preview.error ?? save.error ?? remove.error} />
+          {saved && <p role="status" className="col-span-full rounded-lg bg-panel-2 px-3.5 py-2.5 text-xs text-ok">{saved}</p>}
+          {(preview.error ?? save.error ?? remove.error) && <div className="col-span-full"><ActionError error={preview.error ?? save.error ?? remove.error} /></div>}
 
-          <fieldset className="flex flex-col gap-3 border-t border-line pt-4">
+          <fieldset className="col-span-full flex flex-col gap-3 border-t border-line pt-4">
             <legend className="sr-only">Nghiệm thu</legend>
             <h3 className="text-xs font-semibold text-text">5. Nghiệm thu tại chỗ</h3>
             <p className="text-xs text-muted">Nhập giá trị bạn đang thấy trên đồng hồ thật. Hệ thống lấy một khung hình mới, tự đọc và so sánh. Cần 3 mẫu đúng; mỗi mẫu được lưu kèm ảnh.</p>
@@ -401,7 +520,7 @@ export default function GaugeCameraPage() {
             )}
             <ActionError error={accept.error} />
           </fieldset>
-        </aside>
+        </section>
       </div>
     </GaugeArea>
   )

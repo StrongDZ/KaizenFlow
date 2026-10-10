@@ -231,8 +231,8 @@ describe('attentionHint', () => {
     v_min: null, v_max: null, n_frames: null, quality: null, flags,
   }) as unknown as GaugeStation['gauges'][number]
   it('nói rõ đồng hồ nào, giá trị bao nhiêu và nên kiểm tra gì', () => {
-    expect(attentionHint({ ...station('m1', 'alarm'), gauges: [gauge('alarm')] }, now)).toBe('P_HYD 11,4 bar ngoài ngưỡng 0–10: kiểm tra máy')
-    expect(attentionHint({ ...station('m1', 'poor'), gauges: [gauge('poor', ['FLAG_GLARE'])] }, now)).toBe('P_HYD bị lóa: kiểm tra camera, đèn, vật che')
+    expect(attentionHint({ ...station('m1', 'alarm'), gauges: [gauge('alarm')] }, now)).toBe('P_HYD 11,4 bar ngoài ngưỡng 0–10')
+    expect(attentionHint({ ...station('m1', 'poor'), gauges: [gauge('poor', ['FLAG_GLARE'])] }, now)).toBe('P_HYD bị lóa')
     expect(attentionHint(station('m1', 'stale'), now)).toMatch(/edge/)
   })
   it('mất tín hiệu nói lần cuối edge báo về; trạm bình thường hay chưa có dữ liệu thì không có gì', () => {

@@ -187,6 +187,8 @@ describe('subNavFor (panel phụ cạnh thanh chính)', () => {
     expect(on('/gauge-twin')).toEqual(['Trạm'])
     expect(on('/gauge-twin/machine_001/history')).toEqual(['Trạm'])
     expect(on('/gauge-twin/cameras/cam-1')).toEqual(['Camera'])
+    expect(on('/gauge-twin/gauges')).toEqual(['Danh mục đồng hồ'])
+    expect(crumbsFor('/gauge-twin/gauges', {}).map((c) => c.label)).toEqual(['Đồng hồ', 'Danh mục đồng hồ'])
   })
   it('thư viện có panel phụ riêng', () => {
     const n = subNavFor('/library/materials/RAW-01', {})!

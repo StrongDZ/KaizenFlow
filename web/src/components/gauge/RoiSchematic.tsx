@@ -18,8 +18,8 @@ export function RoiSchematic({ gauges, frame = DEFAULT_FRAME, image, children, r
   return (
     // Khung gần vuông (camera chỉ quay một đồng hồ) không được cao quá màn hình: giới hạn bề rộng theo chiều cao cho phép.
     <div
-      className={`relative overflow-hidden bg-raised ${rounded}`}
-      style={{ aspectRatio: `${frame.width} / ${frame.height}`, maxWidth: `calc(72vh * ${frame.width} / ${frame.height})` }}
+      className={`relative mx-auto w-full overflow-hidden bg-raised ${rounded}`}
+      style={{ aspectRatio: `${frame.width} / ${frame.height}`, maxWidth: `calc(66vh * ${frame.width} / ${frame.height})` }}
     >
       {image && <img src={image} alt="" className="absolute inset-0 h-full w-full" />}
       {gauges.map((g) => {
