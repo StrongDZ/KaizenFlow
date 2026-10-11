@@ -12,8 +12,7 @@ describe('sectionOf', () => {
     expect(sectionOf('/alerts')).toBe('alerts')
     expect(sectionOf('/gauge-twin')).toBe('gauge')
     expect(sectionOf('/gauge-twin/machine_001')).toBe('gauge')
-    // Lần chạy thuộc về mô hình; Benchmark là trang cấp nhà máy (Tổng quan)
-    expect(sectionOf('/benchmarks')).toBe('overview')
+    // Lần chạy thuộc về mô hình
     expect(sectionOf('/runs/12/report')).toBe('models')
     expect(sectionOf('/compare')).toBe('models')
     expect(sectionOf('/models/m/operations')).toBe('models')
@@ -103,7 +102,6 @@ describe('crumbsFor', () => {
     expect(crumbsFor('/', {}).map((c) => c.label)).toEqual(['Tổng quan'])
     expect(crumbsFor('/alerts', {}).map((c) => c.label)).toEqual(['Cảnh báo'])
     expect(crumbsFor('/models', {}).map((c) => c.label)).toEqual(['Mô hình'])
-    expect(crumbsFor('/benchmarks', {}).map((c) => c.label)).toEqual(['Tổng quan', 'Benchmark FMCG'])
   })
 
   it('đặt trang so sánh vào mô hình của lần chạy', () => {
@@ -197,18 +195,8 @@ describe('subNavFor (panel phụ cạnh thanh chính)', () => {
     expect(n.groups[0].tabs.map((t) => t.label)).toEqual(['Loại node', 'Vật tư'])
     expect(isTabActive(n.groups[0].tabs[1], '/library/materials/RAW-01')).toBe(true)
   })
-  it('Tổng quan có panel phụ: hiệu năng nhà máy, Benchmark FMCG; mỗi trang sáng đúng một mục', () => {
-    for (const p of ['/', '/benchmarks']) {
-      const n = subNavFor(p, {})!
-      expect(n.title).toBe('Tổng quan')
-      expect(n.icon).toBe('overview')
-      const tabs = n.groups[0].tabs
-      expect(tabs.map((t) => t.to)).toEqual(['/', '/benchmarks'])
-      expect(tabs.filter((t) => isTabActive(t, p)).map((t) => t.to)).toEqual([p])
-    }
-  })
-  it('danh sách mô hình và Cảnh báo là một trang duy nhất: không có panel phụ', () => {
-    for (const p of ['/models', '/alerts']) expect(subNavFor(p, {})).toBeNull()
+  it('Tổng quan, danh sách mô hình và Cảnh báo là một trang duy nhất: không có panel phụ', () => {
+    for (const p of ['/', '/models', '/alerts']) expect(subNavFor(p, {})).toBeNull()
   })
 })
 

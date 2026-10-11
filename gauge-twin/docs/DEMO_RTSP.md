@@ -132,7 +132,7 @@ Luồng chỉ tồn tại khi demo đang chạy (`docker ps` phải thấy `gaug
 2. Chạy lại `make sim-down && make sim-up` với `SIM_DATA_DIR=$PWD/data/sim-factory`.
 3. Trên giao diện, mục *Camera và khai báo*, thêm camera với địa chỉ `rtsp://mediamtx:8554/<tên_mới>` rồi khoanh
    vùng đọc cho từng đồng hồ.
-4. Máy mới tự về edge đang đọc camera đó (trang Đồng hồ → Edge để xem hoặc chuyển); không cần sửa edge.
+4. Máy mới tự về edge đang đọc camera đó (xem hoặc chuyển bằng `GET`/`PUT /v1/edges` của config-api); không cần sửa edge.
 
 ## Nguồn hình
 

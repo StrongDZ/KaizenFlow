@@ -30,12 +30,8 @@ export const MODEL_PAGES = {
 } as const
 const MODEL_PAGE_RE = new RegExp(`^/models/[^/]+/(${Object.keys(MODEL_PAGES).join('|')})(?:/|$)`)
 
-/** Trang cấp nhà máy (nhiều mô hình): mục Tổng quan. */
-const OVERVIEW_TABS: Tab[] = [
-  { label: 'Hiệu năng nhà máy', to: '/', end: true, icon: 'activity' },
-  { label: 'Benchmark FMCG', to: '/benchmarks', icon: 'trophy' },
-]
-const isOverviewPath = (path: string) => OVERVIEW_TABS.some((t) => isTabActive(t, path))
+/** Trang cấp nhà máy (nhiều mô hình): mục Tổng quan, chỉ một trang. */
+const isOverviewPath = (path: string) => path === '/'
 
 const inModelWorkspace = (path: string) => /^\/(versions|scenarios)\//.test(path) || MODEL_PAGE_RE.test(path) || /^\/runs\/\d+/.test(path) || path === '/compare'
 
@@ -95,10 +91,9 @@ function modelTabs(ctx: NavCtx): Tab[] {
 export type SubNav = { title: string; subtitle?: string; icon?: 'overview' | 'library' | 'gauge'; groups: { title: string | undefined; tabs: Tab[] }[] }
 
 const GAUGE_TABS: Tab[] = [
-  { label: 'Trạm', to: '/gauge-twin', not: ['/gauge-twin/cameras', '/gauge-twin/gauges', '/gauge-twin/edges'], icon: 'gauge' },
+  { label: 'Trạm', to: '/gauge-twin', not: ['/gauge-twin/cameras', '/gauge-twin/gauges'], icon: 'gauge' },
   { label: 'Danh mục đồng hồ', to: '/gauge-twin/gauges', icon: 'scan' },
   { label: 'Camera', to: '/gauge-twin/cameras', icon: 'camera' },
-  { label: 'Edge', to: '/gauge-twin/edges', icon: 'cpu' },
 ]
 
 const LIBRARY_TABS: Tab[] = [
@@ -112,7 +107,6 @@ const LIBRARY_TABS: Tab[] = [
  * tab của chính lần chạy nằm ở dải tab đầu trang. Danh sách mô hình và Cảnh báo là một trang duy nhất nên không có panel phụ.
  */
 export function subNavFor(path: string, ctx: NavCtx): SubNav | null {
-  if (isOverviewPath(path)) return { title: 'Tổng quan', icon: 'overview', groups: [{ title: undefined, tabs: OVERVIEW_TABS }] }
   if (path.startsWith('/library')) return { title: 'Thư viện', icon: 'library', groups: [{ title: undefined, tabs: LIBRARY_TABS }] }
   if (path.startsWith('/gauge-twin')) return { title: 'Đồng hồ', icon: 'gauge', groups: [{ title: undefined, tabs: GAUGE_TABS }] }
   const tabs = tabsFor(path, ctx)
@@ -152,7 +146,6 @@ export function crumbsFor(path: string, ctx: NavCtx): Crumb[] {
   const modelTo = model ? `/models/${encodeURIComponent(model)}/versions` : undefined
 
   if (path === '/') return [{ label: 'Tổng quan' }]
-  if (path === '/benchmarks') return [{ label: 'Tổng quan', to: '/' }, { label: 'Benchmark FMCG' }]
   if (path === '/alerts') return [{ label: 'Cảnh báo' }]
   const camera = path.match(/^\/gauge-twin\/cameras(?:\/([^/]+))?/)
   if (camera) {
@@ -161,7 +154,6 @@ export function crumbsFor(path: string, ctx: NavCtx): Crumb[] {
     return out
   }
   if (path === '/gauge-twin/gauges') return [{ label: 'Đồng hồ', to: '/gauge-twin' }, { label: 'Danh mục đồng hồ' }]
-  if (path === '/gauge-twin/edges') return [{ label: 'Đồng hồ', to: '/gauge-twin' }, { label: 'Edge' }]
   const gauge = path.match(/^\/gauge-twin(?:\/([^/]+))?/)
   if (gauge) {
     if (!gauge[1]) return [{ label: 'Đồng hồ' }]

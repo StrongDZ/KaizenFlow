@@ -16,7 +16,6 @@ import EditorPage from './pages/EditorPage'
 import GaugeCameraPage from './pages/GaugeCameraPage'
 import GaugeCamerasPage from './pages/GaugeCamerasPage'
 import GaugeOverviewPage from './pages/GaugeOverviewPage'
-import GaugeEdgesPage from './pages/GaugeEdgesPage'
 import GaugeInventoryPage from './pages/GaugeInventoryPage'
 import GaugeHistoryPage from './pages/GaugeHistoryPage'
 import GaugeStationPage from './pages/GaugeStationPage'
@@ -77,13 +76,13 @@ export default function App() {
         <Routes>
           <Route element={<Shell />}>
             <Route path="/" element={<OverviewPage />} />
-            <Route path="/benchmarks" element={<ReportPage mode="benchmarks" />} />
             <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/gauge-twin" element={<GaugeOverviewPage />} />
             <Route path="/gauge-twin/gauges" element={<GaugeInventoryPage />} />
-            <Route path="/gauge-twin/edges" element={<GaugeEdgesPage />} />
             <Route path="/gauge-twin/cameras" element={<GaugeCamerasPage />} />
             <Route path="/gauge-twin/cameras/:camera" element={<GaugeCameraPage />} />
+            {/* Trang Edge đã bỏ (gán máy cho edge qua config-api): đường dẫn cũ về danh sách trạm, không thành trạm tên "edges". */}
+            <Route path="/gauge-twin/edges" element={<Navigate to="/gauge-twin" replace />} />
             <Route path="/gauge-twin/:machine" element={<StationLayout />}>
               <Route index element={<GaugeStationPage />} />
               <Route path="history" element={<GaugeHistoryPage />} />
@@ -112,7 +111,6 @@ export default function App() {
               <Route path="compare" element={<RunComparePage />} />
               <Route path="report" element={<ReportPage />} />
             </Route>
-            <Route path="/reports/benchmarks" element={<Navigate to="/benchmarks" replace />} />
             <Route path="/reports/:page" element={<LegacyReport />} />
             <Route path="/compare" element={<ComparePage />} />
             <Route path="/library" element={<LibraryLayout />}>

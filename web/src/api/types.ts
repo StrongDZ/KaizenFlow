@@ -406,32 +406,16 @@ export type PerfStorageRow = {
   band_color: 'GREEN' | 'YELLOW' | 'RED'
 }
 
-export type PerfFinanceRow = {
-  key: string
-  name: string
-  revenue_14d_vnd: number
-  operating_cost_14d_vnd: number
-  holding_cost_14d_vnd: number
-  scrap_cost_14d_vnd: number
-  gross_margin_pct: number
-  wow_delta_margin: number
-  margin_series_14d: PerfSeriesPoint[]
-  revenue_series_14d: PerfSeriesPoint[]
-  grade: 'TIỆN LỢI' | 'CÂN BẰNG' | 'LỖ'
-}
-
 export type PerformanceKpis = {
   as_of: string
   hero: {
-    revenue_7d_vnd: number; revenue_wow_pct: number
     oee_avg_pct:    number; oee_wow_pct: number
     pallets_ph_avg: number; pallets_wow_pct: number
-    margin_avg_pct: number; margin_wow_pct: number
+    coverage_h_avg: number; coverage_wow_pct: number
   }
   machines: PerfMachineRow[]
   fleet: PerfFleetRow[]
   storage: PerfStorageRow[]
-  finance: PerfFinanceRow[]
   top_n: number
 }
 

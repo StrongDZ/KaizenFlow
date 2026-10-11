@@ -50,14 +50,6 @@ export type GaugeSight = {
 }
 export type CameraScan = { camera_id: string; scanned_at: string; width: number; height: number; detections: number }
 
-export type EdgeDoc = { edge_id: string; status: string; last_seen: string | null; machines: string[] }
-export type AccuracyRow = {
-  key: string; type: string; samples: number; passed: number; pass_rate: number
-  /** Cận dưới khoảng tin cậy 95% của tỉ lệ đạt: điều số mẫu chứng minh được. */
-  lower_bound: number; low_quality: number; mean_error_pct?: number
-}
-export type AccuracyReport = { samples: number; by_type: AccuracyRow[]; by_gauge: AccuracyRow[] }
-
 /** Lỗi của config-api: câu chính và danh sách chi tiết (từng trường sai). */
 export class ConfigApiError extends Error {
   details: string[]
@@ -104,12 +96,6 @@ export const gaugeConfigApi = {
   preview: (machineId: string, gauge: GaugeDoc, frameJpeg: string) =>
     call<{ gauges: PreviewGauge[] }>('POST', '/v1/commissioning/preview', { config: singleGaugeConfig(machineId, gauge), frame_jpeg: frameJpeg })
       .then((r) => r.gauges[0]),
-  /** Edge và các máy nó đọc; máy có config mà chưa edge nào đọc. */
-  edges: () => call<{ edges: EdgeDoc[]; unassigned: string[] }>('GET', '/v1/edges'),
-  /** Giao danh sách máy cho một edge; máy đang ở edge khác được chuyển sang. Edge nhận qua MQTT, không cần khởi động lại. */
-  putEdge: (edgeId: string, machineIds: string[]) => call<EdgeDoc>('PUT', `/v1/edges/${id(edgeId)}`, { machine_ids: machineIds }),
-  /** Độ chính xác đo tại hiện trường, từ các mẫu nghiệm thu đã ghi. */
-  accuracy: () => call<AccuracyReport>('GET', '/v1/commissioning/accuracy'),
   /** Đồng hồ AI phát hiện, theo trạng thái; chờ duyệt chỉ gồm những cái đã thấy đủ số lần quét. */
   candidates: (status: GaugeCandidate['status'] = 'pending', cameraId?: string) =>
     call<{ candidates: GaugeCandidate[]; min_seen: number }>('GET', `/v1/discovery/candidates?status=${status}${cameraId ? `&camera_id=${id(cameraId)}` : ''}`),

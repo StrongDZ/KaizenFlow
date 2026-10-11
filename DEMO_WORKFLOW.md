@@ -73,7 +73,6 @@ Nói:
 Chỉ nhanh:
 
 - **Dashboard vận hành**
-- **Benchmark FMCG**
 
 Không đứng quá lâu ở màn này.
 

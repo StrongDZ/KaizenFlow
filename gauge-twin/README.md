@@ -307,7 +307,7 @@ flag) → SQLite → MQTT.
   cờ `FLAG_BLUR` và `FLAG_GLARE` (ngưỡng chói riêng cho màn LED: `DECODE_GLARE_ABOVE_LIT`, 0,35). Xem SPEC mục 4.
 
 **Gán máy cho edge.** Đặt `EDGE_MACHINES=` (rỗng) thì edge không cần biết trước mình đọc máy nào: config-api giữ
-danh sách (`GET /v1/edges`, `PUT /v1/edges/{edge_id}` với `machine_ids`, hoặc trang Đồng hồ → Edge) và phát nó
+danh sách (`GET /v1/edges`, `PUT /v1/edges/{edge_id}` với `machine_ids`) và phát nó
 retained lên `denso/edges/{edge_id}/assignment`. Edge áp danh sách mới không cần khởi động lại, lưu nó vào
 `CONFIG_DIR/edge-assignment.pbjson` để khởi động được khi mất broker, xoá config của máy bị bớt và khởi động lại
 pipeline để nó quên máy đó. Máy mới khai trên một camera mà một edge đang đọc cho máy khác tự về edge đó (hoặc về

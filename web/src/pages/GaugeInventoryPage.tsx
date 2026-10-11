@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom'
 import type { GaugeReading } from '../api/gauge'
 import { gaugeConfigApi } from '../api/gaugeConfig'
 import { ActionError, GaugeArea } from '../components/gauge/GaugeArea'
-import { AccuracyPanel } from '../components/gauge/AccuracyPanel'
 import { RoiPhoto } from '../components/gauge/RoiPhoto'
 import { btn, btnAccentOutline, btnDangerOutline, FilterChip, input, Loading } from '../components/ui'
 import { removeGauge } from '../lib/gaugeCommission'
@@ -148,7 +147,6 @@ export default function GaugeInventoryPage() {
       <p className="text-xs text-text-2">{STATE_HINT[shown]}</p>
       <ActionError error={stations.error ?? pending.error ?? sights.error} />
 
-      <AccuracyPanel />
       <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-panel-2">
         {list.length === 0 && <li className="px-3 py-6 text-center text-xs text-muted">Không có đồng hồ nào ở nhóm “{STATE_LABEL[shown]}”.</li>}
         {list.map((r) => r.kind === 'candidate'
