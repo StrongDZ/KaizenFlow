@@ -276,7 +276,7 @@ export default function AgvMapPage() {
           ]
         : roadBlockIds.length > 0
           ? [{ key: 'unblock', label: 'Gỡ chặn', icon: Unlock, disabled: unblock.isPending, onSelect: () => unblock.mutate(roadBlockIds) }]
-          : [{ key: 'block', label: 'Chặn đường này 30 phút', icon: Ban, disabled: !running || block.isPending, hint: 'Bật feed để bơm sự cố chặn đường.', onSelect: () => block.mutate(roadLanes.map((l) => l.id)) }]}
+          : [{ key: 'block', label: 'Chặn đường này 30 phút (demo)', icon: Ban, disabled: !running || block.isPending, hint: 'Bật feed giả lập để bơm sự cố chặn đường.', onSelect: () => block.mutate(roadLanes.map((l) => l.id)) }]}
     >
       <div className="space-y-2 text-xs text-text-2">
         {!editing && roadLanes.map((l) => {
@@ -293,8 +293,8 @@ export default function AgvMapPage() {
               <span>Một chiều (xe chỉ đi từ {selRoad.a.from} tới {selRoad.a.to})</span></label>
           </>
         )}
-        {!editing && roadBlockIds.length > 0 && <p className="text-bad-text">Đang bị chặn (sự cố bơm từ bảng demo).</p>}
-        {!editing && !running && <p className="text-faint">Bật feed để bơm sự cố chặn đường.</p>}
+        {!editing && roadBlockIds.length > 0 && <p className="text-bad-text">Đang bị chặn (sự cố bơm vào feed giả lập).</p>}
+        {!editing && !running && <p className="text-faint">Bật feed giả lập để bơm sự cố chặn đường (thao tác demo).</p>}
       </div>
     </SidePeek>
   ) : null

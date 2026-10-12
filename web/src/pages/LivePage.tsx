@@ -16,7 +16,7 @@ import { DriftAlerts } from '../components/live/DriftAlerts'
 import { FeedControl } from '../components/live/FeedControl'
 import { ForecastDock } from '../components/live/ForecastDock'
 import { IncidentPanel, type IncidentNode } from '../components/live/IncidentPanel'
-import { EmptyState, Loading, btn } from '../components/ui'
+import { EmptyState, Loading, btn, btnWarn } from '../components/ui'
 import { useFeedStatus, useLive } from '../hooks/useLive'
 import { useModelGraph } from '../hooks/useModelGraph'
 import { useTheme } from '../hooks/useTheme'
@@ -547,7 +547,7 @@ export default function LivePage() {
   )
 }
 
-type RightTab = 'WAREHOUSE' | 'MACHINE' | 'CHAIN' | 'COMPARE' | 'DRIFT' | 'INCIDENT'
+type RightTab = 'WAREHOUSE' | 'MACHINE' | 'CHAIN' | 'COMPARE' | 'DRIFT'
 const adequacyClsChip = (a: WarehouseAdequacy) =>
   a === 'ĐỦ HÀNG' ? 'bg-ok-bg text-ok-text border-ok/40'
     : a === 'THIẾU HÀNG' ? 'bg-bad-bg text-bad-text border-bad/40'
@@ -578,6 +578,8 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
   const estimated = useMemo(() => estimatedEdges(bindingList.data ?? []), [bindingList.data])
   const [panelOpen, setPanelOpen] = useState(true)
   const [rightTab, setRightTab] = useState<RightTab>('WAREHOUSE')
+  // Bơm sự cố là thao tác demo lên feed (thực tế giả), không phải việc của người vận hành: mở từ thanh feed, panel riêng bên trái.
+  const [incidentOpen, setIncidentOpen] = useState(false)
   const peak = useRef(0)
   const wrap = useRef<HTMLDivElement>(null)
 
@@ -626,6 +628,7 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
 
   const bindings = snapshot?.bindings ?? 0
   const feedReady = running
+  const activeIncidents = (feed.data?.incidents ?? []).filter((i) => i.active).length
 
   /* ─── SKU rows + Pipelines cho TẤT CẢ node kho STORAGE ─── */
   const storageNodes = useMemo(
@@ -786,7 +789,12 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
       </LiveBadgeContext.Provider>
 
       <div className="absolute inset-x-3 top-3 z-10 space-y-1.5">
-        <FeedControl model={model} />
+        <FeedControl model={model} demoActions={
+          <button className={btnWarn} aria-pressed={incidentOpen} onClick={() => setIncidentOpen((o) => !o)}
+            title="Thao tác demo: gây sự cố trong feed giả lập (đóng vai nhà máy thật) để xem twin phát hiện và dự báo lại.">
+            <Zap size={12} aria-hidden />Bơm sự cố{activeIncidents > 0 ? ` (${activeIncidents})` : ''}
+          </button>
+        } />
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-line bg-panel-2 px-3 py-1.5 text-[11.5px] text-muted">
           <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-bad" /><b className="tabular-nums text-text">{summary.redStorages}</b> kho Đỏ</span>
           <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-warn" /><b className="tabular-nums text-text">{summary.yellowStorages}</b> kho Vàng</span>
@@ -811,9 +819,18 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
       <ForecastDock model={model} snapshot={snapshot} insetRight={panelOpen ? 296 : 12}
         names={Object.fromEntries(incidentNodes.map((n) => [n.key, n.name]))} />
 
+      {incidentOpen && feed.data && feed.data.state !== 'idle' && (
+        <FloatingPanel side="left" top={112} width={280} fit title="Bơm sự cố (demo)" onClose={() => setIncidentOpen(false)}>
+          <div className="space-y-2 p-3">
+            <p className="text-[11px] text-muted">Gây sự cố trong feed giả lập, tức "nhà máy thật" của demo, để xem twin phát hiện: kho đổi màu, cảnh báo lệch dự báo, dự báo từ bây giờ tính cả máy hỏng. Hỏi "nếu… thì sao" trước khi xảy ra là việc của Scenario.</p>
+            <IncidentPanel model={model} nodes={incidentNodes} lanes={agvMap.data?.lanes ?? []} incidents={feed.data.incidents ?? []} ready={feedReady} />
+          </div>
+        </FloatingPanel>
+      )}
+
       {panelOpen ? (
         <FloatingPanel side="right" top={112} bottom={12} width={308} title="Bảng điều khiển vận hành" onClose={() => setPanelOpen(false)}>
-          {/* Sáu mục, hai hàng ba ô: nhãn ngắn một dòng, không biểu tượng (đủ chỗ cho chữ thay vì gãy ba dòng). */}
+          {/* Năm mục, hai hàng ba ô: nhãn ngắn một dòng, không biểu tượng (đủ chỗ cho chữ thay vì gãy ba dòng). */}
           <div role="tablist" aria-label="Mục của bảng điều khiển" className="grid grid-cols-3 gap-1 border-b border-line p-1.5">
             {([
               { k: 'WAREHOUSE' as const, label: 'Kho' },
@@ -821,7 +838,6 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
               { k: 'CHAIN' as const, label: 'Dây chuyền' },
               { k: 'COMPARE' as const, label: 'Đánh giá' },
               { k: 'DRIFT' as const, label: 'Lệch dự báo' },
-              { k: 'INCIDENT' as const, label: 'Bơm sự cố' },
             ] as const).map((t) => {
               const isActive = rightTab === t.k
               return (
@@ -1278,11 +1294,6 @@ function Room({ model, graph, types }: { model: string; graph: Graph; types: Rec
             </PanelSection>
           )}
 
-          {rightTab === 'INCIDENT' && (
-            <PanelSection title="Bơm sự cố" icon={Zap} meta={(feed.data?.incidents ?? []).filter((i) => i.active).length || undefined} defaultOpen>
-              <IncidentPanel model={model} nodes={incidentNodes} lanes={agvMap.data?.lanes ?? []} incidents={feed.data?.incidents ?? []} ready={feedReady} />
-            </PanelSection>
-          )}
         </FloatingPanel>
       ) : (
         <button className={`${btn} absolute right-3 top-[112px] z-10 bg-panel`} onClick={() => setPanelOpen(true)}><SlidersHorizontal size={13} aria-hidden />Bảng điều khiển vận hành</button>

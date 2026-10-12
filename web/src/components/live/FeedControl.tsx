@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Pause, Play, RotateCcw } from 'lucide-react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { api } from '../../api/client'
 import type { Frame } from '../../api/types'
 import { useFeedStatus } from '../../hooks/useLive'
@@ -14,8 +14,17 @@ import { ErrorBox, Notice, btn, btnDangerOutline, btnOk, input } from '../ui'
  */
 export const DEMO_CONTROLLER_FRAME: Frame & { noise_m: number } = { dx: -6, dy: 70, rot_deg: -90, scale: 0.001, flip_y: false, noise_m: 0.05 }
 
-/** Thanh điều khiển feed (bộ phát dữ liệu giả lập) của MỘT mô hình: bật/tạm dừng, tốc độ giờ nhà máy, đặt lại. Các mô hình khác chạy độc lập. */
-export function FeedControl({ model, offerFrame = false }: { model: string; /** Cho chọn bật hệ toạ độ hãng xe giả lập khi bắt đầu (chỉ trang Bản đồ AGV cần) */ offerFrame?: boolean }) {
+/**
+ * Thanh điều khiển feed (bộ phát dữ liệu giả lập) của MỘT mô hình: bật/tạm dừng, tốc độ giờ nhà máy, đặt lại. Các mô hình khác chạy độc lập.
+ * Feed đóng vai nhà máy thật, nên các thao tác gây rối của demo (bơm sự cố) gắn ở đây chứ không ở bảng của người vận hành.
+ */
+export function FeedControl({ model, offerFrame = false, demoActions }: {
+  model: string
+  /** Cho chọn bật hệ toạ độ hãng xe giả lập khi bắt đầu (chỉ trang Bản đồ AGV cần) */
+  offerFrame?: boolean
+  /** Thao tác demo tác động lên feed (vd. nút Bơm sự cố); chỉ hiện khi feed đã chạy. */
+  demoActions?: ReactNode
+}) {
   const qc = useQueryClient()
   const status = useFeedStatus(model)
   const [speed, setSpeed] = useState<number>(10)
@@ -74,6 +83,7 @@ export function FeedControl({ model, offerFrame = false }: { model: string; /** 
         )}
         {s.state !== 'idle' && (
           <>
+            {demoActions}
             <select className={input} aria-label="Tốc độ giờ nhà máy" value={s.speed} onChange={(e) => setSpeedM.mutate(Number(e.target.value))}>
               {[...new Set<number>([...SPEEDS, s.speed])].sort((a, b) => a - b).map((x) => <option key={x} value={x}>{speedLabel(x)}</option>)}
             </select>
