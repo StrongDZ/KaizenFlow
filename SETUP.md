@@ -9,7 +9,7 @@ Có hai cách chạy. **Cách A (Docker)** nhanh nhất, đủ để dùng và d
 | Công cụ | Cách A | Cách B | Ghi chú |
 |---|---|---|---|
 | Docker + Compose v2 | bắt buộc | bắt buộc | Docker Desktop hoặc Docker Engine; cần `docker compose` (không có dấu gạch) |
-| Node.js | bắt buộc | bắt buộc | 20.19 trở lên (Vite 7 yêu cầu); đã thử với 25. Kèm `npm` |
+| Node.js | không cần (web chạy trong Docker) | bắt buộc | 20.19 trở lên (Vite 7 yêu cầu); đã thử với 25. Kèm `npm` |
 | Python | chỉ để chạy `scripts/seed_demo.py` (không cần thư viện ngoài) | 3.12 | Sim và feed dùng 3.12 (đúng với image Docker). Bản mới hơn chưa được thử |
 | Go | không cần | 1.26.3 | `go.mod` ghi rõ; chỉ cần khi chạy API ngoài Docker hoặc chạy test Go |
 | Git | bắt buộc | bắt buộc | |
@@ -22,7 +22,8 @@ Các cổng sau phải còn trống:
 | 8081 | sim (mô phỏng) |
 | 8080 | API (Go) |
 | 8090 | feed (bộ phát dữ liệu giả lập) |
-| 5173 | web (Vite dev server) |
+| 8088 | web đóng gói sẵn (Cách A) |
+| 5173 | web (Vite dev server, Cách B) |
 
 ## 2. Lấy code
 
@@ -35,34 +36,29 @@ Repo là private: cần đăng nhập GitHub (`gh auth login` hoặc token) trư
 
 > **Đừng đặt repo trong thư mục đang đồng bộ iCloud** (mặc định `~/Documents` và `~/Desktop` trên macOS nếu bật "Desktop & Documents"). iCloud sẽ tự tạo bản sao dạng `tên 2.go`, `tên 2.tsx` mỗi khi Git ghi lại nhiều file (checkout, merge), làm hỏng build. Xem mục 8.
 
-## 3. Cách A: chạy bằng Docker (5 bước)
+## 3. Cách A: chạy hết bằng Docker
 
 ```bash
-# 1. Dựng và bật 4 dịch vụ: db, sim, api, feed (lần đầu mất vài phút để build)
+# 1. Dựng và bật 6 dịch vụ: db, sim, api, feed, gauge-bridge, web (lần đầu mất vài phút để build)
 docker compose up -d --build
 
-# 2. Kiểm tra: cả 4 phải "running", db phải "healthy"
+# 2. Kiểm tra: cả 6 phải "running", db phải "healthy"
 docker compose ps
 
-# 3. Nạp dữ liệu demo: 2 mô hình, kịch bản, vật tư, bản đồ AGV (chạy lại nhiều lần vẫn an toàn)
+# 3. Nạp dữ liệu demo: 4 mô hình, kịch bản, vật tư, bản đồ AGV (chạy lại nhiều lần vẫn an toàn)
 python3 scripts/seed_demo.py
-
-# 4. Cài và chạy giao diện web
-cd web
-cp .env.example .env
-npm install
-npm run dev
+python3 scripts/seed_video_demo.py   # tuỳ chọn: bản đồ trên ảnh mặt bằng, 3 nhà máy phụ
 ```
 
-Mở **http://localhost:5173**. Kiểm nhanh từng dịch vụ bằng `curl`:
+Mở **http://localhost:8088** (giao diện web đóng gói sẵn bằng nginx, không cần cài Node). Đổi cổng bằng `WEB_PORT`; API ở máy khác thì build lại web với `VITE_API_URL=http://<máy>:8080 docker compose up -d --build web`. Kiểm nhanh từng dịch vụ bằng `curl`:
 
 ```bash
 curl localhost:8080/api/health     # {"status":"ok"}
 curl localhost:8090/health         # {"status":"ok"}
-curl localhost:8080/api/models     # danh sách mô hình (sau khi seed có denso-mini và denso-plant)
+curl localhost:8080/api/models     # danh sách mô hình (sau khi seed có 4 mô hình demo)
 ```
 
-API tự chạy migration khi khởi động và tự nạp 14 loại node mẫu cùng vật tư mặc định khi các bảng này còn trống. Hai việc đó không cần làm tay.
+API tự chạy migration khi khởi động và tự nạp 16 loại node mẫu cùng vật tư mặc định khi các bảng này còn trống. Hai việc đó không cần làm tay.
 
 ### Thử ngay phần Live twin
 

@@ -5,6 +5,27 @@ vỡ), ghi một mục ở đây. Mục mới nhất lên đầu.
 
 ---
 
+## 12/10/2026 (khuya) — Web chạy được bằng Docker, README cho BTC
+
+Tóm tắt một câu: `docker compose up -d --build` giờ dựng thêm service **`web`** (build Vite, phục vụ bằng
+nginx ở **http://localhost:8088**) để BTC chạy thử không cần cài Node; README viết lại theo yêu cầu nộp bài.
+
+- Lần `up -d --build` đầu tiên sau khi pull sẽ build thêm image web (vài phút, chạy `npm ci` trong
+  container). Không muốn container này thì `docker compose up -d --build db sim api feed gauge-bridge`,
+  hoặc `docker compose stop web`.
+- Cổng 8088 bị chiếm thì đặt `WEB_PORT`. Địa chỉ API và gauge-twin được nhúng lúc build: máy dùng cổng
+  gauge-twin khác mặc định (như 8097/8094) thì build bằng
+  `VITE_GAUGE_API_URL=http://localhost:8097 VITE_GAUGE_CONFIG_API_URL=http://localhost:8094 docker compose up -d --build web`.
+- Build web ra thư mục `static/` chứ không phải `assets/` mặc định của Vite, vì `/assets` là đường dẫn
+  của mục Thiết bị (nginx sẽ trả nhầm thư mục khi tải lại trang).
+- Dev vẫn như cũ: `cd web && npm run dev` ở cổng 5173.
+- Sửa thêm: cột **Dùng ở** của trang Nguồn dữ liệu giờ tính cả ghép nối dùng ký tự thay thế (ví dụ vị
+  trí xe `agv/tug-a/+/pos`); trước đó những nguồn này hiện "1 tín hiệu" nhưng "chưa mô hình nào". Cần
+  build lại `api`.
+- Ảnh chụp trong README nằm ở `screenshots/`.
+
+---
+
 ## 12/10/2026 (tối) — Nguồn dữ liệu sang mục Thiết bị, Bơm sự cố ra thanh feed
 
 Commit: `58761fe`, `4e2726c`.
