@@ -94,16 +94,25 @@ Nên chỉ vào:
 
 Mục tiêu của màn này là **đặt bài toán** trước khi đi vào chi tiết.
 
-### Bước 3 - Sơ đồ workflow
+### Bước 3 - Thiết bị và sơ đồ workflow
 
 Đi từ:
 
-- `Mô hình` -> chọn model
-- hoặc mở trực tiếp version của model
+- `Thiết bị` -> danh mục máy của nhà máy
+- rồi `Mô hình` -> chọn model (hoặc mở trực tiếp version của model)
 
 Nói:
 
+> Trước hết là danh mục thiết bị: mỗi dòng là một cái máy có thật, định danh duy nhất trong toàn hệ thống. Tham số của máy và tín hiệu của nó khai ở đây một lần.
+>
+> Mô hình thì là một cách bố trí các thiết bị đó. Cột "Dùng trong" cho thấy một cái máy đang nằm trong mấy mô hình — sửa máy một chỗ, mọi mô hình thấy ngay, mà bản đã Publish thì không bị đổi theo.
+>
 > Đây là workflow vận hành của nhà máy dưới dạng model. Từ model này, app có thể sinh scenario, chạy simulation, và nối với dữ liệu live.
+
+Điểm đáng show:
+
+- `denso-plant` và `denso-plant-amr` dùng chung 23 thiết bị, chỉ khác đội xe kho B (`TUG_B` xe kéo so với `TUG_B_AMR`): đổi công nghệ xe không phải khai lại cả nhà máy.
+- Thả một node trên sơ đồ sẽ mở hộp **chọn thiết bị** — node không tự sinh mã nữa.
 
 Nên show:
 
@@ -214,6 +223,25 @@ Nói:
 
 - mỗi nguồn dữ liệu map vào node/edge nào
 - app không phụ thuộc cứng vào tên thiết bị
+- tín hiệu của một **node** là tín hiệu của chính cái máy: ghép ở đây một lần thì mọi mô hình có máy đó đều dùng được, xem lại ở `Thiết bị` -> `Tín hiệu thiết bị`. Tín hiệu của **đường nối** thì vẫn thuộc riêng mô hình này.
+
+### Bước 8b - Số đọc đồng hồ vào twin
+
+Vào:
+
+- `Thiết bị` -> `Tín hiệu thiết bị`
+
+Nói:
+
+> Đây là phần trả lời cho máy cũ không có PLC: camera đọc đồng hồ trên tủ điều khiển, edge chỉ gửi số về, và số đó vào thẳng twin.
+>
+> Nguồn hiện ở đây đúng tên topic mà edge publish. Ghép một lần cho cái máy, mọi mô hình có máy đó đều dùng được — vì tín hiệu là thuộc tính của máy, không của mô hình.
+
+Điểm đáng show:
+
+- nguồn `denso/{nhà máy}/{xưởng}/{máy}/telemetry`, trường `gauges.<mã đồng hồ>.value`
+- cùng một máy, cùng một ghép nối, nhiều mô hình dùng
+- số đọc chất lượng thấp (ảnh mờ, kim bị che) bị bỏ, không vào twin như một số đo
 
 ### Bước 9 - Live Twin
 

@@ -535,11 +535,68 @@ PLANT_5000_MODEL = {
     "map": PLANT_5000_MAP,
 }
 
+
+def remap_keys(model, fn):
+    """Trả bản sao của một mô hình với mọi mã node đổi theo `fn`.
+
+    Mã node giờ là mã THIẾT BỊ, duy nhất toàn app: hai nhà máy ví dụ khác nhau không được dùng
+    chung mã, nếu không chúng sẽ bị coi là cùng một cái máy (và dùng chung tham số, tín hiệu, số
+    đọc đồng hồ). `denso-mini` và `plant-5000m2` vì vậy có không gian mã riêng; còn `denso-plant`
+    và `denso-plant-amr` là CÙNG một nhà máy nên cố ý dùng chung mã — chỉ đội xe kho B là thiết bị
+    khác (xe kéo thường so với AMR) nên được đổi mã riêng.
+    """
+    def key(k):
+        return ">".join(fn(part) for part in k.split(">")) if ">" in k else fn(k)
+
+    def params(p):
+        out = dict(p or {})
+        for field in ("pool", "hook_pool"):
+            if isinstance(out.get(field), str):
+                out[field] = fn(out[field])
+        return out
+
+    out = dict(model)
+    out["nodes"] = [(fn(k), typ, col, row, params(pr) if pr else pr, *rest) for k, typ, col, row, pr, *rest in model["nodes"]]
+    out["recipes"] = {fn(k): v for k, v in model["recipes"].items()}
+    out["edges"] = [(fn(src), fn(dst), mat, params(pr)) for src, dst, mat, pr in model["edges"]]
+    out["scenarios"] = [
+        {**sc,
+         "injections": [{**i, "target": key(i["target"])} for i in sc.get("injections", [])],
+         "overrides": [{**o, "target": key(o["target"])} for o in sc.get("overrides", [])]}
+        for sc in model["scenarios"]
+    ]
+    if "map" in model:
+        m = json.loads(json.dumps(model["map"]))
+        for pt in m.get("points", []):
+            if "node_key" in pt:
+                pt["node_key"] = fn(pt["node_key"])
+        out["map"] = m
+    return out
+
+
+def prefixed(model, prefix):
+    return remap_keys(model, lambda k: k if k.startswith(prefix) else prefix + k)
+
+
+MINI_MODEL = prefixed(
+    {"key": "denso-mini", "plant": "NHA_MAY_MINI", "line": "L01", "grid": (40, 220, 200, 150), "nodes": MINI_NODES,
+     "recipes": MINI_RECIPES, "edges": MINI_EDGES, "scenarios": [MINI_SCENARIO], "map": MINI_MAP},
+    "MINI_")
+
+PLANT_MODEL = {"key": "denso-plant", "plant": "NHA_MAY_1", "line": "L01", "grid": (40, 230, 300, 130), "nodes": PLANT_NODES,
+               "recipes": PLANT_RECIPES, "edges": PLANT_EDGES, "scenarios": PLANT_SCENARIOS, "map": PLANT_MAP}
+
+# Cùng nhà máy với denso-plant, dùng chung mọi thiết bị — trừ đội xe kho B: xe kéo thường và AMR là
+# hai thiết bị khác nhau, nên mã khác nhau để tham số và số đọc của chúng không lẫn vào nhau.
+PLANT_AMR_MODEL = remap_keys(
+    {**PLANT_MODEL, "key": "denso-plant-amr", "nodes": PLANT_AMR_NODES, "map": PLANT_AMR_MAP},
+    lambda k: "TUG_B_AMR" if k == "TUG_B" else k)
+
 MODELS = [
-    {"key": "denso-mini", "grid": (40, 220, 200, 150), "nodes": MINI_NODES, "recipes": MINI_RECIPES, "edges": MINI_EDGES, "scenarios": [MINI_SCENARIO], "map": MINI_MAP},
-    {"key": "denso-plant", "grid": (40, 230, 300, 130), "nodes": PLANT_NODES, "recipes": PLANT_RECIPES, "edges": PLANT_EDGES, "scenarios": PLANT_SCENARIOS, "map": PLANT_MAP},
-    {"key": "denso-plant-amr", "grid": (40, 230, 300, 130), "nodes": PLANT_AMR_NODES, "recipes": PLANT_RECIPES, "edges": PLANT_EDGES, "scenarios": PLANT_SCENARIOS, "map": PLANT_AMR_MAP},
-    PLANT_5000_MODEL,
+    MINI_MODEL,
+    PLANT_MODEL,
+    PLANT_AMR_MODEL,
+    prefixed({**PLANT_5000_MODEL, "plant": "NHA_MAY_5000", "line": "L01"}, "P5K_"),
 ]
 
 
@@ -622,8 +679,31 @@ def ensure_map(api, model, force=False):
     print(f"Đã đặt bản đồ AGV cho '{key}': {len(m['points'])} điểm, {len(m['lanes'])} làn, {keepouts_cnt} vùng cấm.")
 
 
-def seed_model(api, model, existing, force_map=False):
+def ensure_assets(api, model, existing_assets):
+    """Khai thiết bị của mô hình vào danh mục Thiết bị. Sơ đồ chỉ ĐẶT thiết bị đã có, không khai sinh
+    thiết bị, nên bước này phải chạy trước khi PUT graph. Key trùng giữa các mô hình là CÙNG một
+    thiết bị (denso-plant và denso-plant-amr là cùng nhà máy), nên thiết bị đã có thì không ghi đè."""
+    made = 0
+    for node in node_rows(model):
+        if node["key"] in existing_assets:
+            continue
+        body = {"key": node["key"], "node_type": node["node_type"], "plant": model.get("plant", "NHA_MAY_1"),
+                "line": model.get("line", key_line(model)), "name": node.get("name", "")}
+        call(api, "POST", "/api/assets", body)
+        existing_assets.add(node["key"])
+        made += 1
+    if made:
+        print(f"Đã khai {made} thiết bị mới vào danh mục Thiết bị cho '{model['key']}'.")
+
+
+def key_line(model):
+    """Dây chuyền mặc định của một mô hình: lấy chính key mô hình, đủ để nhóm trong danh mục."""
+    return model["key"].upper().replace("-", "_")
+
+
+def seed_model(api, model, existing, force_map=False, assets=None):
     key = model["key"]
+    ensure_assets(api, model, assets if assets is not None else set())
     if key in existing:
         m = existing[key]
         if m["status"] == "DRAFT" and m["scenarios"] == 0:
@@ -660,9 +740,10 @@ def main():
         if mat["code"] not in have:
             call(api, "POST", "/api/materials", mat)
     existing = {m["model_key"]: m for m in call(api, "GET", "/api/models")}
+    assets = {a["key"] for a in call(api, "GET", "/api/assets")}
     models = MODELS + ([FMCG_MODEL] if args.with_fmcg else [])
     for model in models:
-        seed_model(api, model, existing, force_map=args.force_map)
+        seed_model(api, model, existing, force_map=args.force_map, assets=assets)
 
 
 if __name__ == "__main__":
