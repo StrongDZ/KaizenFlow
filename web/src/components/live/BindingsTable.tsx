@@ -88,7 +88,7 @@ export function BindingsTable({ model, rows, coverage, snapshot, onEdit }: {
                     <td className="max-w-[200px] px-2 py-1.5"><div className="truncate font-medium text-text">{r.subjectName}</div><div className="truncate text-[10.5px] text-faint">{b.subject}</div></td>
                     <td className="px-2 py-1.5 text-text-2">{r.signalLabel}</td>
                     <td className="max-w-[260px] px-2 py-1.5">
-                      <span className="mr-1.5 inline-block rounded border border-line-2 px-1 text-[10px] text-text-2">{r.how}</span>{r.estimate && <span className="mr-1.5 inline-block rounded border border-warn px-1 text-[10px] text-warn" title="Số suy ra (chia đều, cân bằng kho), không phải số đo">ước lượng</span>}
+                      <span className="mr-1.5 inline-block rounded border border-line-2 px-1 text-[10px] text-text-2">{r.how}</span>{r.binding.shared && <span className="mr-1.5 inline-block rounded border border-accent/60 px-1 text-[10px] text-accent" title="Tín hiệu của thiết bị: ghép nối này dùng chung cho mọi mô hình có thiết bị đó. Sửa hay xoá ở đây ảnh hưởng cả các mô hình khác.">dùng chung</span>}{r.estimate && <span className="mr-1.5 inline-block rounded border border-warn px-1 text-[10px] text-warn" title="Số suy ra (chia đều, cân bằng kho), không phải số đo">ước lượng</span>}
                       <span className="break-all font-mono text-[10.5px] text-muted" title={r.detail}>{r.detail}</span>
                     </td>
                     <td className="px-2 py-1.5 tabular-nums text-text">{r.value ?? '—'}</td>
@@ -113,7 +113,15 @@ export function BindingsTable({ model, rows, coverage, snapshot, onEdit }: {
       )}
       <ConfirmDialog
         open={confirmDelete} title={`Xoá ${chosen.length} ghép nối?`} pending={remove.isPending} error={remove.error} confirmLabel="Xoá"
-        description={<>Các tín hiệu này sẽ ngừng nhận dữ liệu cho đến khi ghép lại. Công thức tự tính dùng chúng làm đầu vào sẽ báo hỏng.</>}
+        description={<>
+          Các tín hiệu này sẽ ngừng nhận dữ liệu cho đến khi ghép lại. Công thức tự tính dùng chúng làm đầu vào sẽ báo hỏng.
+          {chosen.some((r) => r.binding.shared) && (
+            <div className="mt-2 text-warn">
+              Trong số đó có {chosen.filter((r) => r.binding.shared).length} ghép nối <b>dùng chung</b> của thiết bị:
+              xoá là mất ở <b>mọi mô hình</b> có thiết bị đó, không chỉ mô hình này.
+            </div>
+          )}
+        </>}
         onConfirm={() => remove.mutate(chosen.map((r) => r.binding.id))} onCancel={() => setConfirmDelete(false)}
       />
     </div>

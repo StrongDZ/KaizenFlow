@@ -18,6 +18,17 @@ describe('sectionOf', () => {
     expect(sectionOf('/models/m/operations')).toBe('models')
     expect(sectionOf('/models/m/warehouse-report')).toBe('models')
     expect(sectionOf('/library/materials/RAW-01')).toBe('library')
+    // Thiết bị là mục riêng, ngang hàng với Mô hình: một thiết bị không thuộc mô hình nào.
+    expect(sectionOf('/assets')).toBe('assets')
+    expect(sectionOf('/assets/signals')).toBe('assets')
+  })
+})
+
+describe('panel phụ của mục Thiết bị', () => {
+  it('có danh mục thiết bị và tín hiệu thiết bị, không phụ thuộc mô hình nào', () => {
+    const nav = subNavFor('/assets/signals', {})
+    expect(nav?.title).toBe('Thiết bị')
+    expect(nav?.groups.flatMap((g) => g.tabs).map((t) => t.label)).toEqual(['Danh mục thiết bị', 'Tín hiệu thiết bị'])
   })
 })
 

@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { api } from '../api/client'
+import { AssetDialog } from '../components/assets/AssetDialog'
 import { gaugeConfigApi, type AcceptanceVerdict, type GaugeCandidate, type PreviewGauge } from '../api/gaugeConfig'
 import { ActionError, GaugeArea, gtButton, gtField, gtPrimary } from '../components/gauge/GaugeArea'
 import {
@@ -60,11 +62,17 @@ function RegionPreview({ frameJpeg, size, roi, type, digits }: {
 }
 
 /** Mở một camera: thấy nó đang quay gì, khoanh từng đồng hồ và chọn đồng hồ đó thuộc máy nào. */
+/** Giá trị đặc biệt của ô chọn máy: mở hộp khai thiết bị mới ngay trong luồng gán đồng hồ. */
+const NEW_ASSET = '__new_asset__'
+
 export default function GaugeCameraPage() {
   const cameraId = useParams().camera ?? ''
   const [params, setParams] = useSearchParams()
   const qc = useQueryClient()
   const cameras = useQuery({ queryKey: ['gauge-config', 'cameras'], queryFn: gaugeConfigApi.cameras })
+  // Danh mục Thiết bị của KaizenFlow: mã máy ở đây là mã thiết bị, nên gán đồng hồ xong là số đọc
+  // gắn đúng thiết bị mà các mô hình đang dùng. API không chạy thì vẫn gán được như trước.
+  const assets = useQuery({ queryKey: ['assets'], queryFn: api.assets, retry: false })
   const stations = useQuery({ queryKey: ['gauge-config', 'stations'], queryFn: gaugeConfigApi.stations })
   // Ảnh đứng yên trong lúc khoanh vùng; người dùng bấm để lấy khung hình mới.
   const frame = useQuery({
@@ -82,6 +90,8 @@ export default function GaugeCameraPage() {
   const colorOf = (machine: string) => machineColor(Math.max(0, machineIds.indexOf(machine)))
 
   const [machine, setMachine] = useState({ machine_id: '', plant: '', line: '' })
+  // Khai thiết bị mới ngay trong luồng gán đồng hồ (không phải rời trang sang mục Thiết bị).
+  const [makingAsset, setMakingAsset] = useState(false)
   const [draft, setDraft] = useState<GaugeDraft>(() => emptyDraft('analog_dial'))
   // Đồng hồ đã lưu đang được sửa (để giữ các trường form không quản lý); null là đồng hồ mới.
   const [editing, setEditing] = useState<{ machine_id: string; gauge: GaugeDoc } | null>(null)
@@ -98,15 +108,31 @@ export default function GaugeCameraPage() {
 
   const size = frame.data ? { width: frame.data.width, height: frame.data.height } : { width: 1920, height: 1080 }
   const existing = stations.data?.find((s) => s.machine_id === machine.machine_id)
+  const pickedAsset = assets.data?.find((a) => a.key === machine.machine_id)
+  // Máy đã có đồng hồ từ trước mà chưa khai trong danh mục: vẫn phải chọn được để sửa đồng hồ cũ.
+  const legacyMachine = machine.machine_id !== '' && !pickedAsset ? machine.machine_id : ''
   const built = buildGauge(draft, cameraId)
   const gauge = built.gauge ? mergeGauge(editing?.gauge, built.gauge) : undefined
-  const machineOk = /^[A-Za-z0-9_.-]{1,64}$/.test(machine.machine_id) && (existing !== undefined || (machine.plant !== '' && machine.line !== ''))
-  const problems = [...(machineOk ? [] : ['Chọn máy có sẵn, hoặc nhập mã máy mới kèm nhà máy và dây chuyền.']), ...built.problems]
+  // Máy hợp lệ: một thiết bị trong danh mục, hoặc một máy cũ đã có cấu hình đồng hồ (để sửa tiếp).
+  const machineOk = /^[A-Za-z0-9_.-]{1,64}$/.test(machine.machine_id)
+    && (pickedAsset !== undefined || existing !== undefined)
+    && (existing !== undefined || (machine.plant !== '' && machine.line !== ''))
+  const problems = [...(machineOk ? [] : ['Chọn máy trong danh mục Thiết bị (hoặc khai thiết bị mới ngay tại đây).']), ...built.problems]
 
   const patch = (p: Partial<GaugeDraft>) => { setDraft((d) => ({ ...d, ...p })); setReading(null); setVerdict(null); setSaved('') }
+  // Mã máy của gauge-twin LÀ mã thiết bị trong danh mục Thiết bị của KaizenFlow (machine_id = asset.key),
+  // nên gán đồng hồ cho máy là chọn đúng thiết bị đó: nhà máy / dây chuyền điền theo danh mục.
   const pickMachine = (id: string) => {
     const known = stations.data?.find((s) => s.machine_id === id)
-    setMachine(known ? { machine_id: id, plant: known.config.plant, line: known.config.line } : { ...machine, machine_id: id })
+    if (known) {
+      setMachine({ machine_id: id, plant: known.config.plant, line: known.config.line })
+      setSaved('')
+      return
+    }
+    const asset = assets.data?.find((a) => a.key === id)
+    setMachine(asset
+      ? { machine_id: id, plant: asset.plant || machine.plant, line: asset.line || machine.line }
+      : { ...machine, machine_id: id })
     setSaved('')
   }
   const startNew = () => {
@@ -121,6 +147,15 @@ export default function GaugeCameraPage() {
     setEditing(null); setFromCandidate(c); setDraft(draftFromCandidate(c)); setMachine({ machine_id: '', plant: '', line: '' })
     setTool('roi'); setReading(null); setVerdict(null); setTruth(''); setSaved('')
   }
+  // Nhà máy / dây chuyền luôn theo thiết bị đã chọn (kể cả thiết bị vừa khai xong trong hộp bên
+  // cạnh, lúc danh sách assets mới về): thiết bị là nguồn sự thật, không gõ lệch được.
+  useEffect(() => {
+    if (!pickedAsset || editing !== null) return
+    setMachine((m) => (m.plant === (pickedAsset.plant || m.plant) && m.line === (pickedAsset.line || m.line)
+      ? m
+      : { ...m, plant: pickedAsset.plant || m.plant, line: pickedAsset.line || m.line }))
+  }, [pickedAsset, editing])
+
   // Mở thẳng từ danh mục đồng hồ: ?candidate= một đề xuất, ?machine=&gauge= một đồng hồ đã có.
   const opened = useRef(false)
   useEffect(() => {
@@ -373,20 +408,55 @@ export default function GaugeCameraPage() {
             </div>
           )}
 
+          {makingAsset && (
+            <AssetDialog
+              onClose={() => setMakingAsset(false)}
+              onSaved={(key) => {
+                setMakingAsset(false)
+                void qc.invalidateQueries({ queryKey: ['assets'] })
+                setMachine({ ...machine, machine_id: key })
+              }}
+            />
+          )}
+
           <fieldset className="grid grid-cols-2 gap-3">
             <legend className="mb-2 text-xs font-semibold text-text">1. Đồng hồ này của máy nào</legend>
-            <Field label="Mã máy" wide>
-              <input className={`${gtField} tabular-nums`} list="gt-machines" value={machine.machine_id} disabled={editing !== null}
-                onChange={(e) => pickMachine(e.target.value)} placeholder="Chọn máy có sẵn hoặc gõ mã máy mới" />
-              <datalist id="gt-machines">{(stations.data ?? []).map((s) => <option key={s.machine_id} value={s.machine_id} />)}</datalist>
+            {/* Máy phải CHỌN từ danh mục Thiết bị, không gõ tự do: mã máy ở đây chính là mã thiết bị,
+                gõ tay sẽ sinh ra một cái máy chỉ khu Đồng hồ biết và số đọc không gắn vào đâu cả.
+                Máy cũ chưa khai trong danh mục vẫn hiện (để sửa được đồng hồ đã gán), có ghi rõ. */}
+            <Field label="Máy (chọn trong danh mục Thiết bị)" wide>
+              <select className={`${gtField} tabular-nums`} value={machine.machine_id} disabled={editing !== null}
+                onChange={(e) => { if (e.target.value === NEW_ASSET) setMakingAsset(true); else pickMachine(e.target.value) }}>
+                <option value="">— chọn máy —</option>
+                {legacyMachine && <option value={legacyMachine}>{legacyMachine} (chưa khai trong danh mục)</option>}
+                {(assets.data ?? []).filter((a) => !a.retired).map((a) => (
+                  <option key={a.key} value={a.key}>
+                    {a.key}{a.name ? ` · ${a.name}` : ''}{(stations.data ?? []).some((s) => s.machine_id === a.key) ? ' · đã có đồng hồ' : ''}
+                  </option>
+                ))}
+                <option value={NEW_ASSET}>+ Khai thiết bị mới…</option>
+              </select>
             </Field>
             <Field label="Nhà máy">
-              <input className={gtField} value={machine.plant} disabled={existing !== undefined} onChange={(e) => setMachine({ ...machine, plant: e.target.value })} />
+              <input className={gtField} value={machine.plant} disabled={existing !== undefined || pickedAsset !== undefined}
+                onChange={(e) => setMachine({ ...machine, plant: e.target.value })} />
             </Field>
             <Field label="Dây chuyền">
-              <input className={gtField} value={machine.line} disabled={existing !== undefined} onChange={(e) => setMachine({ ...machine, line: e.target.value })} />
+              <input className={gtField} value={machine.line} disabled={existing !== undefined || pickedAsset !== undefined}
+                onChange={(e) => setMachine({ ...machine, line: e.target.value })} />
             </Field>
-            {machine.machine_id !== '' && !existing && <p className="col-span-2 text-xs text-warn">Máy mới: sẽ được tạo khi lưu đồng hồ đầu tiên.</p>}
+            {machine.machine_id !== '' && (
+              pickedAsset
+                ? <p className="col-span-2 text-xs text-text-2">
+                    Khớp thiết bị <span className="font-mono">{pickedAsset.key}</span> trong danh mục Thiết bị
+                    {pickedAsset.models.length ? ` (đang ở ${pickedAsset.models.join(', ')})` : ''}. Số đọc sẽ gắn đúng máy này.
+                  </p>
+                : <p className="col-span-2 text-xs text-warn">
+                    <b>Chưa có trong danh mục Thiết bị.</b> Đồng hồ vẫn lưu và đọc được, nhưng số đọc chưa gắn vào thiết bị nào của
+                    KaizenFlow. Khai nó bằng mục "+ Khai thiết bị mới…" ở ô trên, hoặc ở
+                    trang <Link to="/assets" className="underline">Thiết bị</Link> — mã máy chính là mã thiết bị.
+                  </p>
+            )}
           </fieldset>
 
           <fieldset className="grid grid-cols-2 gap-3">

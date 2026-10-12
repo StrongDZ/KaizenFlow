@@ -122,13 +122,18 @@ export function newNodeKey(existing: string[], code: string): string {
 }
 
 /** Node mới của một loại, đặt ở vị trí cho trước, với khoá chưa node nào dùng. */
-export function makeNode(t: NodeType, existing: string[], position: { x: number; y: number }): FlowNode {
-  const key = newNodeKey(existing, t.code)
+/**
+ * Dựng node trên sơ đồ cho một thiết bị đã khai trong danh mục Thiết bị: mã node LÀ mã thiết bị,
+ * nên cùng một máy ở nhiều mô hình vẫn là một. `asset` bắt buộc — sơ đồ chỉ đặt thiết bị, không
+ * khai sinh thiết bị. `name` lấy tên thiết bị, không có thì lấy tên loại.
+ */
+export function makeNode(t: NodeType, asset: { key: string; name?: string }, position: { x: number; y: number }): FlowNode {
+  const key = asset.key
   return {
     id: key,
     type: 'kf',
     position,
-    data: { key, nodeType: t.code, archetype: t.archetype, name: t.name, params: {}, icon: iconOfType(t), accent: colorOfType(t) },
+    data: { key, nodeType: t.code, archetype: t.archetype, name: asset.name || t.name, params: {}, icon: iconOfType(t), accent: colorOfType(t) },
   }
 }
 

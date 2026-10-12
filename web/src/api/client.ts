@@ -1,8 +1,8 @@
 import type {
-  AgvMap, Binding, Frame, BindingInput, Benchmark7DayResp, BenchmarkReport, CoverageReport, DataSourceRow, SourceTestResult, CalibrationApplied, CalibrationResp, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
+  AgvMap, Asset, AssetInput, Binding, Frame, BindingInput, Benchmark7DayResp, BenchmarkReport, CoverageReport, DataSourceRow, SourceTestResult, CalibrationApplied, CalibrationResp, FeedStatus, Incident, IncidentInput, LiveSnapshot, Subjects,
   BandRow, CheckReport, EdgePlan, EventRow, Graph, GraphEdge, GraphNode, InsightRow, Issue, Json, Material, MaterialDetail, MaterialUpdate, ModelSummary,
   NewMaterial, NewNodeType, NewScenario, NodeType, NodeTypeDetail, NodeTypeUpdate, PerformanceKpis, Run, RunDetail, RunRow, Scenario, ScenarioBody, ScenarioRow,
-  SignalRow, VersionInfo, WarehouseSeriesEntry, WarehousePipelineView, WarehouseDashboardView,
+  SignalRow, SourceRow, VersionInfo, WarehouseSeriesEntry, WarehousePipelineView, WarehouseDashboardView,
 } from './types'
 import { buildMockWarehouseDashboard, buildMockPipelineForWarehouse } from '../lib/warehouse'
 
@@ -52,6 +52,18 @@ const del = (path: string, cascade = false) => req<void>(`${path}${cascade ? `${
 
 export const api = {
   nodeTypes: () => req<NodeType[]>('/api/node-types'),
+  /** Danh mục nguồn toàn cục: một nguồn là một thiết bị/topic ngoài đời, không thuộc mô hình nào. */
+  allSources: () => req<SourceRow[]>('/api/sources'),
+  // Danh mục Thiết bị: ngang hàng với Mô hình. Sơ đồ chỉ đặt thiết bị đã có ở đây.
+  assets: () => req<Asset[]>('/api/assets'),
+  asset: (key: string) => req<Asset>(`/api/assets/${encodeURIComponent(key)}`),
+  putAsset: (a: AssetInput) => put<Asset>(`/api/assets/${encodeURIComponent(a.key)}`, a),
+  deleteAsset: (key: string) => del(`/api/assets/${encodeURIComponent(key)}`),
+  /** Ghép nối tín hiệu của thiết bị: lưu một lần, mọi mô hình có thiết bị đó dùng chung. */
+  assetBindings: () => req<{ bindings: Binding[] }>('/api/assets/bindings').then((r) => r.bindings),
+  saveAssetBindings: (bindings: BindingInput[]) => put<{ bindings: Binding[] }>('/api/assets/bindings', { bindings }),
+  checkAssetBindings: (bindings: BindingInput[]) => put<{ ok: boolean }>('/api/assets/bindings?check=1', { bindings }),
+  deleteAssetBinding: (id: number) => del(`/api/assets/bindings/${id}`),
   materials: () => req<Material[]>('/api/materials'),
   models: () => req<ModelSummary[]>('/api/models'),
   /** copy_from: khoá một mô hình có sẵn; mô hình mới bắt đầu từ bản sao sơ đồ mới nhất của nó. */

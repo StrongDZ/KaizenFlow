@@ -1,4 +1,4 @@
-export type Section = 'overview' | 'models' | 'alerts' | 'gauge' | 'library'
+export type Section = 'overview' | 'models' | 'assets' | 'alerts' | 'gauge' | 'library'
 export type Crumb = { label: string; to?: string; picker?: boolean }
 /** `icon`: tên biểu tượng (vẽ ở components/shell/SubNav). */
 export type Tab = { label: string; to: string; end?: boolean; also?: string[]; not?: string[]; group?: string; icon?: string }
@@ -14,6 +14,7 @@ export type NavCtx = {
 
 export function sectionOf(path: string): Section {
   if (path.startsWith('/alerts')) return 'alerts'
+  if (path.startsWith('/assets')) return 'assets'
   if (path.startsWith('/gauge-twin')) return 'gauge'
   if (isOverviewPath(path)) return 'overview'
   // Lần chạy (và so sánh lần chạy) luôn thuộc một mô hình: không có mục riêng trên thanh chính.
@@ -88,7 +89,14 @@ function modelTabs(ctx: NavCtx): Tab[] {
 }
 
 /** `icon`: biểu tượng ở đầu panel (overview: tổng quan, library: thư viện, gauge: đồng hồ, còn lại là mô hình). */
-export type SubNav = { title: string; subtitle?: string; icon?: 'overview' | 'library' | 'gauge'; groups: { title: string | undefined; tabs: Tab[] }[] }
+export type SubNav = { title: string; subtitle?: string; icon?: 'overview' | 'library' | 'gauge' | 'assets'; groups: { title: string | undefined; tabs: Tab[] }[] }
+
+/** Mục Thiết bị: danh mục thiết bị thật của nhà máy và tín hiệu của chúng — ngang hàng với Mô hình,
+ *  vì một thiết bị không thuộc mô hình nào mà dùng được ở nhiều mô hình. */
+const ASSET_TABS: Tab[] = [
+  { label: 'Danh mục thiết bị', to: '/assets', end: true, icon: 'cpu' },
+  { label: 'Tín hiệu thiết bị', to: '/assets/signals', icon: 'plug' },
+]
 
 const GAUGE_TABS: Tab[] = [
   { label: 'Trạm', to: '/gauge-twin', not: ['/gauge-twin/cameras', '/gauge-twin/gauges'], icon: 'gauge' },
@@ -107,6 +115,7 @@ const LIBRARY_TABS: Tab[] = [
  * tab của chính lần chạy nằm ở dải tab đầu trang. Danh sách mô hình và Cảnh báo là một trang duy nhất nên không có panel phụ.
  */
 export function subNavFor(path: string, ctx: NavCtx): SubNav | null {
+  if (path.startsWith('/assets')) return { title: 'Thiết bị', icon: 'assets', groups: [{ title: undefined, tabs: ASSET_TABS }] }
   if (path.startsWith('/library')) return { title: 'Thư viện', icon: 'library', groups: [{ title: undefined, tabs: LIBRARY_TABS }] }
   if (path.startsWith('/gauge-twin')) return { title: 'Đồng hồ', icon: 'gauge', groups: [{ title: undefined, tabs: GAUGE_TABS }] }
   const tabs = tabsFor(path, ctx)

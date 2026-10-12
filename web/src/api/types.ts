@@ -26,6 +26,31 @@ export type GraphNode = {
   name?: string
   params: Json
   canvas_pos?: Pos
+  /** Tham số của chính thiết bị, nằm dưới `params` khi hợp nhất. Chỉ có với bản DRAFT: bản đã
+   *  Publish đã đông cứng tham số vào `params` nên tự chứa. Chỉ đọc. */
+  asset_params?: Json
+  /** Thiết bị đã đánh dấu ngừng dùng. Chỉ đọc. */
+  asset_retired?: boolean
+}
+
+/** Một thiết bị thật của nhà máy: định danh duy nhất toàn app, dùng được ở nhiều mô hình. */
+export type Asset = {
+  key: string
+  plant: string
+  line: string
+  node_type: string
+  name: string
+  params: Json
+  note: string
+  retired: boolean
+  /** Các mô hình đang có thiết bị này trong sơ đồ (chỉ đọc). */
+  models: string[]
+  /** Vai trò và danh mục tín hiệu suy ra từ loại node (chỉ đọc). */
+  archetype?: string
+  signals?: SignalDef[]
+}
+export type AssetInput = {
+  key: string; plant?: string; line?: string; node_type: string; name?: string; params?: Json; note?: string; retired?: boolean
 }
 
 export type GraphEdge = { key: string; src: string; dst: string; material: string; params: Json }
@@ -167,6 +192,8 @@ export type Derive = {
 export type Binding = {
   id: number; model_key: string; subject: string; signal: string; source: string; json_path: string; transform: Transform; enabled: boolean
   mode: 'source' | 'derived'; derive?: Derive | null
+  /** Ghép nối của một thiết bị: lưu một lần, áp cho mọi mô hình có thiết bị đó. Sửa/xoá ảnh hưởng cả các mô hình khác. */
+  shared?: boolean
 }
 export type BindingInput = {
   subject: string; signal: string; source?: string; json_path?: string; transform?: Transform; enabled?: boolean; mode?: 'source' | 'derived'; derive?: Derive
@@ -205,6 +232,14 @@ export type SourceBindingRef = { subject: string; signal: string }
 export type DataSourceRow = {
   source: string; desc: string; origin: 'feed' | 'manual'; first_seen: string; last_seen: string; count: number
   sample: unknown; live: boolean; age_ms: number; per_min: number; bindings: SourceBindingRef[]
+}
+
+/** Một nguồn trong danh mục toàn cục (một thiết bị/topic ngoài đời, không thuộc mô hình nào). */
+export type SourceRow = {
+  source: string; desc: string; origin: 'feed' | 'manual'; first_seen: string; last_seen: string; count: number
+  sample: unknown
+  /** Các mô hình đang có ghép nối dùng nguồn này. */
+  models: string[]
 }
 export type SourceTestResult = { matched: number; readings: { subject: string; signal: string; value?: number; text?: string }[]; errors: string[] }
 export type BindingError = { message: string; count: number; last: string }

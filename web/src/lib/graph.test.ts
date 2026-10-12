@@ -42,11 +42,13 @@ describe('graph conversion', () => {
     expect(toFlow(horizontal, types).nodes.map((n) => n.data.dir)).toEqual(['LR', 'LR'])
   })
 
-  it('makes a fresh node of a chosen type at a position, with a key no other node has', () => {
+  it('đặt một thiết bị đã khai lên sơ đồ: mã node là mã thiết bị, tên lấy theo thiết bị', () => {
     const type = { ...types.DOCK_IN, ui: { icon: 'truck' } }
-    const n = makeNode(type, ['DOCK_IN_1', 'SRC'], { x: 12, y: 34 })
-    expect(n).toMatchObject({ id: 'DOCK_IN_2', type: 'kf', position: { x: 12, y: 34 } })
-    expect(n.data).toMatchObject({ key: 'DOCK_IN_2', nodeType: 'DOCK_IN', archetype: 'SOURCE', name: 'Cửa nhận hàng', params: {}, icon: 'truck' })
+    const n = makeNode(type, { key: 'CUA_NHAN_1', name: 'Cửa nhận hàng 1' }, { x: 12, y: 34 })
+    expect(n).toMatchObject({ id: 'CUA_NHAN_1', type: 'kf', position: { x: 12, y: 34 } })
+    expect(n.data).toMatchObject({ key: 'CUA_NHAN_1', nodeType: 'DOCK_IN', archetype: 'SOURCE', name: 'Cửa nhận hàng 1', params: {}, icon: 'truck' })
+    // Thiết bị không đặt tên riêng thì lấy tên loại.
+    expect(makeNode(type, { key: 'CUA_NHAN_2' }, { x: 0, y: 0 }).data.name).toBe('Cửa nhận hàng')
   })
 
   it('carries the type icon onto nodes loaded from a saved diagram', () => {
@@ -84,7 +86,7 @@ describe('graph conversion', () => {
     }
     const flow = toFlow(graph, withDefaults)
     expect(defaultMaterial(flow.nodes[1], ['X'], withDefaults)).toBe('BOX')
-    const store = makeNode(withDefaults.RACK, [], { x: 0, y: 0 })
+    const store = makeNode(withDefaults.RACK, { key: 'KHO_1' }, { x: 0, y: 0 })
     expect(outputMaterials(store, withDefaults)).toEqual(['PART', 'SUB'])
     expect(defaultMaterial(store, ['X'], withDefaults)).toBe('PART')
   })

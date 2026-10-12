@@ -10,7 +10,7 @@ const ICONS: Record<string, LucideIcon> = {
   monitor: Monitor, activity: Activity, lightbulb: Lightbulb, file: FileText, shapes: Shapes, package: Package, gauge: Gauge, camera: Camera,
   trophy: Trophy, boxes: Boxes, warehouse: Warehouse, scan: ScanSearch, cpu: Cpu,
 }
-const HEAD_ICONS = { overview: LayoutGrid, library: Library, gauge: Gauge } as const
+const HEAD_ICONS = { overview: LayoutGrid, library: Library, gauge: Gauge, assets: Cpu } as const
 
 /**
  * Panel phụ cạnh thanh chính: điều hướng trong một mục (Tổng quan, một mô hình, đồng hồ, thư viện). Mặc định mở rộng; `compact` là dải biểu tượng hẹp

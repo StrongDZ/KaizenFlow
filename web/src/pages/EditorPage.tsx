@@ -6,7 +6,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
-import type { CheckReport, Graph, Issue, NodeType } from '../api/types'
+import type { Asset, CheckReport, Graph, Issue, NodeType } from '../api/types'
 import { CanvasToolbar, type Tool } from '../components/editor/CanvasToolbar'
 import { Inspector } from '../components/editor/Inspector'
 import { DRAG_TYPE, NodePalette } from '../components/editor/NodePalette'
@@ -26,6 +26,7 @@ import { canConnect } from '../lib/connect'
 import { formToEdge, type EdgeForm } from '../lib/edgeForm'
 import { versionStatusLabel } from '../lib/format'
 import { clipboard, copyOf, pasteOf } from '../lib/clipboard'
+import { AssetPicker } from '../components/assets/AssetPicker'
 import { FLOW_MARKER, edgeKey, edgeLabel, fromFlow, isEdit, makeNode, prepareConnection, toFlow, type FlowEdge, type FlowNode } from '../lib/graph'
 import { canRedo, canUndo, emptyHistory, record, redo, undo, type History } from '../lib/history'
 import { autoLayout, type Dir } from '../lib/layout'
@@ -65,6 +66,8 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
   const [helpOpen, setHelpOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(initial.nodes.length === 0)
   const [quick, setQuick] = useState<{ x: number; y: number; client: { x: number; y: number }; from?: { nodeId: string; type: 'source' | 'target' } } | null>(null)
+  // Đã chọn loại node, đang chờ chọn thiết bị trong danh mục Thiết bị.
+  const [picking, setPicking] = useState<{ t: NodeType; position: { x: number; y: number }; from?: { nodeId: string; type: 'source' | 'target' } } | null>(null)
   const wrap = useRef<HTMLDivElement>(null)
   const mouse = useRef({ x: 0, y: 0 })
   const published = graph.status !== 'DRAFT'
@@ -169,10 +172,12 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
     setEdges((es) => (es.some((e) => e.selected) ? es.map((e) => ({ ...e, selected: false })) : es))
   }
   /** Thêm một node; `from` là chấm đã kéo dây ra chỗ trống, thì nối luôn node mới vào đó theo đúng chiều. */
-  const addNode = (t: NodeType, position: { x: number; y: number }, from?: { nodeId: string; type: 'source' | 'target' }) => {
+  // Đặt node là đặt một THIẾT BỊ đã khai trong danh mục Thiết bị lên sơ đồ: mã node là mã thiết bị,
+  // nên cùng một máy ở nhiều mô hình vẫn là một. Chọn loại xong thì mở hộp chọn thiết bị (`picking`).
+  const addNode = (t: NodeType, asset: Asset, position: { x: number; y: number }, from?: { nodeId: string; type: 'source' | 'target' }) => {
     if (readOnly) return
     remember()
-    const n = makeNode(t, live.current.nodes.map((x) => x.id), position)
+    const n = makeNode(t, asset, position)
     const baseNodes = [...live.current.nodes.map((x) => ({ ...x, selected: false })), { ...n, selected: true }]
     const baseEdges = live.current.edges.map((edge) => ({ ...edge, selected: false }))
     if (!from) {
@@ -206,7 +211,7 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
   }
   const pickQuick = (t: NodeType) => {
     if (!quick) return
-    addNode(t, centred(screenToFlowPosition(quick.client)), quick.from)
+    setPicking({ t, position: centred(screenToFlowPosition(quick.client)), from: quick.from })
     setQuick(null)
   }
   // Loại nào hợp lệ để đặt vào chỗ vừa thả dây: đích không thể là nguồn hay đội xe; nguồn không thể là đích hay đội xe.
@@ -218,7 +223,7 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
     ev.preventDefault()
     const t = types[ev.dataTransfer.getData(DRAG_TYPE)]
     if (!t || readOnly) return
-    addNode(t, centred(screenToFlowPosition({ x: ev.clientX, y: ev.clientY })))
+    setPicking({ t, position: centred(screenToFlowPosition({ x: ev.clientX, y: ev.clientY })) })
   }
 
   const deleteSelected = () => {
@@ -485,7 +490,7 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
       {!focus && paletteOpen && (
         <NodePalette
           types={typeList} canEdit={!readOnly} published={published} onClose={() => setPaletteOpen(false)}
-          onAdd={(t) => addNode(t, viewCentre())}
+          onAdd={(t) => setPicking({ t, position: viewCentre() })}
         />
       )}
 
@@ -494,6 +499,14 @@ function Editor({ graph, typeList, materials }: { graph: Graph; typeList: NodeTy
           node={selNode} edge={selEdge} selNodes={selNodes} selEdgeCount={selEdges.length}
           nodes={nodes} types={types} materials={materials} canEdit={!readOnly}
           onNodeData={setNodeData} onEdgeForm={setEdgeForm} onDelete={deleteSelected} onDuplicate={duplicate} onClose={deselectAll}
+        />
+      )}
+
+      {picking && (
+        <AssetPicker
+          type={picking.t} used={nodes.map((n) => n.id)}
+          onPick={(asset: Asset) => { addNode(picking.t, asset, picking.position, picking.from); setPicking(null) }}
+          onClose={() => setPicking(null)}
         />
       )}
 

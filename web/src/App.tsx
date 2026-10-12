@@ -7,6 +7,8 @@ import { Shell } from './components/shell/Shell'
 import { EmptyState, PageBody } from './components/ui'
 import { shouldRetry } from './lib/retry'
 import AgvMapPage from './pages/AgvMapPage'
+import AssetsPage from './pages/AssetsPage'
+import AssetSignalsPage from './pages/AssetSignalsPage'
 import ComparePage from './pages/ComparePage'
 import AlertsPage from './pages/AlertsPage'
 import SourcesPage from './pages/SourcesPage'
@@ -87,6 +89,8 @@ export default function App() {
               <Route index element={<GaugeStationPage />} />
               <Route path="history" element={<GaugeHistoryPage />} />
             </Route>
+            <Route path="/assets" element={<AssetsPage />} />
+            <Route path="/assets/signals" element={<AssetSignalsPage />} />
             <Route path="/models" element={<ModelsPage />} />
             <Route path="/models/:key/versions" element={<VersionsPage />} />
             <Route path="/models/:key/sources" element={<SourcesPage />} />

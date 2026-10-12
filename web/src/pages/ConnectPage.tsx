@@ -176,6 +176,10 @@ export default function ConnectPage() {
       <FeedControl model={model} />
       <Notice>
         Chỉ ra <b>bản tin nào, trường nào</b> ứng với <b>tín hiệu nào</b> của node hay đường nối. Bấm một ô tín hiệu để ghép, hoặc dùng Gợi ý ghép tự động.
+        <div className="mt-1 text-faint">
+          Tín hiệu của một <b>node</b> là tín hiệu của chính thiết bị: ghép ở đây thì mọi mô hình có thiết bị đó đều dùng, và xem lại được ở{' '}
+          <Link to="/assets/signals" className="text-accent underline">Tín hiệu thiết bị</Link>. Tín hiệu của <b>đường nối</b> chỉ thuộc mô hình này.
+        </div>
       </Notice>
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
         <Tag>Đã có {boundSignals}/{totalSignals} tín hiệu</Tag>
