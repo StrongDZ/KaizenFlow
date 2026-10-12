@@ -32,5 +32,17 @@ services:
     environment:
       KF_API_URL: http://api:8080
     ports: ["8090:8090"]
+  # Cầu nối số đọc đồng hồ của gauge-twin vào live twin: đọc query-api của gauge-twin rồi POST
+  # /api/ingest như một nguồn dữ liệu. gauge-twin chạy stack riêng (thường ngoài compose này) nên
+  # địa chỉ mặc định trỏ ra host; đổi bằng GAUGE_QUERY_URL. gauge-twin không phải sửa gì.
+  gauge-bridge:
+    build: {context: ., dockerfile: services/gauge-bridge/Dockerfile}
+    environment:
+      KF_API_URL: http://api:8080
+      GAUGE_QUERY_URL: ${GAUGE_QUERY_URL:-http://host.docker.internal:8097}
+      GAUGE_BRIDGE_INTERVAL_S: "5"
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    depends_on:
+      api: {condition: service_started}
 volumes:
   dbdata: {}
