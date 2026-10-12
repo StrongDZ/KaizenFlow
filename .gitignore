@@ -28,6 +28,9 @@ build/
 docs/
 /*.pdf
 /*.ipynb
+# Hồ sơ nộp bài cuộc thi (form đăng ký, form ý tưởng, báo cáo LaTeX): giữ ở máy từng người
+/FORM_*.md
+/report/
 
 # Dữ liệu lớn: không commit
 /*.csv

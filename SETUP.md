@@ -66,10 +66,10 @@ API tự chạy migration khi khởi động và tự nạp 14 loại node mẫu
 
 ### Thử ngay phần Live twin
 
-1. Mở mô hình `denso-plant`; đầu trang **Phiên bản** có danh sách Thiết lập cho biết bước nào đã xong. Vào tab **Nguồn dữ liệu**.
-2. Bấm **Bắt đầu phát dữ liệu giả lập** (chọn ×60 cho nhanh) ở tab **Nguồn dữ liệu** để thấy các thiết bị hiện ra, rồi sang **Kết nối dữ liệu**: **Gợi ý ghép tự động** và **Áp dụng**.
-3. Sang tab **Trực tiếp**: workflow chạy theo dữ liệu thật; bấm **Dự báo từ bây giờ**; thử bơm sự cố.
-4. Tab **Bản đồ AGV**: xe chạy, bấm một làn để chặn. Thử khung toạ độ: Đặt lại feed, tick **Hãng xe báo toạ độ riêng** rồi bắt đầu; xe sẽ "ngoài đường" cho tới khi bạn mở thẻ **Khung toạ độ xe** → Chỉnh khung → chọn một xe đang đứng yên và điểm nó đang đỗ (làm 2–3 cặp) → Tính khung → Lưu khung. Muốn quay lại feed thường thì Lưu khung "Về không đổi". Bản đồ cũ (đơn vị vẽ × `unit_m`) tự đổi sang mét khi đọc.
+1. Mở mô hình `denso-plant`; đầu trang **Phiên bản** có danh sách Thiết lập cho biết bước nào đã xong. Vào tab **Trực tiếp**.
+2. Bấm **Bắt đầu phát dữ liệu giả lập** (chọn ×60 cho nhanh) trên thanh feed. Các thiết bị hiện ra ở **Thiết bị → Nguồn dữ liệu** (danh mục nguồn là toàn cục, không nằm trong mô hình). Rồi về mô hình, sang **Kết nối dữ liệu**: **Gợi ý ghép tự động** và **Áp dụng**.
+3. Quay lại tab **Trực tiếp**: workflow chạy theo dữ liệu thật; bấm **Dự báo từ bây giờ**; thử nút **Bơm sự cố** trên thanh feed (thao tác demo lên feed giả lập, panel mở bên trái).
+4. Tab **Bản đồ AGV**: xe chạy, bấm một làn rồi chọn **Chặn đường này 30 phút (demo)**. Thử khung toạ độ: Đặt lại feed, tick **Hãng xe báo toạ độ riêng** rồi bắt đầu; xe sẽ "ngoài đường" cho tới khi bạn mở thẻ **Khung toạ độ xe** → Chỉnh khung → chọn một xe đang đứng yên và điểm nó đang đỗ (làm 2–3 cặp) → Tính khung → Lưu khung. Muốn quay lại feed thường thì Lưu khung "Về không đổi". Bản đồ cũ (đơn vị vẽ × `unit_m`) tự đổi sang mét khi đọc.
 
 Kịch bản demo đầy đủ nằm trong `README.md`.
 

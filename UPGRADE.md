@@ -5,6 +5,76 @@ vỡ), ghi một mục ở đây. Mục mới nhất lên đầu.
 
 ---
 
+## 12/10/2026 (tối) — Nguồn dữ liệu sang mục Thiết bị, Bơm sự cố ra thanh feed
+
+Commit: `58761fe`, `4e2726c`.
+
+Tóm tắt một câu: danh mục nguồn đã toàn cục từ đợt trước nên trang quản lý nguồn rời khỏi mô hình,
+sang **Thiết bị → Nguồn dữ liệu**; còn **Bơm sự cố** là thao tác demo lên feed giả lập nên rời
+Bảng điều khiển vận hành, ra nằm trên thanh feed.
+
+### 1. Lấy code, build lại API
+
+```bash
+cd ~/Code/KaizenFlow
+git fetch kaizenflow
+git pull --ff-only kaizenflow main
+docker compose -p kf-main -f docker-compose.yml -f <override-của-bạn> up -d --build api
+```
+
+Không có migration mới, **không cần** xoá DB hay seed lại. Web không có dependency mới.
+
+### 2. Đổi chỗ trên giao diện
+
+- **Nguồn dữ liệu**: mục Thiết bị có ba trang, theo thứ tự làm việc: Danh mục thiết bị → **Nguồn dữ
+  liệu** (`/assets/sources`) → Tín hiệu thiết bị. Panel của mô hình không còn trang này; địa chỉ cũ
+  `/models/{key}/sources` tự chuyển sang trang mới. Trang Kết nối dữ liệu vẫn có danh sách nguồn đã
+  lọc theo mô hình để ghép đường nối.
+- **Bơm sự cố**: nút hổ phách trên thanh feed ở màn Trực tiếp (chỉ hiện khi feed đã chạy), mở panel
+  riêng bên trái. Tab "Bơm sự cố" trong Bảng điều khiển vận hành đã bỏ (còn 5 tab).
+- **Bản đồ AGV**: thao tác chặn làn đổi tên thành "Chặn đường này 30 phút (demo)".
+- **Bắt đầu phát dữ liệu giả lập** giờ bấm trên thanh feed ở Trực tiếp (hoặc Kết nối dữ liệu, Điều
+  khiển kho, Bản đồ AGV), không còn ở trang nguồn.
+
+### 3. API đổi — làm vỡ script cũ
+
+| Cũ (giờ trả 405) | Mới |
+|---|---|
+| `POST /api/models/{key}/sources` | `POST /api/sources` |
+| `DELETE /api/models/{key}/sources?source=…` | `DELETE /api/sources?source=…` |
+| `POST /api/models/{key}/sources/test` | `POST /api/sources/test` |
+
+- `GET /api/models/{key}/sources` **giữ nguyên** (bộ lọc theo mô hình).
+- `GET /api/sources` vẫn là mảng như cũ, có thêm trường: `live`, `age_ms`, `per_min`, `bindings`.
+  Mỗi phần tử `bindings` có `model`; không có `model` nghĩa là ghép nối của thiết bị, dùng chung.
+- **Xoá nguồn** giờ đếm và xoá ghép nối dùng nguồn đó ở **mọi** mô hình. Trước đây chỉ dọn ghép nối
+  của mô hình đang mở, nên ghép nối đường nối của mô hình khác còn trỏ vào nguồn đã mất. Ghép nối
+  dùng ký tự thay thế (`+`, `#`) không bị xoá theo, vì nó còn nhận dữ liệu từ nguồn khác.
+- **Gửi thử** chạy qua ghép nối thiết bị (một lần) và ghép nối đường nối của từng mô hình; kết quả
+  có `model` như trên.
+
+### 4. Kiểm nhanh là xong
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:8080/api/models/denso-plant/sources   # 405
+curl -s localhost:8080/api/sources | python3 -c "import json,sys;d=json.load(sys.stdin);print(len(d),'nguồn,',sum(r['live'] for r in d),'đang phát')"
+```
+
+Rồi mở `http://localhost:5173/assets/sources`.
+
+### 5. Test
+
+- Go: `httpapi`, `store`, `live`, `livesvc` pass, gồm test mới cho danh mục toàn cục và cho xoá nguồn
+  dọn ghép nối ở mô hình khác.
+- Web: typecheck sạch; `npx vitest run` → 784 pass, 6 fail ở `WarehousePopover.test.tsx` (đỏ từ trước).
+
+### 6. Chưa kiểm bằng tay
+
+Chưa bấm thử trong trình duyệt: trang `/assets/sources` (bảng, chi tiết, gửi thử, xoá) và nút/panel
+Bơm sự cố trên màn Trực tiếp. API đã kiểm bằng `curl` trên hệ chạy thật. Ai mở trước thì xác nhận giúp.
+
+---
+
 ## 12/10/2026 — Danh mục Thiết bị, nguồn dữ liệu toàn cục, cầu nối đồng hồ
 
 Commit: `84bd7c0` → `b79f396`.
