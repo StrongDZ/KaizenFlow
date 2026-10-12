@@ -227,21 +227,20 @@ export type Vehicle = {
   speed?: number; battery?: number; dest?: string; route?: string[]
 }
 export type SourceSnap = { source: string; desc: string; last_ts: string; age_ms: number; count: number; last: unknown; bound: boolean }
-/** Một nguồn dữ liệu đã đăng ký của mô hình (GET /api/models/{key}/sources). */
-export type SourceBindingRef = { subject: string; signal: string }
+/** Một ghép nối đang lấy dữ liệu từ nguồn. Không có `model`: ghép nối của thiết bị, dùng chung cho mọi mô hình có thiết bị đó. */
+export type SourceBindingRef = { subject: string; signal: string; model?: string }
+/** Một nguồn dữ liệu, lọc theo một mô hình (GET /api/models/{key}/sources). */
 export type DataSourceRow = {
   source: string; desc: string; origin: 'feed' | 'manual'; first_seen: string; last_seen: string; count: number
   sample: unknown; live: boolean; age_ms: number; per_min: number; bindings: SourceBindingRef[]
 }
 
 /** Một nguồn trong danh mục toàn cục (một thiết bị/topic ngoài đời, không thuộc mô hình nào). */
-export type SourceRow = {
-  source: string; desc: string; origin: 'feed' | 'manual'; first_seen: string; last_seen: string; count: number
-  sample: unknown
+export type SourceRow = DataSourceRow & {
   /** Các mô hình đang có ghép nối dùng nguồn này. */
   models: string[]
 }
-export type SourceTestResult = { matched: number; readings: { subject: string; signal: string; value?: number; text?: string }[]; errors: string[] }
+export type SourceTestResult = { matched: number; readings: { model?: string; subject: string; signal: string; value?: number; text?: string }[]; errors: string[] }
 export type BindingError = { message: string; count: number; last: string }
 export type LiveSnapshot = {
   model: string

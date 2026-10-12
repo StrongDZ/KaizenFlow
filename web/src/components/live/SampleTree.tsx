@@ -2,7 +2,7 @@ import { leafPaths } from '../../lib/livePath'
 
 /**
  * Các trường của một bản tin mẫu, mỗi dòng là đường dẫn cùng giá trị hiện có. Có `onPick` thì mỗi dòng có nút để chọn trường đó.
- * Dùng ở trang Nguồn dữ liệu (xem bản tin) và hộp Ghép nối (chọn trường).
+ * Dùng ở trang Nguồn dữ liệu của mục Thiết bị (xem bản tin) và hộp Ghép nối (chọn trường).
  */
 export function SampleTree({ sample, onPick, pickLabel = 'Ghép', selected }: {
   sample: unknown; onPick?: (path: string) => void; pickLabel?: string; selected?: string

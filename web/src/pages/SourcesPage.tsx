@@ -1,12 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Database, Cpu, Warehouse, Truck, Factory, Gauge, Radio, PencilLine, Radar, type LucideIcon } from 'lucide-react'
-import { useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Plus, Database, Cpu, Warehouse, Truck, Factory, Gauge, Radio, PencilLine, Radar, Trash2, type LucideIcon } from 'lucide-react'
+import { useMemo, useState, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { api } from '../api/client'
-import type { DataSourceRow, SourceTestResult } from '../api/types'
-import { Trash2 } from 'lucide-react'
+import type { SourceBindingRef, SourceRow, SourceTestResult } from '../api/types'
 import { DeleteDialog } from '../components/DeleteAction'
-import { FeedControl } from '../components/live/FeedControl'
 import { SampleTree } from '../components/live/SampleTree'
 import { SourceDialog } from '../components/live/SourceDialog'
 import { PeekHost, SidePeek, usePeekParam } from '../components/SidePeek'
@@ -18,7 +16,10 @@ import { filterRows } from '../lib/table'
 
 const SOURCE_ICON: Record<SourceKind, LucideIcon> = { machine: Cpu, stock: Warehouse, fleet: Truck, line: Factory, sensor: Gauge, other: Radio }
 
-const COLUMNS: Column<DataSourceRow>[] = [
+/** Mô hình đang dùng nguồn: hai cái đầu, còn lại gộp thành "+n". */
+const modelsText = (ms: string[]) => (ms.length <= 2 ? ms.join(', ') : `${ms.slice(0, 2).join(', ')} +${ms.length - 2}`)
+
+const COLUMNS: Column<SourceRow>[] = [
   {
     key: 'live', header: 'Trạng thái', sort: (r) => (r.live ? 0 : 1),
     cell: (r) => (
@@ -40,43 +41,48 @@ const COLUMNS: Column<DataSourceRow>[] = [
     key: 'bound', header: 'Đã ghép', sort: (r) => r.bindings.length,
     cell: (r) => (r.bindings.length > 0 ? `${r.bindings.length} tín hiệu` : <span className="text-lock-text">Chưa ghép</span>),
   },
+  {
+    key: 'models', header: 'Dùng ở', sort: (r) => r.models.length,
+    cell: (r) => (r.models.length > 0 ? <span className="text-text-2" title={r.models.join(', ')}>{modelsText(r.models)}</span> : <span className="text-faint">chưa mô hình nào</span>),
+  },
   { key: 'origin', header: 'Loại', cell: (r) => <Tag icon={r.origin === 'manual' ? PencilLine : Radar}>{r.origin === 'manual' ? 'Khai báo tay' : 'Tự ghi nhận'}</Tag>, sort: (r) => r.origin },
 ]
 
+/**
+ * Nguồn dữ liệu (mục Thiết bị): một nguồn là một thiết bị hay topic ngoài đời, dùng chung cho mọi mô hình.
+ * Xoá hay khai báo ở đây là cho cả app; trang Kết nối dữ liệu của mô hình chỉ lọc ra những nguồn mô hình đó cần.
+ */
 export default function SourcesPage() {
-  const model = decodeURIComponent(useParams().key ?? '')
-  const qc = useQueryClient()
-  const sources = useQuery({ queryKey: ['sources', model], queryFn: () => api.sources(model), refetchInterval: 4000 })
-  const subjects = useQuery({ queryKey: ['live-subjects', model], queryFn: () => api.liveSubjects(model), retry: false })
+  const sources = useQuery({ queryKey: ['all-sources'], queryFn: api.allSources, refetchInterval: 4000 })
+  const assets = useQuery({ queryKey: ['assets'], queryFn: api.assets })
   const [q, setQ] = useState('')
   const [selected, setSelected] = usePeekParam()
   const [adding, setAdding] = useState(false)
-  const names = useMemo(() => Object.fromEntries((subjects.data?.subjects ?? []).map((s) => [s.subject, s.name])), [subjects.data])
+  const names = useMemo(() => Object.fromEntries((assets.data ?? []).map((a) => [a.key, a.name || a.key])), [assets.data])
   const list = useMemo(() => sources.data ?? [], [sources.data])
-  const rows = useMemo(() => filterRows(list, q, (r) => [r.source, r.desc]), [list, q])
+  const rows = useMemo(() => filterRows(list, q, (r) => [r.source, r.desc, ...r.models]), [list, q])
   const chosen = list.find((r) => r.source === selected)
   const sum = summarizeSources(list)
   if (sources.isLoading) return <Loading />
   return (
     <PeekHost
       onClose={() => setSelected(null)}
-      peek={chosen ? <SourceDetail key={chosen.source} model={model} row={chosen} names={names} onGone={() => setSelected(null)} onClose={() => setSelected(null)} /> : null}
+      peek={chosen ? <SourceDetail key={chosen.source} row={chosen} names={names} onGone={() => setSelected(null)} onClose={() => setSelected(null)} /> : null}
     >
     <PageBody wide>
       <PageHeader icon={Database}
         title="Nguồn dữ liệu"
-        subtitle={model}
+        subtitle={`${sum.total} nguồn, ${sum.live} đang phát`}
         actions={
           <>
-            <SearchBox value={q} onChange={setQ} placeholder="Tìm nguồn" />
+            <SearchBox value={q} onChange={setQ} placeholder="Tìm nguồn hoặc mô hình" />
             <button className={btnPrimary} onClick={() => setAdding(true)}><Plus size={12} /> Thêm nguồn</button>
           </>
         }
       />
-      <FeedControl model={model} />
       <Notice>
-        Mỗi thiết bị hay topic từng gửi bản tin là một nguồn, kể cả khi đã tắt. Để đưa dữ liệu vào sơ đồ, ghép nguồn ở{' '}
-        <Link className="font-medium underline decoration-dotted" to={`/models/${encodeURIComponent(model)}/connect`}>Kết nối dữ liệu</Link>.
+        Mỗi thiết bị hay topic từng gửi bản tin là một nguồn, kể cả khi đã tắt, và dùng chung cho mọi mô hình. Bước kế tiếp: ghép tín hiệu của thiết bị với nguồn ở{' '}
+        <Link className="font-medium underline decoration-dotted" to="/assets/signals">Tín hiệu thiết bị</Link>; tín hiệu của đường nối ghép ở Kết nối dữ liệu của từng mô hình.
       </Notice>
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
         <Tag>{sum.total} nguồn</Tag>
@@ -90,15 +96,17 @@ export default function SourcesPage() {
         empty={
           <div className="rounded-xl border border-line">
             <EmptyState title={q ? 'Không có nguồn khớp' : 'Chưa có nguồn nào'}>
-              {q ? 'Thử từ khoá khác.' : 'Bật feed ở thanh phía trên để các thiết bị giả lập bắt đầu gửi bản tin, hoặc bấm "Thêm nguồn" để khai báo một nguồn bằng tay.'}
+              {q
+                ? 'Thử từ khoá khác.'
+                : 'Nguồn tự hiện khi thiết bị gửi bản tin: bật feed giả lập ở màn Trực tiếp của một mô hình, hoặc chạy cầu nối đồng hồ. Thiết bị chưa phát thì bấm "Thêm nguồn" để khai báo bằng tay.'}
             </EmptyState>
           </div>
         }
       />
       {adding && (
         <SourceDialog
-          model={model} existing={list.map((r) => r.source)} onClose={() => setAdding(false)}
-          onCreated={(s) => { setAdding(false); setSelected(s); void qc.invalidateQueries({ queryKey: ['sources', model] }) }}
+          existing={list.map((r) => r.source)} onClose={() => setAdding(false)}
+          onCreated={(s) => { setAdding(false); setSelected(s) }}
         />
       )}
     </PageBody>
@@ -106,21 +114,30 @@ export default function SourcesPage() {
   )
 }
 
-function SourceDetail({ model, row, names, onGone, onClose }: { model: string; row: DataSourceRow; names: Record<string, string>; onGone: () => void; onClose: () => void }) {
+/** Một ghép nối dùng nguồn: tên thiết bị (hoặc mã đường nối) · tín hiệu, kèm mô hình nếu ghép nối thuộc riêng một mô hình. */
+function RefLine({ name, signal, model, children }: { name: string; signal: string; model?: string; children?: ReactNode }) {
+  return (
+    <span className="flex flex-wrap items-center gap-1.5 text-text-2">
+      <b className="font-medium text-text">{name}</b> · {signal}{children}
+      {model ? <Tag>{model}</Tag> : <Tag tone="accent">dùng chung</Tag>}
+    </span>
+  )
+}
+
+function SourceDetail({ row, names, onGone, onClose }: { row: SourceRow; names: Record<string, string>; onGone: () => void; onClose: () => void }) {
   const qc = useQueryClient()
   const [payload, setPayload] = useState(() => (row.sample === null || row.sample === undefined ? '{\n  \n}' : JSON.stringify(row.sample, null, 2)))
   const [result, setResult] = useState<SourceTestResult | null>(null)
   const [deleting, setDeleting] = useState(false)
   const parsed = parseSample(payload)
   const test = useMutation({
-    mutationFn: () => api.testSource(model, { source: row.source, payload: parsed.ok ? parsed.value : undefined }),
+    mutationFn: () => api.testSource({ source: row.source, payload: parsed.ok ? parsed.value : undefined }),
     onSuccess: setResult,
   })
   const refresh = () => {
-    void qc.invalidateQueries({ queryKey: ['sources', model] })
-    void qc.invalidateQueries({ queryKey: ['bindings', model] })
-    void qc.invalidateQueries({ queryKey: ['live', model] })
+    for (const key of ['all-sources', 'sources', 'bindings', 'asset-bindings', 'live']) void qc.invalidateQueries({ queryKey: [key] })
   }
+  const nameOf = (r: Pick<SourceBindingRef, 'subject'>) => names[r.subject] ?? r.subject
   return (
     <SidePeek
       title="Chi tiết nguồn dữ liệu" heading={<span className="font-mono">{row.source}</span>} onClose={onClose}
@@ -129,7 +146,7 @@ function SourceDetail({ model, row, names, onGone, onClose }: { model: string; r
       menu={[{ key: 'delete', label: 'Xoá nguồn', icon: Trash2, danger: true, onSelect: () => setDeleting(true) }]}
     >
       <DeleteDialog
-        open={deleting} onClose={() => setDeleting(false)} what={`nguồn ${row.source}`} run={(cascade) => api.deleteSource(model, row.source, cascade)}
+        open={deleting} onClose={() => setDeleting(false)} what={`nguồn ${row.source}`} run={(cascade) => api.deleteSource(row.source, cascade)}
         onDone={() => { refresh(); onGone() }}
       />
       <div className="space-y-4 text-xs">
@@ -138,12 +155,12 @@ function SourceDetail({ model, row, names, onGone, onClose }: { model: string; r
           {row.bindings.length === 0 ? (
             <p className="text-muted">
               Chưa có tín hiệu nào lấy dữ liệu từ nguồn này.{' '}
-              <Link className="text-accent underline decoration-dotted" to={`/models/${encodeURIComponent(model)}/connect`}>Sang Kết nối dữ liệu để ghép</Link>.
+              <Link className="text-accent underline decoration-dotted" to="/assets/signals">Ghép ở Tín hiệu thiết bị</Link>.
             </p>
           ) : (
-            <ul className="space-y-0.5">
+            <ul className="space-y-1">
               {row.bindings.map((b) => (
-                <li key={`${b.subject}|${b.signal}`} className="text-text-2"><b className="font-medium text-text">{names[b.subject] ?? b.subject}</b> · {b.signal}</li>
+                <li key={`${b.model ?? ''}|${b.subject}|${b.signal}`}><RefLine name={nameOf(b)} signal={b.signal} model={b.model} /></li>
               ))}
             </ul>
           )}
@@ -154,7 +171,7 @@ function SourceDetail({ model, row, names, onGone, onClose }: { model: string; r
         </section>
         <section className="space-y-1.5">
           <h3 className="font-semibold text-text">Gửi thử</h3>
-          <p className="text-muted">Chạy một bản tin qua các ghép nối của mô hình để xem tín hiệu nào nhận giá trị gì. Không ghi vào dữ liệu live.</p>
+          <p className="text-muted">Chạy một bản tin qua mọi ghép nối dùng nguồn này, của thiết bị lẫn đường nối ở mọi mô hình, để xem tín hiệu nào nhận giá trị gì. Không ghi vào dữ liệu live.</p>
           <textarea className="w-full rounded-lg border border-line-2 bg-panel-2 p-2 font-mono text-[11.5px] text-text" rows={6} spellCheck={false} aria-label="Bản tin gửi thử"
             value={payload} onChange={(e) => { setPayload(e.target.value); setResult(null) }} />
           {!parsed.ok && <p role="alert" className="text-bad-text">{parsed.error}</p>}
@@ -166,7 +183,11 @@ function SourceDetail({ model, row, names, onGone, onClose }: { model: string; r
                 {result.matched === 0 ? 'Chưa có ghép nối nào dùng nguồn này.' : `${result.matched} ghép nối khớp nguồn này, ${result.readings.length} cho ra giá trị.`}
               </p>
               {result.readings.map((r) => (
-                <p key={`${r.subject}|${r.signal}`} className="text-text"><b className="font-medium">{names[r.subject] ?? r.subject}</b> · {r.signal} = <b className="tabular-nums">{r.text ?? (r.value === undefined ? '—' : String(r.value).replace('.', ','))}</b></p>
+                <p key={`${r.model ?? ''}|${r.subject}|${r.signal}`}>
+                  <RefLine name={nameOf(r)} signal={r.signal} model={r.model}>
+                    {' '}= <b className="tabular-nums text-text">{r.text ?? (r.value === undefined ? '—' : String(r.value).replace('.', ','))}</b>
+                  </RefLine>
+                </p>
               ))}
               {result.errors.map((e) => <p key={e} className="text-bad-text">{e}</p>)}
             </div>

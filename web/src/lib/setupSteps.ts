@@ -36,7 +36,7 @@ export function setupSteps(i: SetupInput): SetupStep[] {
       detail: published ? `Đã có phiên bản Publish (v${i.versions.indexOf(published) + 1}).` : 'Chưa Publish. Chạy mô phỏng và màn Trực tiếp cần một phiên bản đã Publish.',
     },
     {
-      key: 'sources', title: 'Nguồn dữ liệu', done: (i.sources ?? 0) > 0, to: `${base}/sources`, cta: 'Mở Nguồn dữ liệu',
+      key: 'sources', title: 'Nguồn dữ liệu', done: (i.sources ?? 0) > 0, to: '/assets/sources', cta: 'Mở Nguồn dữ liệu',
       detail: i.sources === undefined ? unknown : i.sources > 0 ? `${i.sources} nguồn đã đăng ký.` : 'Chưa có nguồn nào. Bật feed ở màn Trực tiếp hoặc thêm nguồn bằng tay.',
     },
     {

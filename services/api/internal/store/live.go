@@ -50,6 +50,17 @@ func (s *Store) ListAssetBindings(ctx context.Context) ([]live.Binding, error) {
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (live.Binding, error) { return scanBinding(r) })
 }
 
+// ListStoredBindings trả mọi hàng ghép nối đúng như lưu, kể cả đang tắt: ghép nối thiết bị giữ model_key
+// rỗng, không trải theo mô hình. Dùng khi cần thao tác trên chính các hàng, như xoá một nguồn ở mọi nơi.
+func (s *Store) ListStoredBindings(ctx context.Context) ([]live.Binding, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT id, model_key, subject, signal, source, json_path, transform, enabled, mode, derive, model_key = ''
+		FROM data_binding ORDER BY model_key, subject, signal`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (live.Binding, error) { return scanBinding(r) })
+}
+
 // AllBindings trả mapping đang bật của mọi mô hình (đường ingest dùng).
 func (s *Store) AllBindings(ctx context.Context) ([]live.Binding, error) {
 	rows, err := s.Pool.Query(ctx, `WITH nm AS (`+nodeModels+`)
@@ -536,9 +547,8 @@ func (s *Store) ListSources(ctx context.Context, model string) ([]DataSource, er
 }
 
 // DeleteSource xoá một nguồn khỏi danh mục (ErrNotFound nếu không có). Ghép nối đang dùng nguồn đó
-// do nơi gọi xử lý trước. Nguồn là toàn cục nên xoá là xoá cho mọi mô hình; `model` chỉ còn để nơi
-// gọi kiểm quyền theo đường dẫn.
-func (s *Store) DeleteSource(ctx context.Context, model, source string) error {
+// do nơi gọi xử lý trước. Nguồn là toàn cục nên xoá là xoá cho mọi mô hình.
+func (s *Store) DeleteSource(ctx context.Context, source string) error {
 	tag, err := s.Pool.Exec(ctx, `DELETE FROM data_source WHERE source = $1`, source)
 	if err != nil {
 		return err

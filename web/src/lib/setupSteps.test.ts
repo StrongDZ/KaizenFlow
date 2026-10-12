@@ -58,7 +58,10 @@ describe('setupSteps', () => {
     expect(l.detail).toContain('tạm dừng')
   })
   it('liên kết mã hoá khoá mô hình', () => {
-    const s = setupSteps({ ...full, model: 'a b' }).find((x) => x.key === 'sources')!
-    expect(s.to).toBe('/models/a%20b/sources')
+    const s = setupSteps({ ...full, model: 'a b' }).find((x) => x.key === 'bindings')!
+    expect(s.to).toBe('/models/a%20b/connect')
+  })
+  it('nguồn dữ liệu là toàn cục: bước Nguồn dữ liệu mở trang của mục Thiết bị', () => {
+    expect(setupSteps(full).find((x) => x.key === 'sources')!.to).toBe('/assets/sources')
   })
 })

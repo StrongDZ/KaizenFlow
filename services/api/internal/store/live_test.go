@@ -328,10 +328,10 @@ func TestDataSourceManualOverridesOriginAndDeleteReportsNotFound(t *testing.T) {
 	if len(list) != 1 || list[0].Origin != "manual" || list[0].Desc != "Khai báo tay" {
 		t.Fatalf("list = %+v", list)
 	}
-	if err := st.DeleteSource(ctx, "m", "a/b"); err != nil {
+	if err := st.DeleteSource(ctx, "a/b"); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.DeleteSource(ctx, "m", "a/b"); !errors.Is(err, store.ErrNotFound) {
+	if err := st.DeleteSource(ctx, "a/b"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("xoá lần hai = %v, muốn ErrNotFound", err)
 	}
 }

@@ -424,6 +424,45 @@ func (s *State) Snapshot(model string, wall time.Time, bindings []Binding) Snaps
 	return out
 }
 
+// AllSources gộp nguồn đang ghi nhận của mọi mô hình theo tên: một topic ngoài đời là một dòng, dù nhiều
+// feed (mỗi feed một mô hình) cùng phát tên đó. Bản tin mới nhất thắng; số bản tin và tốc độ cộng lại.
+// Bound không điền: nơi gọi tự đối chiếu với ghép nối.
+func (s *State) AllSources(wall time.Time) []SourceSnap {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	by := map[string]*SourceSnap{}
+	newest := map[string]time.Time{}
+	for _, so := range s.sources {
+		perMin := 0.0
+		if so.gapS > 0 {
+			perMin = 60 / so.gapS
+		}
+		cur := by[so.source]
+		if cur == nil {
+			cur = &SourceSnap{Source: so.source}
+			by[so.source] = cur
+		}
+		cur.Count += so.count
+		cur.PerMin += perMin
+		if so.seenWall.After(newest[so.source]) {
+			newest[so.source] = so.seenWall
+			cur.LastTS, cur.Last = so.lastTS, so.last
+			cur.AgeMS = wall.Sub(so.seenWall).Milliseconds()
+			if so.desc != "" {
+				cur.Desc = so.desc
+			}
+		} else if cur.Desc == "" {
+			cur.Desc = so.desc
+		}
+	}
+	out := make([]SourceSnap, 0, len(by))
+	for _, v := range by {
+		out = append(out, *v)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Source < out[j].Source })
+	return out
+}
+
 // Levels trả tồn kho hiện tại của một mô hình: node → vật tư → mức (tín hiệu `level:<vật tư>`).
 func (s *State) Levels(model string) map[string]map[string]float64 {
 	s.mu.RLock()

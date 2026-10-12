@@ -54,6 +54,11 @@ export const api = {
   nodeTypes: () => req<NodeType[]>('/api/node-types'),
   /** Danh mục nguồn toàn cục: một nguồn là một thiết bị/topic ngoài đời, không thuộc mô hình nào. */
   allSources: () => req<SourceRow[]>('/api/sources'),
+  addSource: (body: { source: string; desc?: string; sample?: unknown }) => post<{ source: string }>('/api/sources', body),
+  /** Xoá cho mọi mô hình; `cascade` xoá luôn các ghép nối đang dùng nguồn này ở mọi nơi. */
+  deleteSource: (source: string, cascade = false) => del(`/api/sources?source=${encodeURIComponent(source)}`, cascade),
+  /** Chạy thử một bản tin qua mọi ghép nối dùng nguồn đó (thiết bị và đường nối của mọi mô hình); không ghi vào dữ liệu live. */
+  testSource: (body: { source: string; payload: unknown }) => post<SourceTestResult>('/api/sources/test', body),
   // Danh mục Thiết bị: ngang hàng với Mô hình. Sơ đồ chỉ đặt thiết bị đã có ở đây.
   assets: () => req<Asset[]>('/api/assets'),
   asset: (key: string) => req<Asset>(`/api/assets/${encodeURIComponent(key)}`),
@@ -134,12 +139,6 @@ export const api = {
   liveCheck: (key: string) => req<CoverageReport>(`/api/models/${encodeURIComponent(key)}/live/check`),
   edgePlan: (key: string) => req<EdgePlan>(`/api/models/${encodeURIComponent(key)}/live/edge-plan`),
   sources: (key: string) => req<{ sources: DataSourceRow[] }>(`/api/models/${encodeURIComponent(key)}/sources`).then((r) => r.sources),
-  addSource: (key: string, body: { source: string; desc?: string; sample?: unknown }) =>
-    post<{ source: string }>(`/api/models/${encodeURIComponent(key)}/sources`, body),
-  deleteSource: (key: string, source: string, cascade = false) =>
-    del(`/api/models/${encodeURIComponent(key)}/sources?source=${encodeURIComponent(source)}`, cascade),
-  testSource: (key: string, body: { source: string; payload: unknown }) =>
-    post<SourceTestResult>(`/api/models/${encodeURIComponent(key)}/sources/test`, body),
   agvMap: (key: string) => req<AgvMap>(`/api/models/${encodeURIComponent(key)}/agv-map`),
   saveAgvMap: (key: string, map: AgvMap) => put<void>(`/api/models/${encodeURIComponent(key)}/agv-map`, map),
   /** Địa chỉ ảnh mặt bằng làm nền; `rev` (từ bản đồ) chỉ để trình duyệt không dùng ảnh cũ. */

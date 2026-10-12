@@ -28,7 +28,14 @@ describe('panel phụ của mục Thiết bị', () => {
   it('có danh mục thiết bị và tín hiệu thiết bị, không phụ thuộc mô hình nào', () => {
     const nav = subNavFor('/assets/signals', {})
     expect(nav?.title).toBe('Thiết bị')
-    expect(nav?.groups.flatMap((g) => g.tabs).map((t) => t.label)).toEqual(['Danh mục thiết bị', 'Tín hiệu thiết bị'])
+    expect(nav?.groups.flatMap((g) => g.tabs).map((t) => t.label)).toEqual(['Danh mục thiết bị', 'Nguồn dữ liệu', 'Tín hiệu thiết bị'])
+  })
+
+  it('Nguồn dữ liệu là toàn cục: nằm ở mục Thiết bị, không còn trong mô hình', () => {
+    expect(sectionOf('/assets/sources')).toBe('assets')
+    const tabs = subNavFor('/assets/sources', {})!.groups.flatMap((g) => g.tabs)
+    expect(tabs.filter((t) => isTabActive(t, '/assets/sources')).map((t) => t.label)).toEqual(['Nguồn dữ liệu'])
+    expect(tabsFor('/models/m/live', { modelKey: 'm', latestVersionId: 9 }).map((t) => t.label)).not.toContain('Nguồn dữ liệu')
   })
 })
 
@@ -37,37 +44,36 @@ describe('tabsFor', () => {
     const tabs = tabsFor('/versions/7', { modelKey: 'm', versionId: 7 })
     expect(tabs.map((t) => t.label)).toEqual([
       'Sơ đồ', 'Phiên bản', 'Scenario', 'Lần chạy',
-      'Trực tiếp', 'Điều khiển kho', 'Bản đồ AGV', 'Nguồn dữ liệu', 'Kết nối dữ liệu',
+      'Trực tiếp', 'Điều khiển kho', 'Bản đồ AGV', 'Kết nối dữ liệu',
       'Dashboard vận hành', 'Báo cáo kho',
     ])
     expect(tabs.map((t) => t.to)).toEqual([
       '/versions/7', '/models/m/versions', '/versions/7/scenarios', '/versions/7/runs',
-      '/models/m/live', '/models/m/stock', '/models/m/map', '/models/m/sources', '/models/m/connect',
+      '/models/m/live', '/models/m/stock', '/models/m/map', '/models/m/connect',
       '/models/m/operations', '/models/m/warehouse-report',
     ])
   })
 
   it('gom tab thành bốn nhóm liền nhau: Thiết kế, Mô phỏng, Vận hành thật, Báo cáo', () => {
     const tabs = tabsFor('/versions/7', { modelKey: 'm', versionId: 7 })
-    expect(groupTabs(tabs).map((g) => [g.title, g.tabs.length])).toEqual([['Thiết kế', 2], ['Mô phỏng', 2], ['Vận hành thật', 5], ['Báo cáo', 2]])
+    expect(groupTabs(tabs).map((g) => [g.title, g.tabs.length])).toEqual([['Thiết kế', 2], ['Mô phỏng', 2], ['Vận hành thật', 4], ['Báo cáo', 2]])
   })
 
   it('opens the latest version from the versions page', () => {
     const tabs = tabsFor('/models/m/versions', { modelKey: 'm', latestVersionId: 9 })
     expect(tabs[0].to).toBe('/versions/9')
     expect(tabsFor('/models/m/versions', { modelKey: 'm' }).map((t) => t.label)).toEqual([
-      'Phiên bản', 'Trực tiếp', 'Điều khiển kho', 'Bản đồ AGV', 'Nguồn dữ liệu', 'Kết nối dữ liệu', 'Dashboard vận hành', 'Báo cáo kho',
+      'Phiên bản', 'Trực tiếp', 'Điều khiển kho', 'Bản đồ AGV', 'Kết nối dữ liệu', 'Dashboard vận hành', 'Báo cáo kho',
     ])
   })
 
   it('shows the model workspace on the live pages, with the model taken from the URL context', () => {
-    for (const path of ['/models/m/live', '/models/m/stock', '/models/m/sources', '/models/m/connect', '/models/m/map', '/models/m/operations', '/models/m/warehouse-report']) {
+    for (const path of ['/models/m/live', '/models/m/stock', '/models/m/connect', '/models/m/map', '/models/m/operations', '/models/m/warehouse-report']) {
       const tabs = tabsFor(path, { modelKey: 'm', latestVersionId: 9 })
       expect(tabs.map((t) => t.label)).toContain('Trực tiếp')
       expect(tabs[0].to).toBe('/versions/9')
       expect(tabs.filter((t) => isTabActive(t, path)).map((t) => t.label)).toHaveLength(1)
     }
-    expect(isTabActive(tabsFor('/models/m/sources', { modelKey: 'm' }).find((t) => t.label === 'Nguồn dữ liệu')!, '/models/m/sources')).toBe(true)
     expect(isTabActive(tabsFor('/models/m/connect', { modelKey: 'm' }).find((t) => t.label === 'Kết nối dữ liệu')!, '/models/m/connect')).toBe(true)
   })
 
@@ -99,7 +105,6 @@ describe('isTabActive', () => {
 describe('crumbsFor', () => {
   it('names the live pages under the model', () => {
     expect(crumbsFor('/models/m/live', { modelKey: 'm' }).map((c) => c.label)).toEqual(['Mô hình', 'm', 'Trực tiếp'])
-    expect(crumbsFor('/models/m/sources', { modelKey: 'm' }).map((c) => c.label)).toEqual(['Mô hình', 'm', 'Nguồn dữ liệu'])
     expect(crumbsFor('/models/m/connect', { modelKey: 'm' }).map((c) => c.label)).toEqual(['Mô hình', 'm', 'Kết nối dữ liệu'])
     expect(crumbsFor('/models/m/map', { modelKey: 'm' }).map((c) => c.label)).toEqual(['Mô hình', 'm', 'Bản đồ AGV'])
     expect(crumbsFor('/models/m/stock', { modelKey: 'm' }).map((c) => c.label)).toEqual(['Mô hình', 'm', 'Điều khiển kho'])

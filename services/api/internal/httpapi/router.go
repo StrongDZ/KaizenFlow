@@ -57,6 +57,9 @@ func New(d Deps) http.Handler {
 	r.Get("/api/materials/{code}", h.getMaterial)
 	// Danh mục nguồn dữ liệu: một nguồn là một thiết bị/topic ngoài đời, không thuộc mô hình nào.
 	r.Get("/api/sources", h.listAllSources)
+	r.Post("/api/sources", h.addSource)
+	r.Delete("/api/sources", h.deleteSource)
+	r.Post("/api/sources/test", h.testSource)
 	// Danh mục Thiết bị: ngang hàng với Mô hình, không nằm trong mô hình nào.
 	r.Get("/api/assets", h.listAssets)
 	r.Post("/api/assets", h.putAsset)
@@ -105,10 +108,8 @@ func New(d Deps) http.Handler {
 	r.Get("/api/models/{key}/live/calibration", h.calibration)
 	r.Post("/api/models/{key}/live/calibration/apply", h.applyCalibration)
 	r.Post("/api/insights/{id}/ack", h.ackInsight)
+	// Nguồn của một mô hình chỉ là bộ lọc của danh mục toàn cục (/api/sources): thêm, xoá, gửi thử đều làm ở đó.
 	r.Get("/api/models/{key}/sources", h.listSources)
-	r.Post("/api/models/{key}/sources", h.addSource)
-	r.Delete("/api/models/{key}/sources", h.deleteSource)
-	r.Post("/api/models/{key}/sources/test", h.testSource)
 	r.Get("/api/models/{key}/bindings", h.listBindings)
 	r.Put("/api/models/{key}/bindings", h.putBindings)
 	r.Delete("/api/models/{key}/bindings", h.deleteAllBindings)

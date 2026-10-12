@@ -183,6 +183,25 @@ func TestSameSourceFromTwoModelsIsCountedPerModel(t *testing.T) {
 	}
 }
 
+// Danh mục nguồn toàn cục: một topic là một dòng dù hai feed cùng phát; bản tin mới nhất thắng, số bản tin cộng lại.
+func TestAllSourcesMergesTheSameTopicAcrossModels(t *testing.T) {
+	s := NewState()
+	wall := time.Now()
+	for i := 0; i < 3; i++ {
+		s.NoteSource("a", Message{Source: "plc/m/status", TS: t0, Desc: "Máy M", Payload: 1.0}, wall.Add(-time.Minute))
+	}
+	s.NoteSource("b", Message{Source: "plc/m/status", TS: t0.Add(time.Minute), Payload: 2.0}, wall)
+	s.NoteSource("", Message{Source: "mqtt/z", TS: t0, Payload: 9.0}, wall)
+	all := s.AllSources(wall)
+	if len(all) != 2 || all[0].Source != "mqtt/z" || all[1].Source != "plc/m/status" {
+		t.Fatalf("nguồn = %+v", all)
+	}
+	m := all[1]
+	if m.Count != 4 || m.Last != 2.0 || m.AgeMS != 0 || m.Desc != "Máy M" {
+		t.Errorf("gộp sai: %+v", m)
+	}
+}
+
 func TestStateClearForgetsModel(t *testing.T) {
 	s := NewState()
 	s.Apply("m", []Reading{num("A", "count_ok", t0, 1)}, time.Now())

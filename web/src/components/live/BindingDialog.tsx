@@ -193,12 +193,12 @@ export function BindingDialog({ open, model, subjects, sources, coverage, live: 
         label="Nguồn dữ liệu"
         hint={advanced
           ? <>Mẫu nhiều nguồn: <code>+</code> thay một cấp (vd. <code>agv/tug-a/+/pos</code>), <code>#</code> thay phần còn lại ở cuối.</>
-          : 'Thiết bị hoặc topic gửi bản tin. Không thấy nguồn cần tìm? Thêm nó ở tab Nguồn dữ liệu.'}
+          : 'Thiết bị hoặc topic gửi bản tin. Không thấy nguồn cần tìm? Thêm nó ở Thiết bị → Nguồn dữ liệu.'}
       >
         {advanced ? (
           <input className={`${input} w-full font-mono`} value={source} onChange={(e) => setSource(e.target.value)} placeholder="agv/tug-a/+/pos" aria-label="Mẫu nguồn dữ liệu" />
         ) : (
-          <SearchSelect value={source} options={sourceOptions} onChange={setSource} label="Nguồn dữ liệu" placeholder="Chọn nguồn dữ liệu" emptyText="Chưa có nguồn nào. Thêm ở tab Nguồn dữ liệu." />
+          <SearchSelect value={source} options={sourceOptions} onChange={setSource} label="Nguồn dữ liệu" placeholder="Chọn nguồn dữ liệu" emptyText="Chưa có nguồn nào. Thêm ở Thiết bị → Nguồn dữ liệu." />
         )}
         <button type="button" className={btnLinkAccent} onClick={() => setAdvanced((a) => !a)}>
           {advanced ? 'Chọn từ danh sách nguồn' : 'Nâng cao: một mẫu cho nhiều nguồn (+ hoặc #)'}

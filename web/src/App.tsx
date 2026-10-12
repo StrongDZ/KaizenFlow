@@ -90,10 +90,12 @@ export default function App() {
               <Route path="history" element={<GaugeHistoryPage />} />
             </Route>
             <Route path="/assets" element={<AssetsPage />} />
+            <Route path="/assets/sources" element={<SourcesPage />} />
             <Route path="/assets/signals" element={<AssetSignalsPage />} />
             <Route path="/models" element={<ModelsPage />} />
             <Route path="/models/:key/versions" element={<VersionsPage />} />
-            <Route path="/models/:key/sources" element={<SourcesPage />} />
+            {/* Nguồn dữ liệu là toàn cục, đã chuyển sang mục Thiết bị: đường dẫn cũ trong mô hình về trang mới. */}
+            <Route path="/models/:key/sources" element={<Navigate to="/assets/sources" replace />} />
             <Route path="/models/:key/connect" element={<ConnectPage />} />
             <Route path="/models/:key/live" element={<LivePage />} />
             <Route path="/models/:key/map" element={<AgvMapPage />} />

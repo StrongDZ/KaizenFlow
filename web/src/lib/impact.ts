@@ -1,5 +1,5 @@
-const LABEL: Record<string, string> = { versions: 'phiên bản', scenarios: 'scenario', runs: 'lần chạy' }
-const ORDER = ['versions', 'scenarios', 'runs']
+const LABEL: Record<string, string> = { versions: 'phiên bản', scenarios: 'scenario', runs: 'lần chạy', bindings: 'ghép nối' }
+const ORDER = ['versions', 'scenarios', 'runs', 'bindings']
 
 /** "2 phiên bản, 3 scenario, 12 lần chạy": những gì sẽ mất khi xoá dây chuyền. */
 export function impactText(impact: Record<string, number>): string {

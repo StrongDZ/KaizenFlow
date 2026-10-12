@@ -262,10 +262,10 @@ export default function ConnectPage() {
 
         <Card
           title={`Nguồn dữ liệu (${sources.length})`}
-          actions={<div className="flex items-center gap-2"><Link className="text-[11px] text-accent underline decoration-dotted" to={`/models/${encodeURIComponent(model)}/sources`}>Quản lý nguồn</Link><SearchBox value={srcQ} onChange={setSrcQ} placeholder="Tìm nguồn" /></div>}
+          actions={<div className="flex items-center gap-2"><Link className="text-[11px] text-accent underline decoration-dotted" to="/assets/sources">Quản lý nguồn</Link><SearchBox value={srcQ} onChange={setSrcQ} placeholder="Tìm nguồn" /></div>}
         >
           {sources.length === 0 ? (
-            <EmptyState title="Chưa có nguồn dữ liệu nào">Bật feed ở thanh phía trên để các thiết bị gửi bản tin, hoặc khai báo nguồn ở tab Nguồn dữ liệu.</EmptyState>
+            <EmptyState title="Chưa có nguồn dữ liệu nào">Bật feed ở thanh phía trên để các thiết bị gửi bản tin, hoặc khai báo nguồn ở Thiết bị → Nguồn dữ liệu.</EmptyState>
           ) : (
             <ul className="max-h-[560px] divide-y divide-line overflow-y-auto">
               {shownSources.map((s) => (

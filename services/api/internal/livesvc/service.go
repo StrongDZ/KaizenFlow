@@ -419,6 +419,11 @@ func (s *Service) Snapshot(model string) live.Snapshot {
 	return s.state.Snapshot(model, s.now(), s.bindingsOf(model))
 }
 
+// Sources chụp các nguồn đang ghi nhận trong bộ nhớ, gộp qua mọi mô hình (danh mục nguồn là toàn cục).
+func (s *Service) Sources() []live.SourceSnap {
+	return s.state.AllSources(s.now())
+}
+
 // BroadcastDirty phát trạng thái của các mô hình có dữ liệu mới từ lần phát trước.
 func (s *Service) BroadcastDirty() {
 	s.mu.Lock()

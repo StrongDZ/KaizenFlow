@@ -26,7 +26,7 @@ export function sectionOf(path: string): Section {
 
 /** Trang của một mô hình nằm dưới /models/:key/… (ngoài sơ đồ, phiên bản, scenario, lần chạy có đường dẫn riêng). */
 export const MODEL_PAGES = {
-  versions: 'Phiên bản', live: 'Trực tiếp', stock: 'Điều khiển kho', map: 'Bản đồ AGV', sources: 'Nguồn dữ liệu', connect: 'Kết nối dữ liệu',
+  versions: 'Phiên bản', live: 'Trực tiếp', stock: 'Điều khiển kho', map: 'Bản đồ AGV', connect: 'Kết nối dữ liệu',
   operations: 'Dashboard vận hành', 'warehouse-report': 'Báo cáo kho',
 } as const
 const MODEL_PAGE_RE = new RegExp(`^/models/[^/]+/(${Object.keys(MODEL_PAGES).join('|')})(?:/|$)`)
@@ -72,12 +72,11 @@ function modelTabs(ctx: NavCtx): Tab[] {
     )
   }
   if (base) {
-    // Xem trước (sơ đồ, kho, xe), thiết lập nguồn và ghép tín hiệu sau.
+    // Xem trước (sơ đồ, kho, xe), ghép tín hiệu sau. Danh mục nguồn là toàn cục nên nằm ở mục Thiết bị, không ở đây.
     operate.push(
       { label: 'Trực tiếp', to: `${base}/live`, group: 'Vận hành thật', icon: 'radio' },
       { label: 'Điều khiển kho', to: `${base}/stock`, group: 'Vận hành thật', icon: 'boxes' },
       { label: 'Bản đồ AGV', to: `${base}/map`, group: 'Vận hành thật', icon: 'map' },
-      { label: 'Nguồn dữ liệu', to: `${base}/sources`, group: 'Vận hành thật', icon: 'database' },
       { label: 'Kết nối dữ liệu', to: `${base}/connect`, group: 'Vận hành thật', icon: 'plug' },
     )
     report.push(
@@ -91,10 +90,11 @@ function modelTabs(ctx: NavCtx): Tab[] {
 /** `icon`: biểu tượng ở đầu panel (overview: tổng quan, library: thư viện, gauge: đồng hồ, còn lại là mô hình). */
 export type SubNav = { title: string; subtitle?: string; icon?: 'overview' | 'library' | 'gauge' | 'assets'; groups: { title: string | undefined; tabs: Tab[] }[] }
 
-/** Mục Thiết bị: danh mục thiết bị thật của nhà máy và tín hiệu của chúng — ngang hàng với Mô hình,
- *  vì một thiết bị không thuộc mô hình nào mà dùng được ở nhiều mô hình. */
+/** Mục Thiết bị: danh mục thiết bị thật của nhà máy, các nguồn gửi bản tin và tín hiệu ghép giữa hai bên — ngang hàng với Mô hình,
+ *  vì thiết bị và nguồn không thuộc mô hình nào mà dùng được ở nhiều mô hình. Thứ tự theo việc làm: khai máy, thấy nguồn, ghép. */
 const ASSET_TABS: Tab[] = [
   { label: 'Danh mục thiết bị', to: '/assets', end: true, icon: 'cpu' },
+  { label: 'Nguồn dữ liệu', to: '/assets/sources', icon: 'database' },
   { label: 'Tín hiệu thiết bị', to: '/assets/signals', icon: 'plug' },
 ]
 

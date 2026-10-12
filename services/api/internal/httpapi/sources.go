@@ -16,7 +16,10 @@ import (
 // liveSilentAfter: nguồn không có bản tin quá khoảng này (giờ thật) thì coi là mất tín hiệu, cùng ngưỡng với trạng thái node.
 const liveSilentAfter = 15 * time.Second
 
+// bindingRef: một ghép nối đang lấy dữ liệu từ nguồn. Model rỗng là ghép nối của thiết bị, dùng chung
+// cho mọi mô hình có thiết bị đó (chỉ danh mục toàn cục điền Model).
 type bindingRef struct {
+	Model   string `json:"model,omitempty"`
 	Subject string `json:"subject"`
 	Signal  string `json:"signal"`
 }
@@ -53,7 +56,7 @@ func boundTo(bs []live.Binding, source string) []bindingRef {
 	out := []bindingRef{}
 	for _, b := range bs {
 		if live.MatchSource(b.Source, source) {
-			out = append(out, bindingRef{b.Subject, b.Signal})
+			out = append(out, bindingRef{Subject: b.Subject, Signal: b.Signal})
 		}
 	}
 	return out
@@ -100,9 +103,59 @@ func (h *handlers) listSources(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"sources": out})
 }
 
-// addSource: POST /api/models/{key}/sources. Người dùng khai báo một nguồn bằng cách dán bản tin mẫu.
+// globalSourceView: một nguồn trong danh mục toàn cục, kèm các mô hình đang có ghép nối dùng nó.
+type globalSourceView struct {
+	sourceView
+	Models []string `json:"models"`
+}
+
+// listAllSources: GET /api/sources. Toàn bộ danh mục nguồn (thiết bị/topic ngoài đời, không thuộc mô hình nào):
+// danh sách lấy từ DB, trạng thái sống gộp từ bộ nhớ của mọi mô hình, "đang dùng cho" gồm cả ghép nối
+// của thiết bị (dùng chung) lẫn ghép nối đường nối của từng mô hình.
+func (h *handlers) listAllSources(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	rows, err := h.Store.ListAllSources(ctx)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	bs, err := h.Store.ListStoredBindings(ctx)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	ram := map[string]live.SourceSnap{}
+	for _, s := range h.Live.Sources() {
+		ram[s.Source] = s
+	}
+	now := time.Now()
+	out := make([]globalSourceView, 0, len(rows))
+	for _, d := range rows {
+		v := sourceView{Source: d.Source, Desc: d.Desc, Origin: d.Origin, FirstSeen: d.FirstSeen, LastSeen: d.LastSeen, Count: d.Count,
+			Sample: d.Sample, AgeMS: now.Sub(d.LastSeen).Milliseconds(), Bindings: []bindingRef{}}
+		for _, b := range bs {
+			if live.MatchSource(b.Source, d.Source) {
+				v.Bindings = append(v.Bindings, bindingRef{Model: b.ModelKey, Subject: b.Subject, Signal: b.Signal})
+			}
+		}
+		if s, ok := ram[d.Source]; ok {
+			v.AgeMS, v.PerMin = s.AgeMS, s.PerMin
+			v.Count = max(v.Count, s.Count)
+			if b, err := json.Marshal(s.Last); err == nil && s.Last != nil {
+				v.Sample = b
+			}
+			if v.Desc == "" {
+				v.Desc = s.Desc
+			}
+			v.Live = s.AgeMS < liveSilentAfter.Milliseconds()
+		}
+		out = append(out, globalSourceView{sourceView: v, Models: d.Models})
+	}
+	writeJSON(w, 200, out)
+}
+
+// addSource: POST /api/sources. Người dùng khai báo một nguồn bằng cách dán bản tin mẫu; nguồn dùng được ở mọi mô hình.
 func (h *handlers) addSource(w http.ResponseWriter, r *http.Request) {
-	model := chi.URLParam(r, "key")
 	var body struct {
 		Source string          `json:"source"`
 		Desc   string          `json:"desc"`
@@ -123,11 +176,8 @@ func (h *handlers) addSource(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 422, issues(validate.Issue{Key: "sample", Message: "Bản tin mẫu không phải JSON hợp lệ."}))
 		return
 	}
-	if !h.modelExists(w, r, model) {
-		return
-	}
 	now := time.Now()
-	err := h.Store.UpsertSources(r.Context(), []store.DataSource{{ModelKey: model, Source: src, Desc: strings.TrimSpace(body.Desc),
+	err := h.Store.UpsertSources(r.Context(), []store.DataSource{{Source: src, Desc: strings.TrimSpace(body.Desc),
 		Origin: "manual", FirstSeen: now, LastSeen: now, Sample: body.Sample}})
 	if err != nil {
 		writeErr(w, err)
@@ -136,23 +186,25 @@ func (h *handlers) addSource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, map[string]string{"source": src})
 }
 
-// deleteSource: DELETE /api/models/{key}/sources?source=...&cascade=true. Nguồn đang được ghép thì hỏi trước (409 kèm số ghép nối).
+// deleteSource: DELETE /api/sources?source=...&cascade=true. Nguồn là toàn cục nên xoá là xoá cho mọi mô hình, và
+// ghép nối đi theo cũng tính ở mọi nơi: của thiết bị lẫn của đường nối trong từng mô hình. Đang được ghép thì hỏi
+// trước (409 kèm số ghép nối). Chỉ tính ghép nối ghi đúng tên nguồn này: ghép nối dùng ký tự thay thế (+, #) còn
+// phục vụ các nguồn khác nên giữ lại.
 func (h *handlers) deleteSource(w http.ResponseWriter, r *http.Request) {
-	model := chi.URLParam(r, "key")
 	src := r.URL.Query().Get("source")
 	if src == "" {
 		writeJSON(w, 422, issues(validate.Issue{Key: "source", Message: "Thiếu tên nguồn cần xoá."}))
 		return
 	}
 	ctx := r.Context()
-	bs, err := h.Store.ListBindings(ctx, model)
+	bs, err := h.Store.ListStoredBindings(ctx)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	var dependents []live.Binding
 	for _, b := range bs {
-		if live.MatchSource(b.Source, src) {
+		if b.Source == src {
 			dependents = append(dependents, b)
 		}
 	}
@@ -160,12 +212,12 @@ func (h *handlers) deleteSource(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, &store.ImpactError{Impact: map[string]int{"bindings": len(dependents)}})
 		return
 	}
-	if err := h.Store.DeleteSource(ctx, model, src); err != nil {
+	if err := h.Store.DeleteSource(ctx, src); err != nil {
 		writeErr(w, err)
 		return
 	}
 	for _, b := range dependents {
-		if err := h.Store.DeleteBinding(ctx, model, b.ID); err != nil {
+		if err := h.Store.DeleteBinding(ctx, b.ModelKey, b.ID); err != nil {
 			writeErr(w, err)
 			return
 		}
@@ -180,15 +232,16 @@ func (h *handlers) deleteSource(w http.ResponseWriter, r *http.Request) {
 }
 
 type testReading struct {
+	Model   string   `json:"model,omitempty"` // rỗng: ghép nối của thiết bị, dùng chung
 	Subject string   `json:"subject"`
 	Signal  string   `json:"signal"`
 	Value   *float64 `json:"value,omitempty"` // con trỏ: giá trị 0 vẫn phải có mặt trong JSON
 	Text    string   `json:"text,omitempty"`
 }
 
-// testSource: POST /api/models/{key}/sources/test. Chạy thử một bản tin qua các ghép nối của mô hình mà không ghi vào dữ liệu live.
+// testSource: POST /api/sources/test. Chạy thử một bản tin qua mọi ghép nối dùng nguồn đó — của thiết bị (một lần,
+// không lặp theo từng mô hình chứa nó) và của đường nối trong từng mô hình — mà không ghi vào dữ liệu live.
 func (h *handlers) testSource(w http.ResponseWriter, r *http.Request) {
-	model := chi.URLParam(r, "key")
 	var body struct {
 		Source  string `json:"source"`
 		Payload any    `json:"payload"`
@@ -200,37 +253,42 @@ func (h *handlers) testSource(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 422, issues(validate.Issue{Key: "source", Message: "Chọn nguồn để gửi thử."}))
 		return
 	}
-	bs, err := h.Store.ListBindings(r.Context(), model)
+	bs, err := h.Store.ListStoredBindings(r.Context())
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
+	// ListStoredBindings xếp theo mô hình, nên các nhóm liền nhau: ghép nối thiết bị (model rỗng) trước.
 	matched := 0
-	var all []live.Binding
-	for _, b := range bs {
-		if b.Enabled && live.MatchSource(b.Source, body.Source) {
-			matched++
+	readings := []testReading{}
+	msgs := []string{}
+	msg := live.Message{Source: body.Source, TS: time.Now(), Payload: body.Payload}
+	for i := 0; i < len(bs); {
+		j := i
+		for j < len(bs) && bs[j].ModelKey == bs[i].ModelKey {
+			if bs[j].Enabled && live.MatchSource(bs[j].Source, body.Source) {
+				matched++
+			}
+			j++
 		}
-		all = append(all, b)
-	}
-	rs, errs := live.Normalize(model, all, live.Message{Source: body.Source, TS: time.Now(), Payload: body.Payload})
-	readings := make([]testReading, 0, len(rs))
-	for _, x := range rs {
-		t := testReading{Subject: x.Subject, Signal: x.Signal}
-		switch {
-		case x.Fleet != nil:
-			t.Text = "xe " + x.Fleet.ID
-		case x.IsText:
-			t.Text = x.Text
-		default:
-			v := x.Num
-			t.Value = &v
+		rs, errs := live.Normalize(bs[i].ModelKey, bs[i:j], msg)
+		for _, x := range rs {
+			t := testReading{Model: x.Model, Subject: x.Subject, Signal: x.Signal}
+			switch {
+			case x.Fleet != nil:
+				t.Text = "xe " + x.Fleet.ID
+			case x.IsText:
+				t.Text = x.Text
+			default:
+				v := x.Num
+				t.Value = &v
+			}
+			readings = append(readings, t)
 		}
-		readings = append(readings, t)
-	}
-	msgs := make([]string, len(errs))
-	for i, e := range errs {
-		msgs[i] = e.Error()
+		for _, e := range errs {
+			msgs = append(msgs, e.Error())
+		}
+		i = j
 	}
 	writeJSON(w, 200, map[string]any{"matched": matched, "readings": readings, "errors": msgs})
 }

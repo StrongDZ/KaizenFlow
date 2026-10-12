@@ -6,7 +6,7 @@ import { Field, FormDialog } from '../FormDialog'
 import { input } from '../ui'
 
 /** Khai báo một nguồn dữ liệu bằng tay: tên, mô tả, và bản tin mẫu để hộp Ghép nối có trường để chọn. */
-export function SourceDialog({ model, existing, onClose, onCreated }: { model: string; existing: string[]; onClose: () => void; onCreated: (source: string) => void }) {
+export function SourceDialog({ existing, onClose, onCreated }: { existing: string[]; onClose: () => void; onCreated: (source: string) => void }) {
   const qc = useQueryClient()
   const [source, setSource] = useState('')
   const [desc, setDesc] = useState('')
@@ -14,8 +14,12 @@ export function SourceDialog({ model, existing, onClose, onCreated }: { model: s
   const nameProblem = source === '' ? null : validSourceName(source) ?? (existing.includes(source.trim()) ? 'Nguồn này đã có. Chọn nó trong danh sách để sửa bản tin mẫu.' : null)
   const parsed = parseSample(sample)
   const create = useMutation({
-    mutationFn: () => api.addSource(model, { source: source.trim(), desc: desc.trim(), sample: parsed.ok ? parsed.value : undefined }),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ['sources', model] }); onCreated(source.trim()) },
+    mutationFn: () => api.addSource({ source: source.trim(), desc: desc.trim(), sample: parsed.ok ? parsed.value : undefined }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['all-sources'] })
+      void qc.invalidateQueries({ queryKey: ['sources'] }) // danh sách đã lọc theo từng mô hình
+      onCreated(source.trim())
+    },
   })
   return (
     <FormDialog

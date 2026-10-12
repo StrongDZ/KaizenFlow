@@ -152,20 +152,6 @@ func (h *handlers) deleteAsset(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
-// listSources trả toàn bộ danh mục nguồn dữ liệu (thiết bị/topic ngoài đời, không thuộc mô hình
-// nào), kèm các mô hình đang có ghép nối dùng từng nguồn.
-func (h *handlers) listAllSources(w http.ResponseWriter, r *http.Request) {
-	list, err := h.Store.ListAllSources(r.Context())
-	if err != nil {
-		writeErr(w, err)
-		return
-	}
-	if list == nil {
-		list = []store.DataSource{}
-	}
-	writeJSON(w, 200, list)
-}
-
 // listAssetBindings trả ghép nối tín hiệu của thiết bị (không thuộc mô hình nào).
 func (h *handlers) listAssetBindings(w http.ResponseWriter, r *http.Request) {
 	list, err := h.Store.ListAssetBindings(r.Context())

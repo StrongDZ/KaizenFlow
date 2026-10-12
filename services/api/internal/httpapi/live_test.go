@@ -531,14 +531,14 @@ func TestSourcesRegistryMergesDBWithLiveStateAndSurvivesSilence(t *testing.T) {
 func TestAddManualSourceAndDryRunTest(t *testing.T) {
 	a := newLiveAPI(t, "")
 	a.publishedModel("lm")
-	a.call("POST", "/api/models/lm/sources", map[string]any{"source": "", "sample": map[string]any{}}, 422)
-	a.call("POST", "/api/models/lm/sources", map[string]any{"source": "dev/x/count", "desc": "Đếm tại X", "sample": map[string]any{"n": 3}}, 201)
+	a.call("POST", "/api/sources", map[string]any{"source": "", "sample": map[string]any{}}, 422)
+	a.call("POST", "/api/sources", map[string]any{"source": "dev/x/count", "desc": "Đếm tại X", "sample": map[string]any{"n": 3}}, 201)
 	got := sourcesOf(a, "lm")["dev/x/count"]
 	if got == nil || got["origin"] != "manual" || got["desc"] != "Đếm tại X" || got["live"] != false {
 		t.Fatalf("source = %v", got)
 	}
 	bindSource(a, "lm", "SRC", "arrived", "dev/x/count", "n")
-	res := a.call("POST", "/api/models/lm/sources/test", map[string]any{"source": "dev/x/count", "payload": map[string]any{"n": 7}}, 200)
+	res := a.call("POST", "/api/sources/test", map[string]any{"source": "dev/x/count", "payload": map[string]any{"n": 7}}, 200)
 	rs := res["readings"].([]any)
 	if res["matched"].(float64) != 1 || len(rs) != 1 || rs[0].(map[string]any)["value"].(float64) != 7 || rs[0].(map[string]any)["subject"] != "SRC" {
 		t.Fatalf("test result = %v", res)
@@ -549,41 +549,93 @@ func TestAddManualSourceAndDryRunTest(t *testing.T) {
 		t.Fatalf("gửi thử không được ghi vào trạng thái live: %v", subj)
 	}
 	// giá trị 0 vẫn phải có trong kết quả (không bị omitempty nuốt)
-	res = a.call("POST", "/api/models/lm/sources/test", map[string]any{"source": "dev/x/count", "payload": map[string]any{"n": 0}}, 200)
+	res = a.call("POST", "/api/sources/test", map[string]any{"source": "dev/x/count", "payload": map[string]any{"n": 0}}, 200)
 	if v, ok := res["readings"].([]any)[0].(map[string]any)["value"]; !ok || v.(float64) != 0 {
 		t.Fatalf("giá trị 0 phải có mặt: %v", res)
 	}
 	// payload không có trường → lỗi nói rõ, không vỡ
-	res = a.call("POST", "/api/models/lm/sources/test", map[string]any{"source": "dev/x/count", "payload": map[string]any{"khac": 1}}, 200)
+	res = a.call("POST", "/api/sources/test", map[string]any{"source": "dev/x/count", "payload": map[string]any{"khac": 1}}, 200)
 	if len(res["errors"].([]any)) == 0 {
 		t.Fatalf("thiếu trường phải báo lỗi: %v", res)
+	}
+}
+
+// Danh mục nguồn toàn cục: trạng thái sống gộp từ mọi mô hình, "đang dùng cho" gồm ghép nối của thiết bị
+// (không ghi mô hình: dùng chung) lẫn ghép nối đường nối của từng mô hình; gửi thử chạy qua cả hai.
+func TestGlobalSourceCatalogueShowsUseAcrossModels(t *testing.T) {
+	a := newLiveAPI(t, "")
+	a.publishedModel("lm")
+	a.publishedModel("lm2")
+	bindSource(a, "lm", "SRC", "arrived", "dock/src/count", "n")
+	bindSource(a, "lm2", "SRC>S", "moved", "dock/src/count", "n")
+	a.call("POST", "/api/ingest", map[string]any{"model": "lm2", "messages": []any{
+		map[string]any{"source": "dock/src/count", "ts": "2026-10-01T08:00:00+07:00", "desc": "Cửa nhận hàng", "payload": map[string]any{"n": 4}},
+	}}, 200)
+	if err := a.svc.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var row map[string]any
+	for _, raw := range a.call("GET", "/api/sources", nil, 200)["items"].([]any) {
+		if m := raw.(map[string]any); m["source"] == "dock/src/count" {
+			row = m
+		}
+	}
+	if row == nil || row["live"] != true || row["desc"] != "Cửa nhận hàng" {
+		t.Fatalf("nguồn = %v", row)
+	}
+	if ms := row["models"].([]any); len(ms) != 2 || ms[0] != "lm" || ms[1] != "lm2" {
+		t.Fatalf("models = %v", row["models"])
+	}
+	refs := map[string]bool{}
+	for _, raw := range row["bindings"].([]any) {
+		b := raw.(map[string]any)
+		model, _ := b["model"].(string)
+		refs[model+"|"+b["subject"].(string)] = true
+	}
+	if len(refs) != 2 || !refs["|SRC"] || !refs["lm2|SRC>S"] {
+		t.Fatalf("bindings = %v", row["bindings"])
+	}
+	res := a.call("POST", "/api/sources/test", map[string]any{"source": "dock/src/count", "payload": map[string]any{"n": 9}}, 200)
+	if res["matched"].(float64) != 2 || len(res["readings"].([]any)) != 2 {
+		t.Fatalf("gửi thử phải chạy qua ghép nối thiết bị và đường nối: %v", res)
 	}
 }
 
 func TestDeleteSourceAsksBeforeBreakingBindings(t *testing.T) {
 	a := newLiveAPI(t, "")
 	a.publishedModel("lm")
-	a.call("POST", "/api/models/lm/sources", map[string]any{"source": "dev/a", "sample": map[string]any{"n": 1}}, 201)
-	a.call("POST", "/api/models/lm/sources", map[string]any{"source": "dev/free", "sample": map[string]any{"n": 1}}, 201)
+	a.publishedModel("lm2")
+	a.call("POST", "/api/sources", map[string]any{"source": "dev/a", "sample": map[string]any{"n": 1}}, 201)
+	a.call("POST", "/api/sources", map[string]any{"source": "dev/free", "sample": map[string]any{"n": 1}}, 201)
 	bindSource(a, "lm", "SRC", "arrived", "dev/a", "n")
+	// đường nối của MỘT mô hình khác cũng dùng nguồn này: xoá phải tính cả nó, không chỉ mô hình đang mở
+	bindSource(a, "lm2", "SRC>S", "moved", "dev/a", "n")
+	// ghép nối dùng ký tự thay thế còn phục vụ nguồn khác: không bị tính là phụ thuộc
+	bindSource(a, "lm2", "S>OUT", "moved", "dev/+", "n")
 	// nguồn chưa ghép: xoá thẳng
-	a.call("DELETE", "/api/models/lm/sources?source=dev%2Ffree", nil, 204)
-	a.call("DELETE", "/api/models/lm/sources?source=dev%2Ffree", nil, 404)
-	// nguồn đang được ghép: 409 kèm số ghép nối sẽ hỏng
-	res := a.call("DELETE", "/api/models/lm/sources?source=dev%2Fa", nil, 409)
-	if res["impact"].(map[string]any)["bindings"].(float64) != 1 {
+	a.call("DELETE", "/api/sources?source=dev%2Ffree", nil, 204)
+	a.call("DELETE", "/api/sources?source=dev%2Ffree", nil, 404)
+	// nguồn đang được ghép: 409 kèm số ghép nối sẽ hỏng, ở mọi mô hình
+	res := a.call("DELETE", "/api/sources?source=dev%2Fa", nil, 409)
+	if res["impact"].(map[string]any)["bindings"].(float64) != 2 {
 		t.Fatalf("409 = %v", res)
 	}
 	if sourcesOf(a, "lm")["dev/a"] == nil {
 		t.Fatal("chưa xác nhận thì nguồn phải còn")
 	}
-	a.call("DELETE", "/api/models/lm/sources?source=dev%2Fa&cascade=true", nil, 204)
+	a.call("DELETE", "/api/sources?source=dev%2Fa&cascade=true", nil, 204)
 	if sourcesOf(a, "lm")["dev/a"] != nil {
 		t.Fatal("xoá cascade phải xoá nguồn")
 	}
 	if n := len(a.call("GET", "/api/models/lm/bindings", nil, 200)["items"].([]any)); n != 0 {
-		t.Fatalf("ghép nối phụ thuộc phải bị xoá theo: %d", n)
+		t.Fatalf("ghép nối phụ thuộc ở lm phải bị xoá theo: %d", n)
 	}
+	left := a.call("GET", "/api/models/lm2/bindings", nil, 200)["items"].([]any)
+	if len(left) != 1 || left[0].(map[string]any)["source"] != "dev/+" {
+		t.Fatalf("ở lm2 chỉ còn ghép nối ký tự thay thế: %v", left)
+	}
+	// đường dẫn cũ trong mô hình không còn thêm/xoá nguồn
+	a.call("POST", "/api/models/lm/sources", map[string]any{"source": "dev/b"}, 405)
 }
 
 func putBindingsRaw(a *liveAPI, model string, list []any, want int) map[string]any {
@@ -677,7 +729,7 @@ func TestLiveCheckReportsCoverageReadinessAndSuggestions(t *testing.T) {
 	a.publishedModel("lm")
 	a.call("GET", "/api/models/nope/live/check", nil, 404)
 	bindSource(a, "lm", "SRC", "arrived", "dock/src/count", "n")
-	a.call("POST", "/api/models/lm/sources", map[string]any{"source": "dock/src/count", "sample": map[string]any{"n": 5}}, 201)
+	a.call("POST", "/api/sources", map[string]any{"source": "dock/src/count", "sample": map[string]any{"n": 5}}, 201)
 	rep := a.call("GET", "/api/models/lm/live/check", nil, 200)
 	sum := rep["summary"].(map[string]any)
 	if sum["source"].(float64) != 1 || sum["signals"].(float64) < 5 || sum["broken"].(float64) != 0 {
