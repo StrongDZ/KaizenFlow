@@ -2,7 +2,9 @@ package httpapi
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -111,7 +113,9 @@ type globalSourceView struct {
 
 // listAllSources: GET /api/sources. Toàn bộ danh mục nguồn (thiết bị/topic ngoài đời, không thuộc mô hình nào):
 // danh sách lấy từ DB, trạng thái sống gộp từ bộ nhớ của mọi mô hình, "đang dùng cho" gồm cả ghép nối
-// của thiết bị (dùng chung) lẫn ghép nối đường nối của từng mô hình.
+// của thiết bị (dùng chung) lẫn ghép nối đường nối của từng mô hình. "Dùng ở" suy từ chính các ghép nối
+// đó (kể cả ghép nối dùng ký tự thay thế, thứ SQL không khớp được): ghép nối thiết bị tính cho mọi mô
+// hình đang chứa thiết bị.
 func (h *handlers) listAllSources(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	rows, err := h.Store.ListAllSources(ctx)
@@ -124,6 +128,15 @@ func (h *handlers) listAllSources(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	assets, err := h.Store.ListAssets(ctx)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	modelsOf := map[string][]string{}
+	for _, a := range assets {
+		modelsOf[a.Key] = a.Models
+	}
 	ram := map[string]live.SourceSnap{}
 	for _, s := range h.Live.Sources() {
 		ram[s.Source] = s
@@ -133,9 +146,17 @@ func (h *handlers) listAllSources(w http.ResponseWriter, r *http.Request) {
 	for _, d := range rows {
 		v := sourceView{Source: d.Source, Desc: d.Desc, Origin: d.Origin, FirstSeen: d.FirstSeen, LastSeen: d.LastSeen, Count: d.Count,
 			Sample: d.Sample, AgeMS: now.Sub(d.LastSeen).Milliseconds(), Bindings: []bindingRef{}}
+		used := map[string]bool{}
 		for _, b := range bs {
 			if live.MatchSource(b.Source, d.Source) {
 				v.Bindings = append(v.Bindings, bindingRef{Model: b.ModelKey, Subject: b.Subject, Signal: b.Signal})
+				if b.ModelKey != "" {
+					used[b.ModelKey] = true
+				} else {
+					for _, m := range modelsOf[b.Subject] {
+						used[m] = true
+					}
+				}
 			}
 		}
 		if s, ok := ram[d.Source]; ok {
@@ -149,7 +170,11 @@ func (h *handlers) listAllSources(w http.ResponseWriter, r *http.Request) {
 			}
 			v.Live = s.AgeMS < liveSilentAfter.Milliseconds()
 		}
-		out = append(out, globalSourceView{sourceView: v, Models: d.Models})
+		models := slices.Sorted(maps.Keys(used))
+		if models == nil {
+			models = []string{}
+		}
+		out = append(out, globalSourceView{sourceView: v, Models: models})
 	}
 	writeJSON(w, 200, out)
 }

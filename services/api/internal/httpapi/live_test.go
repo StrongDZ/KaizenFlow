@@ -599,6 +599,16 @@ func TestGlobalSourceCatalogueShowsUseAcrossModels(t *testing.T) {
 	if res["matched"].(float64) != 2 || len(res["readings"].([]any)) != 2 {
 		t.Fatalf("gửi thử phải chạy qua ghép nối thiết bị và đường nối: %v", res)
 	}
+	// nguồn chỉ được ghép qua ký tự thay thế vẫn biết mình đang được mô hình nào dùng
+	a.call("POST", "/api/sources", map[string]any{"source": "agv/x/01/pos", "sample": map[string]any{"x": 1}}, 201)
+	bindSource(a, "lm2", "S>OUT", "moved", "agv/x/+/pos", "x")
+	for _, raw := range a.call("GET", "/api/sources", nil, 200)["items"].([]any) {
+		if m := raw.(map[string]any); m["source"] == "agv/x/01/pos" {
+			if ms := m["models"].([]any); len(ms) != 1 || ms[0] != "lm2" || len(m["bindings"].([]any)) != 1 {
+				t.Fatalf("nguồn khớp ký tự thay thế = %v", m)
+			}
+		}
+	}
 }
 
 func TestDeleteSourceAsksBeforeBreakingBindings(t *testing.T) {
