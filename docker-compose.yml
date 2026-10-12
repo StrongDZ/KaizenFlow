@@ -44,5 +44,18 @@ services:
     extra_hosts: ["host.docker.internal:host-gateway"]
     depends_on:
       api: {condition: service_started}
+  # Giao diện web đóng gói sẵn (nginx), để chạy thử không cần cài Node: http://localhost:8088.
+  # Dev vẫn dùng `cd web && npm run dev` (cổng 5173). Địa chỉ API và gauge-twin nhúng lúc build,
+  # đổi bằng biến môi trường cùng tên rồi `up -d --build web`.
+  web:
+    build:
+      context: web
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8080}
+        VITE_GAUGE_API_URL: ${VITE_GAUGE_API_URL:-http://localhost:8092}
+        VITE_GAUGE_CONFIG_API_URL: ${VITE_GAUGE_CONFIG_API_URL:-http://localhost:8090}
+    ports: ["${WEB_PORT:-8088}:80"]
+    depends_on:
+      api: {condition: service_started}
 volumes:
   dbdata: {}
