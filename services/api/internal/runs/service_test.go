@@ -29,7 +29,7 @@ func setup(t *testing.T, name string, publish bool) (*runs.Service, *simfake.Ser
 		t.Fatal(err)
 	}
 	if publish {
-		_ = st.Publish(ctx, vid)
+		_ = st.Publish(ctx, vid, nil)
 	}
 	sid, _ := st.CreateScenario(ctx, store.Scenario{ModelVersionID: vid, HorizonS: 3600, Replications: 2})
 	fake := simfake.New()

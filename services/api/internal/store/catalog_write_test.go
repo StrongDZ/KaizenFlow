@@ -50,7 +50,9 @@ func TestNodeTypeWriteRules(t *testing.T) {
 
 	// version nháp dùng: vẫn sửa được nhưng chưa xoá được
 	vid := newModel(t, st, "use")
-	if err := st.ReplaceGraph(ctx, vid, []store.GraphNode{{Key: "K", NodeType: "CUST_SINK", Params: map[string]any{}}}, nil, nil); err != nil {
+	nodes := []store.GraphNode{{Key: "K", NodeType: "CUST_SINK", Params: map[string]any{}}}
+	testfix.RegisterAssets(t, st, nodes)
+	if err := st.ReplaceGraph(ctx, vid, nodes, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.UpdateNodeType(ctx, "CUST_SINK", store.NodeTypeUpdate{Name: "Cust 3"}); err != nil {
@@ -63,14 +65,24 @@ func TestNodeTypeWriteRules(t *testing.T) {
 		t.Fatalf("delete usage = %#v", lk.Usage)
 	}
 	// version đã Publish dùng: khoá sửa
-	if err := st.Publish(ctx, vid); err != nil {
+	if err := st.Publish(ctx, vid, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.UpdateNodeType(ctx, "CUST_SINK", store.NodeTypeUpdate{Name: "Cust 4"}); !errors.As(err, &lk) {
 		t.Fatalf("published use should lock edit: %v", err)
 	}
-	// hết người dùng thì xoá được
+	// hết sơ đồ dùng nhưng còn thiết bị mang loại này thì vẫn chưa xoá được loại
 	if err := st.DeleteVersion(ctx, vid, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteNodeType(ctx, "CUST_SINK"); !errors.As(err, &lk) {
+		t.Fatalf("còn thiết bị mang loại này thì chưa xoá được loại: %v", err)
+	}
+	if usage, ok := lk.Usage.(store.NodeTypeUsage); !ok || len(usage.Assets) != 1 || usage.Assets[0] != "K" {
+		t.Fatalf("delete usage = %#v", lk.Usage)
+	}
+	// hết người dùng thì xoá được
+	if err := st.DeleteAsset(ctx, "K"); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.DeleteNodeType(ctx, "CUST_SINK"); err != nil {
@@ -87,10 +99,12 @@ func TestSeededTypeUsedByAPublishedVersionIsLocked(t *testing.T) {
 	st := testfix.Seeded(t, "store_nt_seeded_lock")
 	var lk *store.LockedError
 	vid := newModel(t, st, "use-seeded")
-	if err := st.ReplaceGraph(ctx, vid, []store.GraphNode{{Key: "K", NodeType: "SCRAP", Params: map[string]any{}}}, nil, nil); err != nil {
+	nodes := []store.GraphNode{{Key: "K", NodeType: "SCRAP", Params: map[string]any{}}}
+	testfix.RegisterAssets(t, st, nodes)
+	if err := st.ReplaceGraph(ctx, vid, nodes, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Publish(ctx, vid); err != nil {
+	if err := st.Publish(ctx, vid, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.UpdateNodeType(ctx, "SCRAP", store.NodeTypeUpdate{Name: "X"}); !errors.As(err, &lk) {
@@ -151,6 +165,7 @@ func TestMaterialWriteRules(t *testing.T) {
 	vid := newModel(t, st, "jsononly")
 	nodes := []store.GraphNode{{Key: "D", NodeType: "SHIP_DOCK", Params: map[string]any{
 		"demand": []any{map[string]any{"kind": "TAKT", "material": "JSON_ONLY", "takt": 60.0}}}}}
+	testfix.RegisterAssets(t, st, nodes)
 	if err := st.ReplaceGraph(ctx, vid, nodes, nil, nil); err != nil {
 		t.Fatal(err)
 	}

@@ -93,10 +93,10 @@ type Service struct {
 
 // srcAgg gom các bản tin của một nguồn giữa hai lần ghi DB.
 type srcAgg struct {
-	model, source, desc string
-	first, last         time.Time
-	count               int64
-	sample              any
+	source, desc string
+	first, last  time.Time
+	count        int64
+	sample       any
 }
 
 func New(st Store, hub Broadcaster) *Service {
@@ -214,7 +214,7 @@ func (s *Service) IngestFor(model string, msgs []live.Message) IngestResult {
 		}
 		res.Accepted++
 		s.state.NoteSource(model, msg, wall)
-		s.noteSource(model, byModel, msg, wall)
+		s.noteSource(msg, wall)
 		for model, bs := range byModel {
 			rs, errs := live.Normalize(model, bs, msg)
 			res.Readings += len(rs)
@@ -280,42 +280,26 @@ func (s *Service) runDerived(model string, plan []live.Binding, touched map[live
 }
 
 // noteSource ghi nhận nguồn của một bản tin để Flush ghi xuống bảng data_source.
-func (s *Service) noteSource(model string, byModel map[string][]live.Binding, msg live.Message, wall time.Time) {
-	var owners []string
-	if model != "" {
-		owners = []string{model}
-	} else {
-		for m, bs := range byModel {
-			for _, b := range bs {
-				if b.Enabled && live.MatchSource(b.Source, msg.Source) {
-					owners = append(owners, m)
-					break
-				}
-			}
-		}
-	}
-	if len(owners) == 0 {
-		return
-	}
+// Danh mục nguồn là TOÀN CỤC (một nguồn là một thiết bị/topic ngoài đời), nên gom theo tên nguồn,
+// không theo mô hình: trước đây cùng một topic đăng ký lại ở mỗi mô hình, mỗi hàng một bộ đếm riêng.
+// Việc lô bản tin chỉ áp cho đúng mô hình của nó vẫn do IngestFor lọc nhóm ghép nối, không phải ở đây.
+func (s *Service) noteSource(msg live.Message, wall time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, m := range owners {
-		k := m + "|" + msg.Source
-		a := s.srcAgg[k]
-		if a == nil {
-			if len(s.srcAgg) >= maxSourceAgg {
-				continue
-			}
-			a = &srcAgg{model: m, source: msg.Source, first: wall}
-			s.srcAgg[k] = a
+	a := s.srcAgg[msg.Source]
+	if a == nil {
+		if len(s.srcAgg) >= maxSourceAgg {
+			return
 		}
-		a.last = wall
-		a.count++
-		if msg.Desc != "" {
-			a.desc = msg.Desc
-		}
-		a.sample = msg.Payload
+		a = &srcAgg{source: msg.Source, first: wall}
+		s.srcAgg[msg.Source] = a
 	}
+	a.last = wall
+	a.count++
+	if msg.Desc != "" {
+		a.desc = msg.Desc
+	}
+	a.sample = msg.Payload
 }
 
 func (s *Service) noteError(model, msg string, at time.Time) {
@@ -406,7 +390,7 @@ func (s *Service) flushSources(ctx context.Context) error {
 		if a.sample != nil {
 			sample, _ = json.Marshal(a.sample)
 		}
-		out = append(out, store.DataSource{ModelKey: a.model, Source: a.source, Desc: a.desc, Origin: "feed",
+		out = append(out, store.DataSource{Source: a.source, Desc: a.desc, Origin: "feed",
 			FirstSeen: a.first, LastSeen: a.last, Count: a.count, Sample: sample})
 		done = append(done, sent{k, a.count})
 		a.count = 0

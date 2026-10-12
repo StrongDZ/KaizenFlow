@@ -95,8 +95,9 @@ func TestNodeTypeRowsAndDetailUsage(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// 16 loại mẫu: 14 loại của dây chuyền lắp ráp + Nguồn tiện ích và Máy phụ trợ cho thiết bị phụ trợ.
 	rows, err := st.ListNodeTypeRows(ctx)
-	if err != nil || len(rows) != 14 {
+	if err != nil || len(rows) != 16 {
 		t.Fatalf("rows = %d %v", len(rows), err)
 	}
 	used := map[string]int{}

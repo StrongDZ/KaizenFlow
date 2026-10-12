@@ -53,11 +53,24 @@ func MiniGraph() *store.Graph {
 		Settings: map[string]any{}, Nodes: nodes, Edges: MiniEdges()}
 }
 
+// RegisterAssets khai các node đã cho vào danh mục Thiết bị. Sơ đồ chỉ đặt thiết bị đã có,
+// nên test nào gọi ReplaceGraph với node mới thì phải khai thiết bị trước.
+func RegisterAssets(t *testing.T, st *store.Store, nodes []store.GraphNode) {
+	t.Helper()
+	for _, n := range nodes {
+		if _, err := st.PutAsset(context.Background(), store.Asset{Key: n.Key, NodeType: n.NodeType, Name: n.Name}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func Seeded(t *testing.T, name string) *store.Store {
 	t.Helper()
 	pool := testdb.New(t, name)
 	if err := catalog.Seed(context.Background(), pool); err != nil {
 		t.Fatal(err)
 	}
-	return store.New(pool)
+	st := store.New(pool)
+	RegisterAssets(t, st, MiniNodes())
+	return st
 }

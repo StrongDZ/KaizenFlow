@@ -30,12 +30,13 @@ func (f *fakeStore) UpsertSources(_ context.Context, list []store.DataSource) er
 	return nil
 }
 
-func (f *fakeStore) sourceWrites(model, source string) []store.DataSource {
+// sourceWrites: các lần ghi của một nguồn. Danh mục nguồn là toàn cục nên không lọc theo mô hình.
+func (f *fakeStore) sourceWrites(source string) []store.DataSource {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []store.DataSource
 	for _, d := range f.srcs {
-		if d.ModelKey == model && d.Source == source {
+		if d.Source == source {
 			out = append(out, d)
 		}
 	}
@@ -253,7 +254,8 @@ func TestClearDropsPendingRowsOfThatModelOnly(t *testing.T) {
 	}
 }
 
-func TestIngestForRegistersSourcesUnderTheNamedModel(t *testing.T) {
+// Một nguồn là một thiết bị/topic ngoài đời nên ghi vào danh mục MỘT lần, không nhân theo mô hình.
+func TestIngestRegistersEachSourceOnceGlobally(t *testing.T) {
 	s, fs, _ := newSvc(t)
 	s.IngestFor("m", []live.Message{
 		{Source: "plc/prs-02/status", TS: t0, Desc: "Máy dập 2", Payload: map[string]any{"st": "RUN"}},
@@ -262,16 +264,27 @@ func TestIngestForRegistersSourcesUnderTheNamedModel(t *testing.T) {
 	if err := s.Flush(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	w := fs.sourceWrites("m", "plc/prs-02/status")
+	w := fs.sourceWrites("plc/prs-02/status")
 	if len(w) != 1 {
 		t.Fatalf("writes = %+v", fs.srcs)
 	}
 	if w[0].Count != 2 || w[0].Desc != "Máy dập 2" || w[0].Origin != "feed" || string(w[0].Sample) != `{"st":"IDLE"}` {
 		t.Fatalf("write = %+v (sample %s)", w[0], w[0].Sample)
 	}
+	// Lô của mô hình khác, cùng tên nguồn: vẫn là một nguồn, cộng dồn chứ không thêm hàng mới.
+	s.IngestFor("khac", []live.Message{{Source: "plc/prs-02/status", TS: t0.Add(2 * time.Second), Payload: map[string]any{"st": "RUN"}}})
+	s.srcFlushed = map[string]time.Time{}
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if w := fs.sourceWrites("plc/prs-02/status"); len(w) != 2 || w[1].ModelKey != "" {
+		t.Fatalf("nguồn không được gắn vào mô hình nào: %+v", w)
+	}
 }
 
-func TestIngestWithoutModelRegistersOnlyForModelsWhoseBindingsMatch(t *testing.T) {
+// Danh mục nguồn là danh sách "thiết bị nào đang gửi dữ liệu", nên ghi cả nguồn chưa ghép nối —
+// đó chính là cái người dùng cần thấy để ghép tiếp. (Trước đây nguồn chưa ghép bị bỏ qua.)
+func TestIngestRegistersSourcesEvenBeforeTheyAreBound(t *testing.T) {
 	s, fs, _ := newSvc(t, bind("m1", "A", "count_ok", "dev/+/n", "n"), bind("m2", "B", "count_ok", "dev/x/n", "n"))
 	s.Ingest([]live.Message{
 		{Source: "dev/x/n", TS: t0, Payload: map[string]any{"n": 1.0}},
@@ -280,13 +293,11 @@ func TestIngestWithoutModelRegistersOnlyForModelsWhoseBindingsMatch(t *testing.T
 	if err := s.Flush(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(fs.sourceWrites("m1", "dev/x/n")) != 1 || len(fs.sourceWrites("m2", "dev/x/n")) != 1 {
-		t.Fatalf("cả hai mô hình có ghép nối khớp phải có nguồn: %+v", fs.srcs)
+	if len(fs.sourceWrites("dev/x/n")) != 1 {
+		t.Fatalf("nguồn đã ghép phải có trong danh mục: %+v", fs.srcs)
 	}
-	for _, d := range fs.srcs {
-		if d.Source == "other/y" {
-			t.Fatalf("nguồn không thuộc mô hình nào không được ghi: %+v", d)
-		}
+	if len(fs.sourceWrites("other/y")) != 1 {
+		t.Fatalf("nguồn chưa ghép cũng phải vào danh mục để còn ghép được: %+v", fs.srcs)
 	}
 }
 
@@ -348,18 +359,18 @@ func TestSourceWritesAreThrottledAndOnlyCarryTheNewCount(t *testing.T) {
 	s.IngestFor("m", []live.Message{{Source: "s", TS: t0, Payload: 2.0}, {Source: "s", TS: t0, Payload: 3.0}})
 	wall = wall.Add(3 * time.Second) // chưa đủ 10 giây
 	_ = s.Flush(ctx)
-	if n := len(fs.sourceWrites("m", "s")); n != 1 {
+	if n := len(fs.sourceWrites("s")); n != 1 {
 		t.Fatalf("ghi quá dày: %d lần", n)
 	}
 	wall = wall.Add(8 * time.Second) // đã quá 10 giây kể từ lần ghi trước
 	_ = s.Flush(ctx)
-	w := fs.sourceWrites("m", "s")
+	w := fs.sourceWrites("s")
 	if len(w) != 2 || w[1].Count != 2 {
 		t.Fatalf("lần ghi thứ hai chỉ mang phần mới (2): %+v", w)
 	}
 	wall = wall.Add(time.Minute)
 	_ = s.Flush(ctx)
-	if n := len(fs.sourceWrites("m", "s")); n != 2 {
+	if n := len(fs.sourceWrites("s")); n != 2 {
 		t.Fatalf("không có bản tin mới thì không ghi: %d lần", n)
 	}
 }
@@ -376,7 +387,7 @@ func TestFailedSourceWriteKeepsTheCount(t *testing.T) {
 	if err := s.Flush(ctx); err != nil {
 		t.Fatal(err)
 	}
-	w := fs.sourceWrites("m", "s")
+	w := fs.sourceWrites("s")
 	if len(w) != 1 || w[0].Count != 1 {
 		t.Fatalf("lỗi ghi không được làm mất số đếm: %+v", w)
 	}

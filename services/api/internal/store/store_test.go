@@ -46,13 +46,13 @@ func TestGraphRoundTripAndPublishLock(t *testing.T) {
 	if len(g.Nodes) != 3 || len(g.Edges) != 1 || g.Settings["sample_s"] != 30.0 {
 		t.Fatalf("after replace: %d nodes %d edges %v", len(g.Nodes), len(g.Edges), g.Settings)
 	}
-	if err := st.Publish(ctx, id); err != nil {
+	if err := st.Publish(ctx, id, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.ReplaceGraph(ctx, id, testfix.MiniNodes(), nil, nil); !errors.Is(err, store.ErrNotDraft) {
 		t.Fatalf("edit after publish: %v", err)
 	}
-	if err := st.Publish(ctx, id); !errors.Is(err, store.ErrNotDraft) {
+	if err := st.Publish(ctx, id, nil); !errors.Is(err, store.ErrNotDraft) {
 		t.Fatalf("double publish: %v", err)
 	}
 	if _, err := st.GetGraph(ctx, 9999); !errors.Is(err, store.ErrNotFound) {
@@ -92,7 +92,7 @@ func TestCloneCopiesGraphAsNewDraft(t *testing.T) {
 	st := testfix.Seeded(t, "store_clone")
 	id := newModel(t, st, "c")
 	_ = st.ReplaceGraph(ctx, id, testfix.MiniNodes(), testfix.MiniEdges(), nil)
-	_ = st.Publish(ctx, id)
+	_ = st.Publish(ctx, id, nil)
 	id2, err := st.Clone(ctx, id)
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +129,7 @@ func seededVersion(t *testing.T, st *store.Store, key string) int64 {
 	if err := st.ReplaceGraph(ctx, id, testfix.MiniNodes(), testfix.MiniEdges(), nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Publish(ctx, id); err != nil {
+	if err := st.Publish(ctx, id, nil); err != nil {
 		t.Fatal(err)
 	}
 	return id

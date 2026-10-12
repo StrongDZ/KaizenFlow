@@ -239,6 +239,15 @@ func (h *handlers) putGraph(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	// Ghép nối tín hiệu của THIẾT BỊ là toàn cục, được trải ra theo các mô hình đang chứa thiết bị đó
+	// (qua bảng node). Đổi sơ đồ là đổi tập đó, nên phải nạp lại: đặt một thiết bị đã ghép nối sẵn
+	// lên sơ đồ thì dữ liệu của nó phải chảy vào mô hình này ngay, không chờ khởi động lại API.
+	if h.Live != nil {
+		if err := h.Live.ReloadBindings(r.Context()); err != nil {
+			writeErr(w, err)
+			return
+		}
+	}
 	w.WriteHeader(204)
 }
 
@@ -266,7 +275,16 @@ func (h *handlers) publish(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 422, issues(errorsOf(rep)...))
 		return
 	}
-	if err := h.Store.Publish(ctx, id); err != nil {
+	// Đông cứng tham số thiết bị vào version trước khi khoá: bản đã Publish phải chạy lại ra đúng số
+	// cũ, nên không được đọc danh mục Thiết bị nữa (thiết bị có thể bị sửa sau này).
+	freeze := map[string]map[string]any{}
+	for _, n := range g.Nodes {
+		if len(n.AssetParams) == 0 {
+			continue
+		}
+		freeze[n.Key] = resolve.FreezeNodeParams(n)
+	}
+	if err := h.Store.Publish(ctx, id, freeze); err != nil {
 		writeErr(w, err)
 		return
 	}

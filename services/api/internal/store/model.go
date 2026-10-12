@@ -20,6 +20,11 @@ type GraphNode struct {
 	Name      string         `json:"name"`
 	Params    map[string]any `json:"params"`
 	CanvasPos *Pos           `json:"canvas_pos,omitempty"`
+	// AssetParams là tham số của chính thiết bị, nằm dưới Params khi hợp nhất. Chỉ trả về với version
+	// DRAFT: version đã Publish đã đông cứng tham số vào Params nên phải tự chứa, không đọc thiết bị nữa.
+	AssetParams map[string]any `json:"asset_params,omitempty"`
+	// AssetRetired: thiết bị đã đánh dấu ngừng dùng (sơ đồ hiển thị để biết cần thay).
+	AssetRetired bool `json:"asset_retired,omitempty"`
 }
 
 type GraphEdge struct {
@@ -117,14 +122,19 @@ func (s *Store) GetGraph(ctx context.Context, id int64) (*Graph, error) {
 	if err != nil {
 		return nil, notFound(err)
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT n.key, t.code, n.archetype::text, coalesce(n.name, ''), n.params, n.canvas_pos
-		FROM node n JOIN node_type t ON t.id = n.node_type_id WHERE n.model_version_id = $1 ORDER BY n.id`, id)
+	// Loại, vai trò và tên của node đến từ THIẾT BỊ (node không giữ bản sao nào nữa).
+	// Tham số thiết bị chỉ ghép vào bản DRAFT; bản đã Publish đã đông cứng nên tự chứa.
+	rows, err := s.Pool.Query(ctx, `SELECT n.key, t.code, t.archetype::text, a.name, n.params, n.canvas_pos,
+		CASE WHEN $2 = 'DRAFT' THEN a.params ELSE '{}'::jsonb END, a.retired
+		FROM node n JOIN asset a ON a.key = n.key JOIN node_type t ON t.id = a.node_type_id
+		WHERE n.model_version_id = $1 ORDER BY n.id`, id, g.Status)
 	if err != nil {
 		return nil, err
 	}
 	g.Nodes, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (GraphNode, error) {
 		var n GraphNode
-		err := r.Scan(&n.Key, &n.NodeType, &n.Archetype, &n.Name, &n.Params, &n.CanvasPos)
+		err := r.Scan(&n.Key, &n.NodeType, &n.Archetype, &n.Name, &n.Params, &n.CanvasPos,
+			&n.AssetParams, &n.AssetRetired)
 		return n, err
 	})
 	if err != nil {
@@ -176,6 +186,21 @@ func (s *Store) ReplaceGraph(ctx context.Context, id int64, nodes []GraphNode, e
 		types[code] = t
 	}
 	rows.Close()
+	// Node của sơ đồ phải là một thiết bị đã có trong danh mục Thiết bị: sơ đồ chỉ ĐẶT thiết bị,
+	// không khai sinh thiết bị. Nhờ vậy mã node là duy nhất toàn app và dùng lại được ở mô hình khác.
+	assetType := map[string]string{}
+	rows, err = tx.Query(ctx, `SELECT a.key, t.code FROM asset a JOIN node_type t ON t.id = a.node_type_id`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var key, code string
+		if err := rows.Scan(&key, &code); err != nil {
+			return err
+		}
+		assetType[key] = code
+	}
+	rows.Close()
 	mats := map[string]int64{}
 	rows, err = tx.Query(ctx, `SELECT id, code FROM material`)
 	if err != nil {
@@ -197,21 +222,30 @@ func (s *Store) ReplaceGraph(ctx context.Context, id int64, nodes []GraphNode, e
 	}
 	nodeIDs := map[string]int64{}
 	for _, n := range nodes {
-		t, ok := types[n.NodeType]
-		if !ok {
-			return &RefError{n.Key, "Loại node '" + n.NodeType + "' không còn trong Thư viện."}
-		}
 		if _, dup := nodeIDs[n.Key]; dup || n.Key == "" {
 			return &RefError{n.Key, "Mã node bị trùng hoặc để trống."}
+		}
+		code, known := assetType[n.Key]
+		if !known {
+			return &RefError{n.Key, "Chưa có thiết bị '" + n.Key + "' trong danh mục Thiết bị. Tạo thiết bị trước rồi đặt nó lên sơ đồ."}
+		}
+		// Loại node do danh mục Thiết bị quyết định; sơ đồ gửi loại khác là đang lệch dữ liệu.
+		if n.NodeType != "" && n.NodeType != code {
+			return &RefError{n.Key, "Thiết bị '" + n.Key + "' là loại " + code + ", không phải " + n.NodeType +
+				". Đổi loại ở danh mục Thiết bị, hoặc chọn thiết bị khác."}
+		}
+		if _, ok := types[code]; !ok {
+			return &RefError{n.Key, "Loại node '" + code + "' không còn trong Thư viện."}
 		}
 		params := n.Params
 		if params == nil {
 			params = map[string]any{}
 		}
 		var nid int64
-		if err := tx.QueryRow(ctx, `INSERT INTO node (model_version_id, key, node_type_id, archetype, name, params, canvas_pos)
-			VALUES ($1, $2, $3, $4::archetype, $5, $6, $7) RETURNING id`,
-			id, n.Key, t.id, t.archetype, n.Name, params, n.CanvasPos).Scan(&nid); err != nil {
+		// Node chỉ còn: thuộc version nào, là thiết bị nào, override gì, nằm đâu trên sơ đồ.
+		// Tên và loại không ghi lại ở đây — chúng thuộc thiết bị.
+		if err := tx.QueryRow(ctx, `INSERT INTO node (model_version_id, key, params, canvas_pos)
+			VALUES ($1, $2, $3, $4) RETURNING id`, id, n.Key, params, n.CanvasPos).Scan(&nid); err != nil {
 			return err
 		}
 		nodeIDs[n.Key] = nid
@@ -252,17 +286,38 @@ func (s *Store) ReplaceGraph(ctx context.Context, id int64, nodes []GraphNode, e
 	return tx.Commit(ctx)
 }
 
-func (s *Store) Publish(ctx context.Context, id int64) error {
-	tag, err := s.Pool.Exec(ctx, `UPDATE model_version SET status = 'PUBLISHED' WHERE id = $1 AND status = 'DRAFT'`, id)
+// Publish khoá một version lại. Trước khi khoá, tham số hiệu lực của từng thiết bị được ĐÔNG CỨNG
+// vào node (freeze): bản đã Publish phải bất biến, nên sau này sửa thiết bị trong danh mục Thiết bị
+// không được làm đổi đầu vào của bản này. `freeze` do nơi gọi truyền vào (đã hợp nhất sâu bằng
+// resolve), map rỗng nghĩa là node đó không có gì phải đông cứng.
+func (s *Store) Publish(ctx context.Context, id int64, freeze map[string]map[string]any) error {
+	var done bool
+	err := s.inTx(ctx, func(tx pgx.Tx) error {
+		var status string
+		if err := tx.QueryRow(ctx, `SELECT status FROM model_version WHERE id = $1 FOR UPDATE`, id).Scan(&status); err != nil {
+			return notFound(err)
+		}
+		if status != "DRAFT" {
+			return nil // đã Publish hoặc đã Archive từ trước: trả ErrNotDraft phía dưới
+		}
+		done = true
+		for key, params := range freeze {
+			if len(params) == 0 {
+				continue
+			}
+			if _, err := tx.Exec(ctx, `UPDATE node SET params = $3 WHERE model_version_id = $1 AND key = $2`,
+				id, key, params); err != nil {
+				return err
+			}
+		}
+		_, err := tx.Exec(ctx, `UPDATE model_version SET status = 'PUBLISHED' WHERE id = $1 AND status = 'DRAFT'`, id)
+		return err
+	})
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() == 1 {
+	if done {
 		return nil
-	}
-	var st string
-	if err := s.Pool.QueryRow(ctx, `SELECT status FROM model_version WHERE id = $1`, id).Scan(&st); err != nil {
-		return notFound(err)
 	}
 	return ErrNotDraft
 }
@@ -284,8 +339,8 @@ func (s *Store) Clone(ctx context.Context, id int64) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO node (model_version_id, key, node_type_id, archetype, name, params, canvas_pos)
-		SELECT $2, key, node_type_id, archetype, name, params, canvas_pos FROM node WHERE model_version_id = $1`, id, newID); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO node (model_version_id, key, params, canvas_pos)
+		SELECT $2, key, params, canvas_pos FROM node WHERE model_version_id = $1`, id, newID); err != nil {
 		return 0, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO edge (model_version_id, key, src_node_id, src_port, dst_node_id, dst_port, material_id, params)

@@ -297,9 +297,25 @@ func TestDataSourceUpsertAccumulatesAndKeepsHistory(t *testing.T) {
 	if got.Count != 8 || !got.FirstSeen.Equal(t1) || !got.LastSeen.Equal(t2) || got.Desc != "Máy dập 2" || string(got.Sample) != `{"st": "IDLE"}` {
 		t.Fatalf("source = %+v (sample %s)", got, got.Sample)
 	}
-	// mô hình khác không thấy
+	// Danh mục nguồn là toàn cục: nguồn chưa ghép ở đâu thì mô hình nào cũng thấy để ghép tiếp.
+	if other, _ := st.ListSources(ctx, "khac"); len(other) != 1 {
+		t.Fatalf("nguồn chưa ghép phải hiện ở mọi mô hình: %+v", other)
+	}
+	// Nhưng khi đã ghép cho một mô hình thì mô hình khác không thấy nữa.
+	vid := newModel(t, st, "m")
+	if err := st.ReplaceGraph(ctx, vid, testfix.MiniNodes(), testfix.MiniEdges(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveBindings(ctx, "m", []live.Binding{
+		{Subject: "S>OUT", Signal: "moved", Source: "plc/prs-02/status", JSONPath: "n", Enabled: true, Mode: live.ModeSource},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if mine, _ := st.ListSources(ctx, "m"); len(mine) != 1 || len(mine[0].Models) != 1 || mine[0].Models[0] != "m" {
+		t.Fatalf("mô hình đã ghép phải thấy nguồn kèm chính nó: %+v", mine)
+	}
 	if other, _ := st.ListSources(ctx, "khac"); len(other) != 0 {
-		t.Fatalf("list của mô hình khác = %+v", other)
+		t.Fatalf("nguồn đã thuộc mô hình khác thì không hiện: %+v", other)
 	}
 }
 
@@ -320,24 +336,31 @@ func TestDataSourceManualOverridesOriginAndDeleteReportsNotFound(t *testing.T) {
 	}
 }
 
-func TestDeletingModelRemovesItsDataSources(t *testing.T) {
+// Xoá một mô hình KHÔNG xoá nguồn dữ liệu: một nguồn là thiết bị/topic ngoài đời, không thuộc mô
+// hình nào, và mô hình khác có thể đang dùng. Chỉ ghép nối của mô hình đó mất đi.
+func TestDeletingAModelKeepsTheSourceCatalogue(t *testing.T) {
 	st := testfix.Seeded(t, "store_src3")
 	id, err := st.CreateModel(ctx, "xoa-nguon", nil)
 	if err != nil || id == 0 {
 		t.Fatalf("create = %d, %v", id, err)
 	}
 	now := time.Now()
-	_ = st.UpsertSources(ctx, []store.DataSource{{ModelKey: "xoa-nguon", Source: "s", Origin: "feed", FirstSeen: now, LastSeen: now, Count: 1}})
+	_ = st.UpsertSources(ctx, []store.DataSource{{Source: "s", Origin: "feed", FirstSeen: now, LastSeen: now, Count: 1}})
 	if err := st.DeleteModel(ctx, "xoa-nguon", true); err != nil {
 		t.Fatal(err)
 	}
-	if list, _ := st.ListSources(ctx, "xoa-nguon"); len(list) != 0 {
-		t.Fatalf("nguồn còn sót sau khi xoá mô hình: %+v", list)
+	if list, _ := st.ListAllSources(ctx); len(list) != 1 || list[0].Source != "s" {
+		t.Fatalf("xoá mô hình không được xoá nguồn: %+v", list)
 	}
 }
 
 func TestDerivedBindingRoundTripAndShapeChecks(t *testing.T) {
 	st := testfix.Seeded(t, "store_derived")
+	// "S" là một thiết bị, nên ghép nối của nó là dùng chung và chỉ hiện ở mô hình có chứa nó.
+	vid := newModel(t, st, "m")
+	if err := st.ReplaceGraph(ctx, vid, testfix.MiniNodes(), testfix.MiniEdges(), nil); err != nil {
+		t.Fatal(err)
+	}
 	d := live.Derive{Kind: live.KindSum, Const: 40, Terms: []live.Term{{Subject: "A", Signal: "moved", Sign: 1}, {Subject: "B", Signal: "moved", Sign: -1}}}
 	err := st.SaveBindings(ctx, "m", []live.Binding{
 		{Subject: "S", Signal: "level:RAW-01", Mode: live.ModeDerived, Derive: &d, Enabled: true},

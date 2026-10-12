@@ -25,8 +25,51 @@ func stockMaterials(params map[string]any) []string {
 	return out
 }
 
-// SignalsFor trả các tín hiệu chuẩn của một node theo archetype (params là tham số hiệu lực, dùng để biết vật tư trong kho).
+// sensorSignals trả các cảm biến mà LOẠI NODE khai (`signals` trong tham số hiệu lực): độ rung, áp
+// suất, nhiệt độ… Đây chính là các kênh mà đồng hồ công nghiệp hay PLC đo được, nên chúng phải ghép
+// nối được, không chỉ dùng để sinh dữ liệu tổng hợp khi mô phỏng.
+func sensorSignals(params map[string]any) []SignalDef {
+	list, _ := params["signals"].([]any)
+	var out []SignalDef
+	for _, raw := range list {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := m["name"].(string)
+		if name == "" {
+			continue
+		}
+		unit, _ := m["unit"].(string)
+		label := "Cảm biến " + name
+		if unit != "" {
+			label += " (" + unit + ")"
+		}
+		out = append(out, SignalDef{name, label, "number"})
+	}
+	return out
+}
+
+// SignalsFor trả các tín hiệu chuẩn của một node: tín hiệu theo archetype (params là tham số hiệu
+// lực, dùng để biết vật tư trong kho) cộng các cảm biến mà loại node khai.
 func SignalsFor(archetype string, params map[string]any) []SignalDef {
+	out := append(archetypeSignals(archetype, params), sensorSignals(params)...)
+	seen := map[string]bool{}
+	uniq := out[:0]
+	for _, d := range out {
+		if seen[d.Name] {
+			continue
+		}
+		seen[d.Name] = true
+		uniq = append(uniq, d)
+	}
+	if len(uniq) == 0 {
+		return nil
+	}
+	return uniq
+}
+
+func archetypeSignals(archetype string, params map[string]any) []SignalDef {
 	switch archetype {
 	case "PROCESS":
 		return []SignalDef{

@@ -40,6 +40,9 @@ type CheckInput struct {
 	Graph     *store.Graph
 	Types     map[string]store.NodeType
 	Materials []string
+	// Assets là mã thiết bị có trong danh mục Thiết bị; nil nghĩa là không kiểm (nơi gọi không tra danh mục).
+	// Node của sơ đồ phải là một thiết bị đã khai, vì sơ đồ chỉ đặt thiết bị, không khai sinh thiết bị.
+	Assets    map[string]bool
 	MapTravel func(src, dst string) (seconds float64, ok bool)
 	// MapRoute: đường nối src→dst của xe có chạy được trên bản đồ AGV không ("ok", "no_station", "no_path", "no_return"); nil nghĩa là không có bản đồ.
 	MapRoute func(src, dst string) string
@@ -114,6 +117,10 @@ func (c *checker) run() {
 	g := c.in.Graph
 	sources, sinks := 0, 0
 	for _, n := range g.Nodes {
+		if c.in.Assets != nil && !c.in.Assets[n.Key] {
+			c.errf("asset_unknown", n.Key, "'%s' không có trong danh mục Thiết bị. Tạo thiết bị rồi đặt nó lên sơ đồ, hoặc bỏ node này.", n.Key)
+			continue
+		}
 		t, ok := c.in.Types[n.NodeType]
 		if !ok {
 			c.errf("unknown_type", n.Key, "Loại node '%s' không còn trong Thư viện. Chọn loại khác hoặc tạo lại loại này.", n.NodeType)

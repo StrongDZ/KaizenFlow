@@ -38,6 +38,27 @@ const aoiFailures = `[
   {"code":"illumination_failure","label":"Mất đèn chiếu sáng AOI","description":"Nguồn sáng kiểm tra mất hoặc suy hỏng khiến AOI không thể đánh giá sản phẩm.","onset":{"dist":"weibull","shape":2,"scale_s":432000},"p_to_f":{"dist":"tri","min_s":300,"mode_s":600,"max_s":1200},"effects":[],"on_fail":{"state":"DOWN","mttr":{"dist":"lognorm","mean_s":900,"cv":0.25}}}
 ]`
 
+// Thiết bị phụ trợ: cấp hơi, khí nén, điện, nước lạnh cho dây chuyền. Đồng hồ công nghiệp trên tủ
+// điều khiển của chúng đọc áp suất và nhiệt độ, nên hai tín hiệu này là đầu vào tự nhiên cho PdM.
+const utilitySupplySignals = `[
+  {"name":"pressure","unit":"bar","base":{"dist":"normal","mean":6.2,"sd":0.25},"hz":0.2},
+  {"name":"temperature","unit":"degC","base":{"dist":"normal","mean":64,"sd":3},"hz":0.2}
+]`
+const utilitySupplyFailures = `[
+  {"code":"pressure_loss","label":"Mất áp","description":"Áp suất tụt dần: rò rỉ, van hỏng hoặc bơm yếu; dây chuyền dùng tiện ích này sẽ chậm rồi dừng.","onset":{"dist":"weibull","shape":2,"scale_s":432000},"p_to_f":{"dist":"tri","min_s":900,"mode_s":1800,"max_s":3600},"effects":[{"signal":"pressure","kind":"ramp","mag_sd":-4}],"on_fail":{"state":"DOWN","mttr":{"dist":"lognorm","mean_s":2700,"cv":0.3}}},
+  {"code":"motor_overheat","label":"Động cơ quá nhiệt","description":"Nhiệt độ tăng nhanh, thiết bị dừng để làm nguội và kiểm tra tải.","onset":{"dist":"weibull","shape":2,"scale_s":604800},"p_to_f":{"dist":"tri","min_s":1200,"mode_s":2400,"max_s":4800},"effects":[{"signal":"temperature","kind":"exp","mag_sd":3}],"on_fail":{"state":"DOWN","mttr":{"dist":"lognorm","mean_s":2400,"cv":0.3}}}
+]`
+
+// Máy gia công chung: CNC, hàn, cắt, nghiền, nhiệt luyện… chưa có loại riêng trong Thư viện.
+const utilityMachineSignals = `[
+  {"name":"vibration","unit":"mm/s","base":{"dist":"normal","mean":0.5,"sd":0.1},"hz":0.2},
+  {"name":"temperature","unit":"degC","base":{"dist":"normal","mean":58,"sd":4},"hz":0.2}
+]`
+const utilityMachineFailures = `[
+  {"code":"bearing_wear","label":"Mòn vòng bi","description":"Rung động tăng dần trước khi máy dừng để thay hoặc sửa vòng bi.","onset":{"dist":"weibull","shape":2,"scale_s":604800},"p_to_f":{"dist":"tri","min_s":3600,"mode_s":5400,"max_s":7200},"effects":[{"signal":"vibration","kind":"exp","mag_sd":3}],"on_fail":{"state":"DOWN","mttr":{"dist":"lognorm","mean_s":3600,"cv":0.3}}},
+  {"code":"motor_overheat","label":"Động cơ quá nhiệt","description":"Nhiệt độ tăng nhanh, máy dừng để làm nguội và kiểm tra tải.","onset":{"dist":"weibull","shape":2,"scale_s":604800},"p_to_f":{"dist":"tri","min_s":1200,"mode_s":2400,"max_s":4800},"effects":[{"signal":"temperature","kind":"exp","mag_sd":3}],"on_fail":{"state":"DOWN","mttr":{"dist":"lognorm","mean_s":2400,"cv":0.3}}}
+]`
+
 const packingSignals = `[]`
 const packingFailures = `[
   {"code":"conveyor_jam","label":"Kẹt băng tải đóng gói","description":"Bao bì hoặc sản phẩm kẹt trên băng tải và trạm phải dừng gỡ kẹt.","onset":{"dist":"weibull","shape":2,"scale_s":345600},"p_to_f":{"dist":"tri","min_s":300,"mode_s":600,"max_s":1200},"effects":[],"on_fail":{"state":"DOWN","mttr":{"dist":"lognorm","mean_s":1200,"cv":0.3}}},
@@ -99,6 +120,17 @@ var Builtins = []Builtin{
 		`{"icon":"package","color":"#16a34a"}`},
 	{"SHIP_DOCK", "Cửa xuất hàng", "SINK", `{"assumed":true,"buffer":2}`, `[]`, `[]`,
 		`{"icon":"send","color":"#475569"}`},
+	// Hai loại cho thiết bị phụ trợ của nhà máy (lò hơi, máy nén khí, bơm, máy phát điện, CNC, hàn…).
+	// Chúng vẫn quy về đúng 5 archetype: thứ CẤP một tiện ích là SOURCE, thứ BIẾN ĐỔI là PROCESS.
+	// Nhờ hai loại này, mọi máy đang gắn đồng hồ ở khu Đồng hồ đều vào được danh mục Thiết bị.
+	{"UTILITY_SUPPLY", "Nguồn tiện ích", "SOURCE",
+		`{"assumed":true,"arrivals":{"interarrival":{"dist":"norm","mean":60,"sd":5}}}`,
+		utilitySupplySignals, failureCatalog(utilitySupplyFailures),
+		`{"icon":"zap","color":"#0891b2"}`},
+	{"UTILITY_MACHINE", "Máy phụ trợ", "PROCESS",
+		`{"assumed":true,"cycle":{"dist":"lognorm","mean":90,"cv":0.2},"in_buffer":10,"out_buffer":10}`,
+		utilityMachineSignals, failureCatalog(utilityMachineFailures, "bearing_wear"),
+		`{"icon":"cog","color":"#7c3aed"}`},
 	{"SCRAP", "Phế phẩm", "SINK", `{"buffer":1000000,"throughput":false}`, `[]`, `[]`,
 		`{"icon":"trash","color":"#991b1b"}`},
 	{"TUGGER", "Xe kéo (tugger)", "RESOURCE_POOL",

@@ -74,7 +74,8 @@ func graphBody() map[string]any {
 func TestFullFlow(t *testing.T) {
 	a := newAPI(t)
 	a.call("GET", "/api/health", nil, 200)
-	if n := len(a.call("GET", "/api/node-types", nil, 200)["items"].([]any)); n != 14 {
+	// 16 loại mẫu: 14 loại của dây chuyền + Nguồn tiện ích, Máy phụ trợ (thiết bị phụ trợ của nhà máy).
+	if n := len(a.call("GET", "/api/node-types", nil, 200)["items"].([]any)); n != 16 {
 		t.Fatalf("node types = %d", n)
 	}
 	vid := int64(a.call("POST", "/api/models", map[string]any{"model_key": "denso-mini"}, 201)["version_id"].(float64))

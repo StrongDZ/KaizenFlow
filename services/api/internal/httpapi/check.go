@@ -34,7 +34,16 @@ func (h *handlers) graphReport(ctx context.Context, g *store.Graph, deep bool) (
 			travel, route = m.Travel, m.Route
 		}
 	}
-	rep := h.Validator.Check(validate.CheckInput{Graph: g, Types: types, Materials: mats, MapTravel: travel, MapRoute: route})
+	assets, err := h.Store.ListAssets(ctx)
+	if err != nil {
+		return validate.Report{}, err
+	}
+	known := make(map[string]bool, len(assets))
+	for _, a := range assets {
+		known[a.Key] = true
+	}
+	rep := h.Validator.Check(validate.CheckInput{Graph: g, Types: types, Materials: mats, Assets: known,
+		MapTravel: travel, MapRoute: route})
 	if !deep || !rep.OK {
 		return rep, nil
 	}

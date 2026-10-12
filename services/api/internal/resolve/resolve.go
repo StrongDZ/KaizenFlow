@@ -1,4 +1,5 @@
-// Package resolve ghép default_params ⊕ node.params ⊕ overrides thành RunRequest của sim-service.
+// Package resolve ghép default_params của loại ⊕ params của thiết bị ⊕ params của node ⊕ overrides
+// của scenario thành RunRequest của sim-service.
 package resolve
 
 import (
@@ -81,7 +82,9 @@ func deepMerge(base, over map[string]any) map[string]any {
 	return out
 }
 
-// MergeNodeParams trả tham số hiệu lực của một node: defaults ⊕ signals/failure_modes của type ⊕ params node.
+// MergeNodeParams trả tham số hiệu lực của một node:
+// defaults ⊕ signals/failure_modes của type ⊕ params của thiết bị ⊕ params riêng của node trong sơ đồ.
+// Tham số thật của máy nằm ở danh mục Thiết bị (dùng chung cho mọi mô hình); node chỉ override khi cần.
 func MergeNodeParams(t store.NodeType, n store.GraphNode) (map[string]any, error) {
 	base := map[string]any{}
 	if d, err := decode(t.DefaultParams); err != nil {
@@ -98,11 +101,28 @@ func MergeNodeParams(t store.NodeType, n store.GraphNode) (map[string]any, error
 			base[field] = s
 		}
 	}
+	if len(n.AssetParams) > 0 {
+		base = deepMerge(base, n.AssetParams)
+	}
 	params := n.Params
 	if params == nil {
 		params = map[string]any{}
 	}
 	return deepMerge(base, params), nil
+}
+
+// FreezeNodeParams trả phần phải ghi vào node khi Publish: tham số thiết bị ⊕ override của node.
+// Không gộp default của loại vào (loại đã bị khoá sửa khi có version Publish dùng, nên không trôi),
+// để node vẫn chỉ chứa những gì thuộc riêng nhà máy này.
+func FreezeNodeParams(n store.GraphNode) map[string]any {
+	own := n.Params
+	if own == nil {
+		own = map[string]any{}
+	}
+	if len(n.AssetParams) == 0 {
+		return own
+	}
+	return deepMerge(n.AssetParams, own)
 }
 
 func setPathValue(cur any, parts []string, value any) error {

@@ -55,6 +55,17 @@ func New(d Deps) http.Handler {
 	r.Put("/api/materials/{code}", h.putMaterial)
 	r.Delete("/api/materials/{code}", h.deleteMaterial)
 	r.Get("/api/materials/{code}", h.getMaterial)
+	// Danh mục nguồn dữ liệu: một nguồn là một thiết bị/topic ngoài đời, không thuộc mô hình nào.
+	r.Get("/api/sources", h.listAllSources)
+	// Danh mục Thiết bị: ngang hàng với Mô hình, không nằm trong mô hình nào.
+	r.Get("/api/assets", h.listAssets)
+	r.Post("/api/assets", h.putAsset)
+	r.Get("/api/assets/bindings", h.listAssetBindings)
+	r.Put("/api/assets/bindings", h.putAssetBindings)
+	r.Delete("/api/assets/bindings/{id}", h.deleteAssetBinding)
+	r.Get("/api/assets/{key}", h.getAsset)
+	r.Put("/api/assets/{key}", h.putAsset)
+	r.Delete("/api/assets/{key}", h.deleteAsset)
 	r.Get("/api/models", h.listModels)
 	r.Post("/api/models", h.createModel)
 	r.Delete("/api/models/{key}", h.deleteModel)

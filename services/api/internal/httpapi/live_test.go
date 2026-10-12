@@ -56,6 +56,14 @@ func (a *liveAPI) publishedModel(key string) int64 {
 }
 
 func (a *liveAPI) publishedGraph(key string, body map[string]any) int64 {
+	// Sơ đồ chỉ đặt thiết bị đã có trong danh mục, nên khai thiết bị của graph này trước.
+	if nodes, ok := body["nodes"].([]any); ok {
+		for _, raw := range nodes {
+			if n, ok := raw.(map[string]any); ok {
+				a.call("POST", "/api/assets", map[string]any{"key": n["key"], "node_type": n["node_type"]}, 200)
+			}
+		}
+	}
 	vid := int64(a.call("POST", "/api/models", map[string]any{"model_key": key}, 201)["version_id"].(float64))
 	a.call("PUT", fmt.Sprintf("/api/versions/%d/graph", vid), body, 204)
 	a.call("POST", fmt.Sprintf("/api/versions/%d/publish", vid), nil, 200)

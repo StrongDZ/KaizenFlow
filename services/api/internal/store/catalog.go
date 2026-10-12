@@ -127,6 +127,8 @@ type VersionUse struct {
 
 type NodeTypeUsage struct {
 	Versions []VersionUse `json:"versions"`
+	// Assets là các thiết bị trong danh mục Thiết bị đang mang loại này; còn thiết bị thì chưa xoá được loại.
+	Assets []string `json:"assets"`
 }
 
 type NodeTypeDetail struct {
@@ -137,7 +139,7 @@ type NodeTypeDetail struct {
 func (s *Store) ListNodeTypeRows(ctx context.Context) ([]NodeTypeRow, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT t.id, t.code, t.name, t.archetype::text, t.param_schema, t.default_params,
 		t.signals, t.failure_modes, t.ui, t.is_builtin,
-		(SELECT count(DISTINCT n.model_version_id) FROM node n WHERE n.node_type_id = t.id)
+		(SELECT count(DISTINCT n.model_version_id) FROM node n JOIN asset a ON a.key = n.key WHERE a.node_type_id = t.id)
 		FROM node_type t ORDER BY t.archetype, t.code`)
 	if err != nil {
 		return nil, err
@@ -156,7 +158,8 @@ type querier interface {
 
 func nodeTypeUsage(ctx context.Context, q querier, code string) ([]VersionUse, error) {
 	rows, err := q.Query(ctx, `SELECT v.id, v.model_key, v.version, v.status, count(n.id)
-		FROM node n JOIN node_type t ON t.id = n.node_type_id JOIN model_version v ON v.id = n.model_version_id
+		FROM node n JOIN asset a ON a.key = n.key JOIN node_type t ON t.id = a.node_type_id
+		  JOIN model_version v ON v.id = n.model_version_id
 		WHERE t.code = $1 GROUP BY v.id ORDER BY v.model_key, v.version`, code)
 	if err != nil {
 		return nil, err
@@ -172,6 +175,24 @@ func nodeTypeUsage(ctx context.Context, q querier, code string) ([]VersionUse, e
 	return list, err
 }
 
+// nodeTypeAssets trả mã các thiết bị đang mang loại node này.
+func nodeTypeAssets(ctx context.Context, q querier, code string) ([]string, error) {
+	rows, err := q.Query(ctx, `SELECT a.key FROM asset a JOIN node_type t ON t.id = a.node_type_id
+		WHERE t.code = $1 ORDER BY a.key`, code)
+	if err != nil {
+		return nil, err
+	}
+	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (string, error) {
+		var k string
+		err := r.Scan(&k)
+		return k, err
+	})
+	if list == nil {
+		list = []string{}
+	}
+	return list, err
+}
+
 func (s *Store) GetNodeTypeDetail(ctx context.Context, code string) (*NodeTypeDetail, error) {
 	var d NodeTypeDetail
 	err := s.Pool.QueryRow(ctx, `SELECT id, code, name, archetype::text, param_schema, default_params, signals,
@@ -180,7 +201,10 @@ func (s *Store) GetNodeTypeDetail(ctx context.Context, code string) (*NodeTypeDe
 	if err != nil {
 		return nil, notFound(err)
 	}
-	d.Usage.Versions, err = nodeTypeUsage(ctx, s.Pool, code)
+	if d.Usage.Versions, err = nodeTypeUsage(ctx, s.Pool, code); err != nil {
+		return nil, err
+	}
+	d.Usage.Assets, err = nodeTypeAssets(ctx, s.Pool, code)
 	return &d, err
 }
 
@@ -260,7 +284,8 @@ func (s *Store) GetMaterialDetail(ctx context.Context, code string) (*MaterialDe
 		return nil, err
 	}
 	rows, err = s.Pool.Query(ctx, `SELECT v.id, v.model_key, v.version, n.key, t.code
-		FROM node n JOIN model_version v ON v.id = n.model_version_id JOIN node_type t ON t.id = n.node_type_id
+		FROM node n JOIN model_version v ON v.id = n.model_version_id
+		  JOIN asset a ON a.key = n.key JOIN node_type t ON t.id = a.node_type_id
 		WHERE position('"' || $1::text || '"' in n.params::text) > 0 ORDER BY v.model_key, v.version, n.key`, code)
 	if err != nil {
 		return nil, err
@@ -319,7 +344,8 @@ func (s *Store) UpdateNodeType(ctx context.Context, code string, u NodeTypeUpdat
 		}
 		var frozen int
 		if err := tx.QueryRow(ctx, `SELECT count(DISTINCT v.id) FROM node n JOIN model_version v ON v.id = n.model_version_id
-			WHERE n.node_type_id = $1 AND v.status <> 'DRAFT'`, id).Scan(&frozen); err != nil {
+			JOIN asset a ON a.key = n.key
+			WHERE a.node_type_id = $1 AND v.status <> 'DRAFT'`, id).Scan(&frozen); err != nil {
 			return err
 		}
 		if frozen > 0 {
@@ -348,6 +374,14 @@ func (s *Store) DeleteNodeType(ctx context.Context, code string) error {
 		}
 		if len(usage) > 0 {
 			return &LockedError{Msg: "node type đang được dùng nên không xoá được", Usage: NodeTypeUsage{Versions: usage}}
+		}
+		assets, err := nodeTypeAssets(ctx, tx, code)
+		if err != nil {
+			return err
+		}
+		if len(assets) > 0 {
+			return &LockedError{Msg: "Còn thiết bị mang loại này trong danh mục Thiết bị nên chưa xoá được loại. Xoá hoặc đổi loại các thiết bị đó trước.",
+				Usage: NodeTypeUsage{Versions: usage, Assets: assets}}
 		}
 		_, err = tx.Exec(ctx, `DELETE FROM node_type WHERE id = $1`, id)
 		return err

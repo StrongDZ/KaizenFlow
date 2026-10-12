@@ -40,6 +40,10 @@ type Binding struct {
 	// Mode: ModeSource (mặc định, lấy từ trường của nguồn) hoặc ModeDerived (tự tính bằng Derive, không có nguồn).
 	Mode   string  `json:"mode"`
 	Derive *Derive `json:"derive,omitempty"`
+	// Shared: đây là ghép nối của một THIẾT BỊ, lưu một lần và áp cho mọi mô hình có thiết bị đó.
+	// Đọc trong phạm vi một mô hình thì ModelKey đã được ghi thành mô hình đó, nên cần cờ này để
+	// giao diện biết sửa hay xoá nó sẽ ảnh hưởng cả các mô hình khác.
+	Shared bool `json:"shared,omitempty"`
 }
 
 // Vehicle là vị trí một xe trên bản đồ.
