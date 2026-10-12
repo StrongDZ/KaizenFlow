@@ -10,6 +10,8 @@ python3 scripts/seed_demo.py        # khai thiết bị vào danh mục Thiết 
 cd web && cp .env.example .env && npm install && npm run dev   # http://localhost:5173
 ```
 
+Pull main về mà thấy cần làm gì thêm (migration, service mới, cách làm cũ bị vỡ): xem [UPGRADE.md](UPGRADE.md).
+
 Test: `cd services/sim && pytest` · `cd services/feed && ../sim/.venv/bin/python -m pytest` · `cd services/api && go test ./...` (cần `docker compose up -d db`) · `cd web && npx vitest run`.
 
 ### Giao diện web (dev)
